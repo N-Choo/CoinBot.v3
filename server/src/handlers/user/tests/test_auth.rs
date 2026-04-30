@@ -128,6 +128,30 @@ mod tests {
         assert_eq!(http_resp.status(), StatusCode::UNAUTHORIZED);
     }
 
+    #[actix_web::test]
+    async fn test_logout() {
+        let (_, session_cache) = setup_caches();
+
+        // Simulate a logged-in user by inserting a session token
+        let token = "test_token";
+        let wallet_address = "0x1234567890abcdef".to_string();
+        session_cache
+            .insert(token.to_string(), wallet_address.clone())
+            .await;
+
+        let req = test::TestRequest::default()
+            .cookie(Cookie::build("session_token", token).finish())
+            .to_http_request();
+
+        let resp = AuthController::logout(req.clone(), web::Data::new(session_cache.clone())).await;
+
+        let http_resp = resp.respond_to(&req);
+        assert_eq!(http_resp.status(), StatusCode::OK);
+
+        // Verify the session token was invalidated
+        let cached_wallet = session_cache.get(token).await;
+        assert!(cached_wallet.is_none());
+    }
 
     #[actix_web::test]
     async fn test_verify_session_ok() {

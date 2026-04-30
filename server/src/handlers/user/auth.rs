@@ -96,6 +96,20 @@ impl AuthController {
         HttpResponse::Ok().cookie(session_cookies).finish()
     }
 
+    pub async fn logout(
+        header: actix_web::HttpRequest,
+        session_cache: web::Data<CacheType>,
+    ) -> impl Responder {
+        let session_cookie = header.cookie("session_token");
+        if let Some(cookie) = session_cookie {
+            let token = cookie.value().to_string();
+            session_cache.invalidate(&token).await;
+            HttpResponse::Ok().finish()
+        } else {
+            HttpResponse::BadRequest().body("No session cookie found")
+        }
+    }
+
     pub async fn verify_session(
         header: actix_web::HttpRequest,
         session_cache: web::Data<CacheType>,
