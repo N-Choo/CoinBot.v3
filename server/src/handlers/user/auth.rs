@@ -96,6 +96,25 @@ impl AuthController {
         HttpResponse::Ok().cookie(session_cookies).finish()
     }
 
+    pub async fn verify_session(
+        header: actix_web::HttpRequest,
+        session_cache: web::Data<CacheType>,
+    ) -> impl Responder {
+        let session_cookie = header.cookie("session_token");
+        if let Some(cookie) = session_cookie {
+            let token = cookie.value().to_string();
+            if let Some(wallet) = session_cache.get(&token).await {
+                HttpResponse::Ok().body(wallet)
+            } else {
+                HttpResponse::Unauthorized().body("Invalid session")
+            }
+        } else {
+            // INFO : Add logging, track, and monitor missing session cookies to identify potential
+            // issues or attacks.
+            HttpResponse::BadRequest().body("No session cookie found")
+        }
+    }
+
     /// Helper function to recover wallet address from signature and message.
     pub fn get_wallet(s: String, msg: String) -> Result<String, AppError> {
         // Validate Signature Format

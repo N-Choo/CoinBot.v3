@@ -127,4 +127,52 @@ mod tests {
 
         assert_eq!(http_resp.status(), StatusCode::UNAUTHORIZED);
     }
+
+
+    #[actix_web::test]
+    async fn test_verify_session_ok() {
+        let (_, session_cache) = setup_caches();
+
+        // Simulate a logged-in user by inserting a session token
+        let token = "test_token";
+        let wallet_address = "0x1234567890abcdef".to_string();
+        session_cache
+            .insert(token.to_string(), wallet_address.clone())
+            .await;
+
+        let req = test::TestRequest::default()
+            .cookie(Cookie::build("session_token", token).finish())
+            .to_http_request();
+
+        let resp =
+            AuthController::verify_session(req.clone(), web::Data::new(session_cache.clone()))
+                .await;
+
+        let http_resp = resp.respond_to(&req);
+        assert_eq!(http_resp.status(), StatusCode::OK);
+
+        // Verify the session token is still valid
+        let cached_wallet = session_cache.get(token).await;
+        assert_eq!(cached_wallet.unwrap(), wallet_address);
+    }
+
+    #[actix_web::test]
+    async fn test_verify_session_invalid() {
+        let (_, session_cache) = setup_caches();
+
+        let req = test::TestRequest::default()
+            .cookie(Cookie::build("session_token", "invalid_token").finish())
+            .to_http_request();
+
+        let resp =
+            AuthController::verify_session(req.clone(), web::Data::new(session_cache.clone()))
+                .await;
+
+        let http_resp = resp.respond_to(&req);
+        assert_eq!(http_resp.status(), StatusCode::UNAUTHORIZED);
+
+        // Verify the session token is not valid
+        let cached_wallet = session_cache.get("invalid_token").await;
+        assert!(cached_wallet.is_none());
+    }
 }
