@@ -1,0 +1,59 @@
+/* ========================================= */
+/* DEFAULT APP BACKGROUND                    */
+/* ========================================= */
+
+.app-background {
+  background-color: var(--bg-app); 
+  min-height: 100vh;
+  width: 100vw;
+  position: relative;
+  overflow: hidden; 
+  font-family: var(--font-main);
+}
+
+/* ========================================= */
+/* AMBIENT GLOW EFFECTS                      */
+/* ========================================= */
+
+.glow-blob {
+  position: absolute;
+  width: 600px;
+  height: 600px;
+  border-radius: 50%;
+  filter: blur(140px); 
+  z-index: 0;
+  pointer-events: none; 
+}
+
+.blob-top-right {
+  top: -150px;
+  right: -150px;
+  /* Keeping specific rgb values here to maintain the distinct purple blob */
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.4) 5%, transparent 100%);
+}
+
+.blob-bottom-left {
+  bottom: -150px;
+  left: -150px;
+  /* Keeps the deep purple bottom blob */
+  background: radial-gradient(circle, rgba(129, 5, 159, 0.2) 50%, transparent 70%);
+}
+
+/* ========================================= */
+/* CONTENT WRAPPER                           */
+/* ========================================= */
+
+.content-layer {
+  position: relative;
+  z-index: 1; 
+  width: 100%;
+  height: 100%;
+}
+
+@media (max-width: 768px) {
+  .glow-blob {
+    width: 400px;
+    height: 400px;
+    filter: blur(100px);
+  }
+}

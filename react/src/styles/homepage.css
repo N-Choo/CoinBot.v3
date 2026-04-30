@@ -1,0 +1,239 @@
+/* ========================================= */
+/* 1. CORE THEME & LAYOUT                    */
+/* ========================================= */
+
+.lp-wrapper {
+  color: var(--text-main);
+  font-family: var(--font-main);
+  padding: 40px 20px;
+  overflow-x: hidden;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.text-gradient {
+  background: var(--gradient-text);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* ========================================= */
+/* 2. HERO SECTION                           */
+/* ========================================= */
+
+.hero {
+  max-width: var(--max-width);
+  width: 100%;
+  margin: 0 auto 40px auto;
+  display: grid;
+  grid-template-columns: 1.2fr 1fr;
+  align-items: center;
+  gap: 60px;
+}
+
+.hero-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--accent-alpha);
+  color: var(--color-accent);
+  padding: 8px 16px;
+  border-radius: 100px;
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 24px;
+}
+
+.ai-pulse {
+  width: 8px; 
+  height: 8px; 
+  background: var(--color-accent); 
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--color-accent);
+}
+
+.hero-title { 
+  font-size: 72px; 
+  line-height: 1.1; 
+  font-weight: 900; 
+  margin: 0 0 24px 0; 
+  letter-spacing: -2px; 
+}
+
+.hero-desc { 
+  font-size: 18px; 
+  color: var(--text-muted); 
+  line-height: 1.6; 
+  margin-bottom: 40px; 
+  max-width: 500px; 
+}
+
+.hero-btns { 
+  display: flex; 
+  align-items: center; 
+  gap: 24px; 
+}
+
+.btn-primary {
+  background: var(--gradient-btn);
+  color: var(--text-btn); 
+  border: none; 
+  padding: 18px 36px; 
+  border-radius: 16px;
+  font-size: 16px; 
+  font-weight: 800; 
+  cursor: pointer;
+  box-shadow: 0 10px 20px var(--primary-shadow);
+}
+
+.trust-mini { 
+  display: flex; 
+  align-items: center; 
+  gap: 12px; 
+  font-size: 12px; 
+  color: var(--text-muted); 
+}
+
+.avatars { display: flex; }
+
+.avatar { 
+  width: 30px; 
+  height: 30px; 
+  border-radius: 50%; 
+  background: var(--bg-avatar); 
+  border: 2px solid var(--bg-app); 
+  margin-left: -10px; 
+}
+
+.avatar:first-child { margin-left: 0; }
+
+/* Mockup Card Component */
+.mockup-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-strong);
+  padding: 32px;
+  border-radius: 32px;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  box-shadow: var(--shadow-panel);
+}
+
+.mockup-header span { display: block; }
+
+.mockup-price { 
+  font-size: 32px; 
+  font-weight: 800; 
+  font-family: var(--font-mono); 
+  margin-top: 4px; 
+}
+
+.mockup-chart { 
+  display: flex; 
+  align-items: flex-end; 
+  gap: 12px; 
+  height: 120px; 
+}
+
+.chart-bar { 
+  flex: 1; 
+  background: var(--border-strong); 
+  border-radius: 6px; 
+}
+
+.chart-bar.active { 
+  background: var(--color-primary); 
+  box-shadow: 0 0 20px var(--primary-glow); 
+}
+
+.mockup-info { 
+  display: flex; 
+  justify-content: space-between; 
+  font-size: 14px; 
+  padding-top: 16px; 
+  border-top: 1px solid var(--border-light); 
+}
+
+.text-green { color: var(--color-primary); font-weight: 800; }
+
+/* ========================================= */
+/* 3. FEATURES GRID                          */
+/* ========================================= */
+
+.features-grid {
+  max-width: var(--max-width);
+  width: 100%;
+  margin: 60px auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+}
+
+.f-card {
+  background: var(--bg-panel);
+  padding: 40px;
+  border-radius: 24px;
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-panel);
+  transition: transform 0.3s, background 0.3s;
+}
+
+.f-card:hover { 
+  transform: translateY(-10px); 
+  background: var(--bg-hover); 
+}
+
+.f-icon { font-size: 32px; margin-bottom: 20px; }
+.f-card h3 { font-size: 20px; margin-bottom: 12px; color: var(--text-main); }
+.f-card p { color: var(--text-muted); line-height: 1.6; font-size: 15px; margin: 0; }
+
+/* ========================================= */
+/* 4. STATS BAR                              */
+/* ========================================= */
+
+.stats-bar {
+  max-width: var(--max-width);
+  width: 100%;
+  margin: 40px auto;
+  display: flex;
+  justify-content: space-around;
+  padding: 60px 20px;
+  border-top: 1px solid var(--border-light);
+  text-align: center;
+}
+
+.stat-item h4 { 
+  font-size: 40px; 
+  margin: 0 0 8px 0; 
+  font-family: var(--font-mono); 
+  color: var(--text-main);
+}
+
+.stat-item span { 
+  color: var(--text-muted); 
+  text-transform: uppercase; 
+  font-size: 12px; 
+  font-weight: 800; 
+}
+
+.lp-footer { 
+  padding: 40px; 
+  text-align: center; 
+  font-size: 12px; 
+  color: var(--text-footer); 
+  margin-top: auto;
+}
+
+/* ========================================= */
+/* 5. RESPONSIVE                             */
+/* ========================================= */
+
+@media (max-width: 1024px) {
+  .hero { grid-template-columns: 1fr; text-align: center; }
+  .hero-content { display: flex; flex-direction: column; align-items: center; }
+  .features-grid { grid-template-columns: 1fr; }
+  .hero-title { font-size: 48px; }
+  .stats-bar { flex-direction: column; gap: 40px; }
+}
