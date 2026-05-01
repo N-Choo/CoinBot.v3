@@ -1,6 +1,5 @@
-use actix_cors::Cors;
 use actix_web::{
-    App, HttpServer, http,
+    App, HttpServer,
     middleware::{Logger, NormalizePath},
     web,
 };

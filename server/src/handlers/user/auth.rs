@@ -117,8 +117,8 @@ impl AuthController {
         let session_cookie = header.cookie("session_token");
         if let Some(cookie) = session_cookie {
             let token = cookie.value().to_string();
-            if let Some(wallet) = session_cache.get(&token).await {
-                HttpResponse::Ok().body(wallet)
+            if session_cache.get(&token).await.is_some() {
+                HttpResponse::Ok().finish()
             } else {
                 HttpResponse::Unauthorized().body("Invalid session")
             }
