@@ -1,9 +1,8 @@
 import { Route, Routes } from "react-router-dom";
 import Topbar from "./components/topbar";
 import Trading from "./pages/tradingPage";
-import Background from "./components/bg";
-import CoinBotLandingPage from "./pages/homePage";
 import { Toaster } from "react-hot-toast";
+import CoinBot from "./pages/homePage";
 
 export const PATHS = {
   HOME: "/",
@@ -13,7 +12,7 @@ export const PATHS = {
 
 function AppRoutes() {
   return (
-    <Background>
+    <>
       <Toaster position="top-center" />
       <Topbar />
 
@@ -29,13 +28,13 @@ function AppRoutes() {
         <main style={{ flex: 1, position: "relative" }}>
           <Routes>
             {/* Add more routes here later */}
-            <Route path={PATHS.HOME} element={<CoinBotLandingPage />} />
+            <Route path={PATHS.HOME} element={<CoinBot />} />
             <Route path={PATHS.TRADE} element={<Trading />} />
           </Routes>
         </main>
 
       </div>
-    </Background>
+    </>
   );
 }
 

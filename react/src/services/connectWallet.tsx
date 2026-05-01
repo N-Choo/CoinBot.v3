@@ -34,15 +34,26 @@ export async function connectWallet(): Promise<boolean> {
       signature
     });
 
-    // Store the session token
-    // (Ensure your backend actually nests this inside a 'token' object)
-    const { sessionToken } = response.data;
-    localStorage.setItem('sessionToken', sessionToken);
-
-    return true;
+    return response.status === 200;
 
   } catch (error) {
     console.error('Wallet connection or signature failed:', error);
     return false;
   }
 }
+
+export async function disconnectWallet(): Promise<void> {
+  try {
+    const res = await axios.post('/api/user/logout');
+    if (res.status === 200) {
+      console.log('Wallet disconnected successfully on server.');
+    } else {
+      console.warn('Unexpected response during logout:', res);
+    }
+
+  } catch (error) {
+    console.error('Error during wallet disconnection:', error);
+  }
+}
+
+

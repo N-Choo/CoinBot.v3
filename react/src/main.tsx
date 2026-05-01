@@ -7,9 +7,9 @@ import axios from 'axios';
 
 
 // Set the global base URL for all Axios requests
-axios.defaults.baseURL = 'http://localhost:3000';
+axios.defaults.baseURL = 'http://127.0.0.1:3000';
+axios.defaults.withCredentials = true;
 
-// Optional: Set global headers or timeouts
 axios.defaults.headers.common['Content-Type'] = 'application/json';
 axios.defaults.timeout = 5000;
 
