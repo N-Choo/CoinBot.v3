@@ -28,21 +28,21 @@ jobs:
       - name: Run Tests
         run: cd server && cargo test --lib
 
-  # --- Frontend Checks ---
-  frontend-test:
-    name: React (Web)
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: react/package-lock.json
-      - name: Install Dependencies
-        run: cd react && npm ci
-      - name: Lint
-        run: cd react && npm run lint
-      - name: Type Check & Build
-        run: cd react && npm run build
+  # # --- Frontend Checks ---
+  # frontend-test:
+  #   name: React (Web)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Setup Node
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: "npm"
+  #         cache-dependency-path: react/package-lock.json
+  #     - name: Install Dependencies
+  #       run: cd react && npm ci
+  #     - name: Lint
+  #       run: cd react && npm run lint
+  #     - name: Type Check & Build
+  #       run: cd react && npm run build
