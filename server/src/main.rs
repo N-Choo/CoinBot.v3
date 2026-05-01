@@ -1,6 +1,6 @@
 use actix_cors::Cors;
 use actix_web::{
-    App, HttpServer,
+    App, HttpServer, http,
     middleware::{Logger, NormalizePath},
     web,
 };
@@ -14,11 +14,12 @@ async fn main() -> anyhow::Result<()> {
 
     let config = AppConfig::from_env()?;
     let app_state = server::state::AppState::new(&config).await?;
+    let config_data = web::Data::new(config.clone());
 
     // Initial HTTP workers to handle inncomming TCP connections.
     HttpServer::new(move || {
         App::new()
-            .wrap(Cors::permissive()) // "permissive" is a shortcut for allow_any_*
+            .wrap(config_data.get_cors())
             .wrap(NormalizePath::trim())
             .wrap(Logger::new("%a\t | %s\t | %Dms\t | %r\t"))
             .app_data(web::Data::new(app_state.nonce_cache.clone()))

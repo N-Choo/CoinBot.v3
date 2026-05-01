@@ -1,3 +1,5 @@
+use actix_cors::Cors;
+use actix_web::http;
 use anyhow::{Context, Result};
 use std::env;
 
@@ -31,5 +33,19 @@ impl AppConfig {
             api_secret: env::var("API_SECRET").context("Missing: API_SECRET")?,
             api_passphrase: env::var("API_PASSPHRASE").context("Missing: API_PASSPHRASE")?,
         })
+    }
+
+    /// Helper method to build a fresh Cors instance for each worker
+    pub fn get_cors(&self) -> Cors {
+        Cors::default()
+            .allowed_origin("http://127.0.0.1:5173") // Use the IP/Port Axios is calling from
+            .allowed_methods(vec!["GET", "POST"])
+            .allowed_headers(vec![
+                http::header::AUTHORIZATION,
+                http::header::ACCEPT,
+                http::header::CONTENT_TYPE,
+            ])
+            .supports_credentials()
+            .max_age(3600)
     }
 }
