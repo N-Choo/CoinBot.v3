@@ -1,0 +1,48 @@
+name: Flear Full-Stack CI
+
+on:
+  push:
+    branches: [main, "feature/**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  # --- Backend Checks ---
+  backend-test:
+    name: Rust (Server)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "server -> target"
+      - name: Check Format
+        run: cd server && cargo fmt --all -- --check
+      - name: Clippy (Linter)
+        run: cd server && cargo clippy -- -D warnings
+      - name: Run Tests
+        run: cd server && cargo test --lib
+
+  # # --- Frontend Checks ---
+  # frontend-test:
+  #   name: React (Web)
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Setup Node
+  #       uses: actions/setup-node@v4
+  #       with:
+  #         node-version: 20
+  #         cache: "npm"
+  #         cache-dependency-path: react/package-lock.json
+  #     - name: Install Dependencies
+  #       run: cd react && npm ci
+  #     - name: Lint
+  #       run: cd react && npm run lint
+  #     - name: Type Check & Build
+  #       run: cd react && npm run build
