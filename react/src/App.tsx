@@ -3,6 +3,7 @@ import Topbar from "./components/topbar";
 import Trading from "./pages/tradingPage";
 import { Toaster } from "react-hot-toast";
 import CoinBot from "./pages/homePage";
+import Dashboad from "./pages/dashboard";
 
 export const PATHS = {
   HOME: "/",
@@ -25,11 +26,18 @@ function AppRoutes() {
 
 
         {/* Your Page Content Area */}
-        <main style={{ flex: 1, position: "relative" }}>
+        <main style={{
+          flex: 1,
+          position: "relative",
+          width: "100%",
+          display: "flex",
+          justifyContent: "center"
+        }}>
           <Routes>
             {/* Add more routes here later */}
             <Route path={PATHS.HOME} element={<CoinBot />} />
             <Route path={PATHS.TRADE} element={<Trading />} />
+            <Route path={PATHS.DASHBOARD} element={<Dashboad />} />
           </Routes>
         </main>
 
