@@ -1,0 +1,35 @@
+version: "3.8"
+
+services:
+  backend:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    env_file:
+      - ./server/.env
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app
+      - /app/target # Keeps container builds separate from host
+    environment:
+      - RUST_LOG=debug
+    networks:
+      - app-network
+
+  frontend:
+    build:
+      context: ./react
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./react:/app:Z
+      - /app/node_modules # Protects container dependencies
+    depends_on:
+      - backend
+    networks:
+      - app-network
+
+networks:
+  app-network:
+    driver: bridge

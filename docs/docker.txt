@@ -1,0 +1,50 @@
+### Fixed `backend/Dockerfile`
+Here is the corrected version using the right flags. 
+
+```dockerfile
+FROM lukemathwalker/cargo-chef:latest-rust-1.85 AS chef
+WORKDIR /app
+
+FROM chef AS planner
+COPY . .
+# Corrected flag: --recipe-path
+RUN cargo chef prepare --recipe-path recipe.json
+
+FROM chef AS builder 
+COPY --from=planner /app/recipe.json recipe.json
+# Build dependencies - this is the slow part that gets cached
+RUN cargo chef cook --recipe-path recipe.json
+# Now build the actual application
+COPY . .
+RUN cargo build
+
+# Stage 3: The Runtime (Small & Clean)
+FROM debian:bookworm-slim
+WORKDIR /app
+RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# IMPORTANT: Change 'your_binary_name' to the name in your Cargo.toml
+COPY --from=builder /app/target/debug/your_binary_name /usr/local/bin/app
+
+EXPOSE 8080
+CMD ["app"]
+```
+
+---
+
+### Why this saves you time
+`cargo-chef` works like this:
+1.  **Planner:** Scans your `Cargo.toml` to see what libraries you need.
+2.  **Cook:** Compiles **only** those libraries. Since your libraries don't change often, Docker caches this huge, heavy layer.
+3.  **Builder:** Compiles your `src/` code. Since this is the only part you're changing, Docker only has to re-run this tiny last step.
+
+### One last reminder on the "Link"
+Since this is a production-style build (copying the binary to a slim image), the `volumes` in your `docker-compose.yml` won't "auto-reload" the code inside the container like `npm run dev` does. 
+
+If you change your Rust code, you'll need to run:
+```bash
+docker compose up --build backend
+```
+But thanks to `cargo-chef`, that command should now finish almost instantly after the first run.
+
+Does the build get past the "planner" stage now?
