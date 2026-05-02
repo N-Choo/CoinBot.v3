@@ -1,20 +1,19 @@
 ## System Architecture
 
-The system follows a classic client-server architecture optimized for Web3 security and low-latency execution.
+The system follows a classic client-server architecture optimized for Web3 security and low-latency execution, fully containerized for development and production parity.
 
 #### 1. Authentication Flow (EIP-191)
 
-- **Challenge Generation:** The React frontend requests a unique nonce from the Rust server via `/api/user/auth`.
-- **Stateful Caching:** The server generates a UUID-based nonce and stores it in a **Moka** cache (5-minute TTL) mapped to the user's wallet address.
-- **Cryptographic Signing:** The user signs the nonce using **Ethers v6** via their browser wallet (MetaMask/Rabby).
-- **Verification:** The server recovers the public address from the signature. If the address matches and the nonce is valid, it invalidates the used nonce and establishes a session.
-- **Session Management:** A session token is stored in a separate **Moka** cache (1-hour TTL) and delivered to the client via an HttpOnly cookie or JSON response.
+- **Challenge:** React frontend requests a unique nonce from the Rust server via `/api/user/auth`.
+- **State:** Server generates a UUID nonce and stores it in a **Moka** cache (5-min TTL).
+- **Signature:** User signs the nonce using **Ethers v6** via their browser wallet.
+- **Verification:** Server recovers the address; if valid, it establishes a session via HttpOnly cookie.
 
 #### 2. Core Components
 
-- **State Manager:** A centralized `AppState` struct cloned across Actix workers, containing the **PostgreSQL** pool, **KuCoin** client, and asynchronous caches.
-- **Trading Engine:** (Planned) Logic for monitoring price volatility and executing trades based on user-defined parameters.
-- **Middleware:** The server utilizes **CORS**, **Logger**, and **NormalizePath** to ensure clean and secure API communication.
+- **State Manager:** Centralized `AppState` cloned across Actix workers (PostgreSQL pool, KuCoin client, Moka caches).
+- **Trading Engine:** (Planned) Volatility monitoring and automated execution.
+- **Orchestration:** **Docker Compose** manages networking and environment synchronization between the UI and API.
 
 ---
 
@@ -22,31 +21,15 @@ The system follows a classic client-server architecture optimized for Web3 secur
 
 ```text
 .
+├── docker-compose.yml           # Orchestration for Frontend & Backend
 ├── server/                      # Rust Backend (Actix-Web)
-│   ├── src/
-│   │   ├── handlers/            # Request logic
-│   │   │   └── user/
-│   │   │       ├── auth.rs      # Challenge & Login logic
-│   │   │       └── tests/       # Unit & Integration tests
-│   │   ├── models/              # DTOs and Data Structures
-│   │   │   ├── auth.rs          # Auth Request/Response models
-│   │   │   └── err.rs           # Centralized Error Handling
-│   │   ├── routes.rs            # Scoped API routing definitions
-│   │   ├── state.rs             # AppState (DB, Cache, KuCoin Client)
-│   │   └── main.rs              # Server entry & Middleware setup
+│   ├── src/                     # Handlers, Models, Routes, State
 │   ├── Cargo.toml               # Backend dependencies
-│   └── .env                     # Secrets (DB_URL, KuCoin Keys)
-│
+│   └── Dockerfile               # Multi-stage Rust build
 └── react/                       # Frontend (Vite + TS)
-    ├── src/
-    │   ├── components/          # Reusable UI (Topbar, Background)
-    │   ├── hooks/               # useAuth, useTheme, useBot logic
-    │   ├── pages/               # TradingPage, HomePage
-    │   ├── services/            # connectWallet.tsx (Ethers logic)
-    │   ├── styles/              # Glassmorphism & Global CSS
-    │   └── App.tsx              # Router & Global Providers
-    ├── tsconfig.json            # TypeScript configuration
-    └── package.json             # Frontend dependencies
+    ├── src/                     # Components, Hooks, Pages, Services
+    ├── package.json             # Frontend dependencies
+    └── Dockerfile               # Node.js development environment
 ```
 
 ---
@@ -57,24 +40,28 @@ The system follows a classic client-server architecture optimized for Web3 secur
 | :----------- | :----------------------------------------------------- |
 | **Backend**  | Rust (Actix-Web), PostgreSQL (SQLx), Moka Cache        |
 | **Frontend** | React 19, TypeScript, Vite, Ethers v6, Axios           |
-| **Styling**  | Custom Glassmorphism CSS, Lucide-React Icons           |
-| **Exchange** | KuCoin SDK Client                                      |
+| **DevOps**   | **Docker**, **Docker Compose**                         |
 | **Web3**     | EIP-191 Signature Verification (ethers-rs / ethers.js) |
 
 ---
 
 ### Development Setup
 
-1.  **Environment Variables:** Copy `.env.example` to `.env` in the `server/` directory and provide your PostgreSQL and KuCoin credentials.
-2.  **Database:** Ensure PostgreSQL is running and run migrations (if applicable).
-3.  **Start Backend:**
-    ```bash
-    cd server
-    cargo run
-    ```
-4.  **Start Frontend:**
-    ```bash
-    cd react
-    npm install
-    npm run dev
-    ```
+**Prerequisites:** Docker & Docker Compose installed.
+
+1. **Configure Environment:**
+   Ensure your `.env` file exists in the root (or as specified in `docker-compose.yml`) with `DATABASE_URL` and KuCoin credentials.
+
+2. **Launch System:**
+
+   ```bash
+   docker compose up --build
+   ```
+
+   _Note for Fedora users: The volume mounts utilize the `:Z` flag to handle SELinux permissions._
+
+3. **Access:**
+   - **Frontend:** `http://localhost:5173`
+   - **Backend API:** `http://localhost:8080`
+
+---
