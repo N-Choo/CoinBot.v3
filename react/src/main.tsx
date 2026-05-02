@@ -7,7 +7,6 @@ import axios from 'axios';
 
 
 // Set the global base URL for all Axios requests
-axios.defaults.baseURL = 'http://127.0.0.1:3000';
 axios.defaults.withCredentials = true;
 
 axios.defaults.headers.common['Content-Type'] = 'application/json';

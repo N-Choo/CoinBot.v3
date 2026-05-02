@@ -1,18 +1,17 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
 
-
 export default defineConfig({
   plugins: [react()],
   server: {
-    host: true,
+    host: true, // Listen on all addresses (0.0.0.0)
     allowedHosts: ["fedora.ibex-mooneye.ts.net"],
-    // Proxy must be inside the server block
     proxy: {
       '/api': {
-        target: 'http://127.0.0.1:3000',
+        // Use the Docker service name 'backend' and port 8080
+        target: 'http://backend:8080',
         changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/api/, ''), // Use this if your Rust server doesn't expect "/api" in the path
+        // rewrite: (path) => path.replace(/^\/api/, ''), 
       }
     }
   }
