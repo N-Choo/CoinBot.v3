@@ -1,5 +1,3 @@
-/* src/pages/dashboard.jsx[cite: 1] */
-import DashboardHeader from '../components/dashboard/DashboardHeader';
 import BalanceStats from '../components/dashboard/BalanceStats';
 import PnlChart from '../components/dashboard/PnlChart';
 import TradingContracts from '../components/dashboard/TradingContracts';
