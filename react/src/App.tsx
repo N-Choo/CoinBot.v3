@@ -16,7 +16,45 @@ export const PATHS = {
 function AppRoutes() {
   return (
     <>
-      <Toaster position="top-center" />
+      < Toaster
+        containerStyle={{
+          top: '50%',
+          transform: 'translateY(-10%)',
+        }}
+        position="top-center"
+        reverseOrder={false}
+        toastOptions={{
+          // Default options for all toasts
+          duration: 1500,
+          style: {
+            background: '#333',
+            color: '#fff',
+            borderRadius: '10px',
+            fontSize: '14px',
+            padding: '16px',
+          },
+
+          // Specific styles for Success
+          success: {
+            duration: 1200,
+            iconTheme: {
+              primary: '#4ade80', // Tailwind-style green
+              secondary: '#fff',
+            },
+          },
+
+          // Specific styles for Error
+          error: {
+            iconTheme: {
+              primary: '#ef4444', // Tailwind-style red
+              secondary: '#fff',
+            },
+            style: {
+              border: '1px solid #ef4444',
+            },
+          },
+        }}
+      />
       <Topbar />
 
       <div style={{
