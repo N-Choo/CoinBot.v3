@@ -49,10 +49,10 @@ const Trading = () => {
 
   // 1. New State to manage all bot parameters
   const [botSettings, setBotSettings] = useState({
-    strategy: 'Balanced',
-    maxTrades: '3',
-    maxDrawdown: '5.0',
-    slippage: '0.3'
+    Amount: '0',
+    Expires: '3',
+    TakeProfit: '5.0',
+    StopLoss: '0.3'
   });
 
   // Mock Data
@@ -67,7 +67,7 @@ const Trading = () => {
 
   const TradeSettings = [
     { keyName: 'Amount', label: 'Trade Amount', type: 'text', placeholder: '100', suffix: 'USDT' },
-    { keyName: 'Expires', label: 'Max Trades/Day', type: 'text', placeholder: '5' },
+    { keyName: 'Expires', label: 'Lifetime in days', type: 'text', placeholder: '5' },
     { keyName: 'TakeProfit', label: 'Take Profit', type: 'text', placeholder: '50.0', suffix: '%' },
     { keyName: 'StopLoss', label: 'Stop Loss', type: 'text', placeholder: ' 35.0', suffix: '%' },
   ];
@@ -129,7 +129,7 @@ const Trading = () => {
 
               {/* Desktop Start Button */}
               <button className="start-bot-btn desktop-only" onClick={handleStartTrading}>
-                <span>START TRADING</span>
+                <span>SIGN CONTRACT</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                   <polyline points="12 5 19 12 12 19"></polyline>
