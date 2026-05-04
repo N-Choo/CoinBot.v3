@@ -1,7 +1,5 @@
 # CoinBot-OpenCore
 
-**CoinBot-OpenCore** is the foundational engine of the Mint ecosystem, designed to provide a transparent, high-integrity framework for Web3 data processing and automated execution.
-
 ### The OpenCore Philosophy
 To maintain the highest standards of security and data integrity, we have adopted an **OpenCore model**:
 
@@ -25,7 +23,7 @@ The system follows a classic client-server architecture optimized for Web3 secur
 #### 2. Core Components
 
 - **State Manager:** Centralized `AppState` cloned across Actix workers (PostgreSQL pool, KuCoin client, Moka caches).
-- **Transaction Layer (Open):** Logic for validating and broadcasting on-chain interactions, ensuring auditability.
+- **Transaction Layer:** Logic for validating and broadcasting on-chain interactions, ensuring auditability.
 - **Trading Engine:** (Planned) Volatility monitoring and automated execution.
 - **Orchestration:** **Docker Compose** manages networking and environment synchronization between the UI and API.
 
