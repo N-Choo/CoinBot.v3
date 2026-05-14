@@ -5,14 +5,17 @@ export default function CoinBot() {
     <div className="landing">
       {/* Hero */}
       <section className="hero">
+        <div className="hero-sparks">
+          {Array.from({ length: 8 }).map((_, i) => <div key={i} className="spark" />)}
+        </div>
         <div className="hero-body">
-          <div className="hero-badge">Automated Trading Protocol</div>
           <h1>
             Trade smarter.<br />
             <span className="hero-em">Earn passively.</span>
           </h1>
           <p className="hero-sub">
-            CoinBot automates your trading &mdash; buying low and selling high &mdash; while staking idle assets for passive yield. 24/7 precision, zero manual effort.
+            CoinBot scans the market 24/7 &mdash; buying low, selling high, and staking idle
+            capital for passive yield. No keys, no manual trades, zero hands-on effort.
           </p>
           <div className="hero-actions">
             <button className="btn-p">Launch Your Bot</button>
