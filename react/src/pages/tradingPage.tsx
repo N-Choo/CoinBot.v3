@@ -49,10 +49,10 @@ const Trading = () => {
 
   // 1. New State to manage all bot parameters
   const [botSettings, setBotSettings] = useState({
-    Amount: '0',
-    Expires: '3',
-    TakeProfit: '5.0',
-    StopLoss: '0.3'
+    strategy: 'Balanced',
+    maxTrades: '3',
+    maxDrawdown: '5.0',
+    slippage: '0.3'
   });
 
   // Mock Data
@@ -67,7 +67,7 @@ const Trading = () => {
 
   const TradeSettings = [
     { keyName: 'Amount', label: 'Trade Amount', type: 'text', placeholder: '100', suffix: 'USDT' },
-    { keyName: 'Expires', label: 'Lifetime in days', type: 'text', placeholder: '5' },
+    { keyName: 'Expires', label: 'Max Trades/Day', type: 'text', placeholder: '5' },
     { keyName: 'TakeProfit', label: 'Take Profit', type: 'text', placeholder: '50.0', suffix: '%' },
     { keyName: 'StopLoss', label: 'Stop Loss', type: 'text', placeholder: ' 35.0', suffix: '%' },
   ];
@@ -100,12 +100,13 @@ const Trading = () => {
         {/* ========================================= */}
         <div className="main-column">
 
-          {/* Unified Top Control Panel */}
-          <div className="panel top-controls-panel">
-            <div className="panel chart-container" style={{ minHeight: '450px' }}>
-              <TradingViewChart symbol={selectedPair} />
-            </div>
+          {/* TradingView Chart - standalone, no border/padding */}
+          <div className="chart-container" style={{ minHeight: '450px' }}>
+            <TradingViewChart symbol={selectedPair} />
+          </div>
 
+          {/* Input Section Panel */}
+          <div className="panel top-controls-panel">
             {/* 1. Header Info & Start Button */}
             <div className="chart-header-row">
               <div className="pair-info">
@@ -129,7 +130,7 @@ const Trading = () => {
 
               {/* Desktop Start Button */}
               <button className="start-bot-btn desktop-only" onClick={handleStartTrading}>
-                <span>SIGN CONTRACT</span>
+                <span>START TRADING</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="5" y1="12" x2="19" y2="12"></line>
                   <polyline points="12 5 19 12 12 19"></polyline>

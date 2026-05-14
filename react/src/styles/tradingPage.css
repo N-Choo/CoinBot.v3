@@ -33,13 +33,13 @@
 }
 
 .panel {
-  background: var(--bg-panel);
+  background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-light);
+  border: 1px solid #2a2e39;
   box-shadow: var(--shadow-panel);
   padding: 20px;
-  border-radius: 12px;
+  border-radius: 4px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -125,7 +125,7 @@
   color: var(--text-inverse); /* Ensure text is visible on colored button */
   border: none;
   padding: 10px 20px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-weight: 800;
   font-size: 12px;
   letter-spacing: 0.5px;
@@ -194,11 +194,11 @@
 
 .input-wrapper input, .input-wrapper select {
   width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
+  background: transparent;
+  border: 1px solid #2a2e39;
   color: var(--text-main);
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 14px;
   outline: none;
@@ -208,7 +208,7 @@
 
 .input-wrapper input:focus, .input-wrapper select:focus {
   border-color: var(--color-primary);
-  background: var(--bg-active);
+  background: transparent;
 }
 
 .currency-badge {
@@ -225,10 +225,8 @@
 /* ========================================= */
 
 .chart-container {
-  flex-grow: 1;
-  overflow: hidden;
-  max-height: 100px;
-  background: none;
+  width: 100%;
+  border: none;
   padding: 0;
 }
 
@@ -249,9 +247,9 @@
 .modern-search {
   display: flex;
   align-items: center;
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
   padding: 10px 14px;
   gap: 10px;
   margin-bottom: 16px;
@@ -305,7 +303,7 @@
   grid-template-columns: 2fr 1.5fr 1.2fr;
   align-items: center;
   padding: 12px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -313,11 +311,11 @@
 }
 
 .market-item:hover {
-  background: var(--bg-hover);
+  background: transparent;
 }
 
 .market-item.active-pair {
-  background: var(--bg-active);
+  background: transparent;
 }
 
 .coin-info {
@@ -345,7 +343,7 @@
 
 .price-up-bg { 
   color: var(--color-primary);
-  background: var(--bg-success);
+  background: transparent;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 12px;
@@ -356,7 +354,7 @@
 
 .price-down-bg { 
   color: var(--color-danger);
-  background: var(--bg-danger);
+  background: transparent;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 12px;
