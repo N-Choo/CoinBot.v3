@@ -1,49 +1,42 @@
-import { Route, Routes } from "react-router-dom";
-import Topbar from "./components/topbar";
-import Trading from "./pages/tradingPage";
-import { Toaster } from "react-hot-toast";
-import CoinBot from "./pages/homePage";
-import Dashboad from "./pages/dashboard";
+import { Route, Routes } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import Topbar from './components/topbar'
+import AuthGuard from './components/auth_guard'
+import Landing from './pages/homePage'
+import Trading from './pages/tradingPage'
+import Dashboard from './pages/dashboard'
+import './App.css'
 
 export const PATHS = {
-  HOME: "/",
-  TRADE: "/trading",
-  DASHBOARD: "/dashboard",
-} as const;
+  HOME: '/',
+  TRADE: '/trading',
+  DASHBOARD: '/dashboard',
+} as const
 
-function AppRoutes() {
+export default function AppRoutes() {
   return (
     <>
-      <Toaster position="top-center" />
+      <Toaster
+        position="top-center"
+        toastOptions={{
+          duration: 2000,
+          style: {
+            background: 'var(--bg-panel)',
+            color: 'var(--text-main)',
+            border: '1px solid var(--border-light)',
+            borderRadius: '10px',
+            fontSize: '13px',
+          },
+        }}
+      />
       <Topbar />
-
-      <div style={{
-        display: "flex",
-        flexDirection: "row",
-        flex: 1,
-        paddingTop: "75px" // Creates space so the Topbar doesn't cover your content
-      }}>
-
-
-        {/* Your Page Content Area */}
-        <main style={{
-          flex: 1,
-          position: "relative",
-          width: "100%",
-          display: "flex",
-          justifyContent: "center"
-        }}>
-          <Routes>
-            {/* Add more routes here later */}
-            <Route path={PATHS.HOME} element={<CoinBot />} />
-            <Route path={PATHS.TRADE} element={<Trading />} />
-            <Route path={PATHS.DASHBOARD} element={<Dashboad />} />
-          </Routes>
-        </main>
-
+      <div className="app-content">
+        <Routes>
+          <Route path={PATHS.HOME} element={<Landing />} />
+          <Route path={PATHS.TRADE} element={<AuthGuard><Trading /></AuthGuard>} />
+          <Route path={PATHS.DASHBOARD} element={<AuthGuard><Dashboard /></AuthGuard>} />
+        </Routes>
       </div>
     </>
-  );
+  )
 }
-
-export default AppRoutes;

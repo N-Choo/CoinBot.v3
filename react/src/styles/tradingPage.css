@@ -33,13 +33,13 @@
 }
 
 .panel {
-  background: var(--bg-panel);
+  background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid var(--border-light);
+  border: 1px solid #2a2e39;
   box-shadow: var(--shadow-panel);
   padding: 20px;
-  border-radius: 12px;
+  border-radius: 4px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -125,7 +125,7 @@
   color: var(--text-inverse); /* Ensure text is visible on colored button */
   border: none;
   padding: 10px 20px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-weight: 800;
   font-size: 12px;
   letter-spacing: 0.5px;
@@ -194,11 +194,11 @@
 
 .input-wrapper input, .input-wrapper select {
   width: 100%;
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
+  background: transparent;
+  border: 1px solid #2a2e39;
   color: var(--text-main);
   padding: 12px 14px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-mono);
   font-size: 14px;
   outline: none;
@@ -208,7 +208,7 @@
 
 .input-wrapper input:focus, .input-wrapper select:focus {
   border-color: var(--color-primary);
-  background: var(--bg-active);
+  background: transparent;
 }
 
 .currency-badge {
@@ -225,10 +225,8 @@
 /* ========================================= */
 
 .chart-container {
-  flex-grow: 1;
-  overflow: hidden;
-  max-height: 100px;
-  background: none;
+  width: 100%;
+  border: none;
   padding: 0;
 }
 
@@ -249,9 +247,9 @@
 .modern-search {
   display: flex;
   align-items: center;
-  background: var(--bg-input);
-  border: 1px solid var(--border-strong);
-  border-radius: 8px;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
   padding: 10px 14px;
   gap: 10px;
   margin-bottom: 16px;
@@ -284,7 +282,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
-  border-bottom: 1px solid var(--border-light);
+  border-bottom: 1px solid #2a2e39;
 }
 
 .text-right { text-align: center; }
@@ -305,7 +303,7 @@
   grid-template-columns: 2fr 1.5fr 1.2fr;
   align-items: center;
   padding: 12px 10px;
-  border-radius: 8px;
+  border-radius: 4px;
   font-family: var(--font-mono);
   cursor: pointer;
   transition: all 0.2s ease;
@@ -313,11 +311,11 @@
 }
 
 .market-item:hover {
-  background: var(--bg-hover);
+  background: transparent;
 }
 
 .market-item.active-pair {
-  background: var(--bg-active);
+  background: transparent;
 }
 
 .coin-info {
@@ -345,7 +343,7 @@
 
 .price-up-bg { 
   color: var(--color-primary);
-  background: var(--bg-success);
+  background: transparent;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 12px;
@@ -356,7 +354,7 @@
 
 .price-down-bg { 
   color: var(--color-danger);
-  background: var(--bg-danger);
+  background: transparent;
   padding: 4px 6px;
   border-radius: 4px;
   font-size: 12px;
@@ -373,26 +371,185 @@
 
 @media (max-width: 1024px) {
   .trading-grid {
-    grid-template-columns: 1fr; 
+    grid-template-columns: 1fr;
     height: auto;
+    gap: 16px;
   }
-  
+
+  .trading-page-wrapper {
+    padding-top: 10px;
+    padding-bottom: 20px;
+  }
+
   .chart-container {
-    min-height: 450px;
+    min-height: 300px;
   }
 
   .settings-grid {
-    grid-template-columns: 1fr 1fr; 
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .side-column {
+    height: auto;
+  }
+
+  .market-panel {
+    max-height: 360px;
+  }
+
+  .chart-header-row {
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+
+  .pair-info {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .pair-stats {
+    flex-wrap: wrap;
+    gap: 10px;
   }
 }
 
 @media (max-width: 600px) {
-  .settings-grid {
-    grid-template-columns: 1fr; 
+  .trading-grid {
+    width: calc(100% - 20px);
+    gap: 10px;
   }
-  
+
+  .trading-page-wrapper {
+    padding-top: 8px;
+    padding-bottom: 16px;
+  }
+
+  .chart-container {
+    min-height: 220px;
+    border-radius: 4px;
+  }
+
+  .panel {
+    padding: 12px;
+  }
+
   .chart-header-row {
     flex-direction: column;
     align-items: flex-start;
+    gap: 10px;
+    padding-top: 10px;
+  }
+
+  .pair-title {
+    font-size: 17px;
+  }
+
+  .current-price {
+    font-size: 15px;
+  }
+
+  .start-bot-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 10px 14px;
+    font-size: 11px;
+  }
+
+  .pair-stats {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .stat-block {
+    gap: 2px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .stat-value {
+    font-size: 12px;
+  }
+
+  .stat-divider {
+    height: 20px;
+  }
+
+  /* Settings */
+  .settings-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .modern-input-group label {
+    font-size: 11px;
+  }
+
+  .input-wrapper input {
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+
+  .currency-badge {
+    font-size: 10px;
+    right: 10px;
+  }
+
+  .bot-settings-integrated {
+    gap: 10px;
+  }
+
+  /* Market */
+  .market-panel {
+    max-height: 300px;
+    border-radius: 4px;
+  }
+
+  .market-header {
+    padding: 12px 12px 0 12px;
+  }
+
+  .modern-search {
+    padding: 8px 10px;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .modern-search input {
+    font-size: 13px;
+  }
+
+  .market-list-header {
+    padding: 8px 12px;
+    font-size: 10px;
+  }
+
+  .market-list {
+    padding: 4px 6px;
+  }
+
+  .market-item {
+    padding: 8px 6px;
+    margin-bottom: 1px;
+  }
+
+  .coin-name {
+    font-size: 12px;
+  }
+
+  .coin-base {
+    font-size: 10px;
+  }
+
+  .coin-price {
+    font-size: 11px;
+  }
+
+  .price-up-bg,
+  .price-down-bg {
+    font-size: 10px;
+    padding: 2px 5px;
   }
 }

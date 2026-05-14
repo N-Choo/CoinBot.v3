@@ -1,6 +1,12 @@
 import axios from 'axios';
 import { ethers } from 'ethers';
 
+declare global {
+  interface Window {
+    ethereum?: import('ethers').Eip1193Provider;
+  }
+}
+
 /**
  * Connects with server and authenticates the wallet. 
  * @returns {Promise<boolean>} True if connection, signature, and auth are successful, false otherwise.

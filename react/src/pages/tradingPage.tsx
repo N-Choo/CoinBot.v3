@@ -1,30 +1,30 @@
-import React, { useState, useEffect, useRef, memo } from 'react';
-import '../styles/tradingPage.css'; // <-- Import the CSS file here!
+import { useState, useEffect, useRef, memo } from 'react'
+import '../styles/tradingPage.css'
 
-// Memoized Chart Component to prevent unnecessary re-renders
-const TradingViewChart = memo(({ symbol }) => {
-  const container = useRef();
+interface ChartProps {
+  symbol: string
+}
+
+const TradingViewChart = memo<ChartProps>(({ symbol }) => {
+  const container = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
-    // Clear previous chart
-    if (container.current) {
-      container.current.innerHTML = "";
-    }
+    if (!container.current) return
+    container.current.innerHTML = ''
 
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
-    script.type = "text/javascript";
-    script.async = true;
+    const script = document.createElement('script')
+    script.src = 'https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js'
+    script.type = 'text/javascript'
+    script.async = true
 
-    // Standardize symbol for TradingView (e.g., BTC/USDT -> BINANCE:BTCUSDT)
-    const formattedSymbol = `BINANCE:${symbol.replace('/', '')}`;
+    const formattedSymbol = `BINANCE:${symbol.replace('/', '')}`
 
     script.innerHTML = JSON.stringify({
       "autosize": true,
       "symbol": formattedSymbol,
       "interval": "60",
       "timezone": "Etc/UTC",
-      "theme": "dark", // TradingView stays dark to match the terminal vibe
+      "theme": "dark",
       "style": "1",
       "locale": "en",
       "enable_publishing": false,
@@ -32,30 +32,37 @@ const TradingViewChart = memo(({ symbol }) => {
       "hide_legend": false,
       "save_image": false,
       "container_id": "tradingview_chart_container"
-    });
+    })
 
-    container.current.appendChild(script);
-  }, [symbol]);
+    container.current.appendChild(script)
+  }, [symbol])
 
   return (
-    <div className="tradingview-widget-container" ref={container} style={{ height: "100%", width: "100%" }}>
-      <div id="tradingview_chart_container" style={{ height: "100%", width: "100%" }} />
+    <div className="tradingview-widget-container" ref={container} style={{ height: '100%', width: '100%' }}>
+      <div id="tradingview_chart_container" style={{ height: '100%', width: '100%' }} />
     </div>
-  );
-});
+  )
+})
+
+TradingViewChart.displayName = 'TradingViewChart'
+
+interface BotSettings {
+  Amount: string
+  Expires: string
+  TakeProfit: string
+  StopLoss: string
+}
 
 const Trading = () => {
-  const [selectedPair, setSelectedPair] = useState('BTC/USDT');
+  const [selectedPair, setSelectedPair] = useState('BTC/USDT')
 
-  // 1. New State to manage all bot parameters
-  const [botSettings, setBotSettings] = useState({
-    strategy: 'Balanced',
-    maxTrades: '3',
-    maxDrawdown: '5.0',
-    slippage: '0.3'
-  });
+  const [botSettings, setBotSettings] = useState<BotSettings>({
+    Amount: '100',
+    Expires: '5',
+    TakeProfit: '50.0',
+    StopLoss: '35.0'
+  })
 
-  // Mock Data
   const tradingPairs = [
     { pair: 'BTC/USDT', price: '64,230.50', change: '+2.4%', isUp: true, volume: '1.2B' },
     { pair: 'ETH/USDT', price: '3,420.10', change: '+1.8%', isUp: true, volume: '800M' },
@@ -63,50 +70,43 @@ const Trading = () => {
     { pair: 'AVAX/USDT', price: '35.40', change: '-1.1%', isUp: false, volume: '120M' },
     { pair: 'LINK/USDT', price: '18.90', change: '+5.7%', isUp: true, volume: '300M' },
     { pair: 'DOGE/USDT', price: '0.145', change: '+0.5%', isUp: true, volume: '95M' },
-  ];
+  ]
 
   const TradeSettings = [
-    { keyName: 'Amount', label: 'Trade Amount', type: 'text', placeholder: '100', suffix: 'USDT' },
-    { keyName: 'Expires', label: 'Max Trades/Day', type: 'text', placeholder: '5' },
-    { keyName: 'TakeProfit', label: 'Take Profit', type: 'text', placeholder: '50.0', suffix: '%' },
-    { keyName: 'StopLoss', label: 'Stop Loss', type: 'text', placeholder: ' 35.0', suffix: '%' },
-  ];
+    { key: 'Amount' as const, label: 'Trade Amount', placeholder: '100', suffix: 'USDT' },
+    { key: 'Expires' as const, label: 'Max Trades/Day', placeholder: '5' },
+    { key: 'TakeProfit' as const, label: 'Take Profit', placeholder: '50.0', suffix: '%' },
+    { key: 'StopLoss' as const, label: 'Stop Loss', placeholder: '35.0', suffix: '%' },
+  ]
 
-  // Helper to update specific input values
-  const handleSettingChange = (key, value) => {
+  const handleSettingChange = (key: keyof BotSettings, value: string) => {
     setBotSettings((prev) => ({
       ...prev,
       [key]: value
-    }));
-  };
+    }))
+  }
 
-  // 3. Extraction Function triggered by the buttons
   const handleStartTrading = () => {
     const payload = {
       pair: selectedPair,
       parameters: botSettings
-    };
+    }
 
-    console.log("🚀 Payload Extracted:", payload);
-    alert(`Starting bot on ${payload.pair}\n\nParameters extracted:\n${JSON.stringify(payload.parameters, null, 2)}`);
-  };
+    console.log('Payload:', payload)
+    alert(`Starting bot on ${payload.pair}\n\nParameters:\n${JSON.stringify(payload.parameters, null, 2)}`)
+  }
 
   return (
     <div className="trading-page-wrapper">
       <div className="trading-grid">
 
-        {/* ========================================= */}
-        {/* LEFT/MAIN COLUMN: CONTROLS & CHART        */}
-        {/* ========================================= */}
         <div className="main-column">
 
-          {/* Unified Top Control Panel */}
-          <div className="panel top-controls-panel">
-            <div className="panel chart-container" style={{ minHeight: '450px' }}>
-              <TradingViewChart symbol={selectedPair} />
-            </div>
+          <div className="chart-container" style={{ minHeight: '450px' }}>
+            <TradingViewChart symbol={selectedPair} />
+          </div>
 
-            {/* 1. Header Info & Start Button */}
+          <div className="panel top-controls-panel">
             <div className="chart-header-row">
               <div className="pair-info">
                 <div className="pair-title-group">
@@ -127,7 +127,6 @@ const Trading = () => {
                 </div>
               </div>
 
-              {/* Desktop Start Button */}
               <button className="start-bot-btn desktop-only" onClick={handleStartTrading}>
                 <span>START TRADING</span>
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -137,37 +136,23 @@ const Trading = () => {
               </button>
             </div>
 
-            {/* 2. Bot Settings Area */}
             <div className="bot-settings-integrated">
               <div className="settings-title">
                 <div className="status-dot"></div>
-                <h3>DCA Smart-Contract</h3>
+                <h3>Trading Parameters</h3>
               </div>
               <div className="settings-grid">
                 {TradeSettings.map((setting) => (
-                  <div key={setting.label} className="modern-input-group">
+                  <div key={setting.key} className="modern-input-group">
                     <label>{setting.label}</label>
                     <div className="input-wrapper">
-                      {setting.type === 'select' ? (
-                        <select
-                          value={botSettings[setting.keyName]}
-                          onChange={(e) => handleSettingChange(setting.keyName, e.target.value)}
-                        >
-                          {setting.options.map((option) => (
-                            <option key={option} value={option}>{option}</option>
-                          ))}
-                        </select>
-                      ) : (
-                        <>
-                          <input
-                            type="text"
-                            placeholder={setting.placeholder}
-                            value={botSettings[setting.keyName]}
-                            onChange={(e) => handleSettingChange(setting.keyName, e.target.value)}
-                          />
-                          {setting.suffix && <span className="currency-badge">{setting.suffix}</span>}
-                        </>
-                      )}
+                      <input
+                        type="text"
+                        placeholder={setting.placeholder}
+                        value={botSettings[setting.key]}
+                        onChange={(e) => handleSettingChange(setting.key, e.target.value)}
+                      />
+                      {setting.suffix && <span className="currency-badge">{setting.suffix}</span>}
                     </div>
                   </div>
                 ))}
@@ -177,9 +162,6 @@ const Trading = () => {
           </div>
         </div>
 
-        {/* ========================================= */}
-        {/* RIGHT COLUMN: MARKET LIST                 */}
-        {/* ========================================= */}
         <div className="side-column">
           <div className="panel market-panel">
 
@@ -223,7 +205,7 @@ const Trading = () => {
 
       </div>
     </div>
-  );
-};
+  )
+}
 
-export default Trading;
+export default Trading

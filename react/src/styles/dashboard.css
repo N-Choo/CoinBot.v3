@@ -1,0 +1,845 @@
+/* ========================================= */
+/* CLEAN DASHBOARD STYLES — NO MARKERS       */
+/* ========================================= */
+
+/* ── 1. Layout & Positioning ──────────────── */
+.dash-wrapper {
+  padding-top: 20px;
+  padding-bottom: 30px;
+  width: 100%;
+  display: flex;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.dash-grid {
+  display: grid;
+  grid-template-columns: 1fr 340px;
+  gap: 24px;
+  width: calc(100% - 40px);
+  max-width: 1240px;
+  margin: 0 auto;
+  align-items: start;
+}
+
+.dash-main-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  min-width: 0;
+}
+
+.dash-side-col {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  height: calc(100vh - 130px);
+  position: sticky;
+  top: 95px;
+}
+
+/* ── 2. Glassmorphism Panels ──────────────── */
+.dash-panel {
+  background: transparent;
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 20px;
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+}
+
+/* ── 3. Static Card Sizing ──────────────── */
+.cards-scroll-container {
+  display: flex;
+  gap: 20px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  padding: 5px 0 15px 0;
+  width: 100%;
+}
+
+.cards-scroll-container::-webkit-scrollbar { display: none; }
+
+.static-card-wrapper {
+  flex: 0 0 calc(50% - 10px) !important;
+  width: calc(50% - 10px) !important;
+  max-width: calc(50% - 10px) !important;
+  min-width: calc(50% - 10px) !important;
+  scroll-snap-align: start;
+  box-sizing: border-box;
+}
+
+/* ── 4. Simple Chart Stylings ────────────── */
+.chart-wrapper {
+  position: relative;
+  width: 100%;
+  margin: 10px 0;
+  cursor: default;
+  overflow: visible;
+}
+
+.chart-wrapper svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+/* Simple, static line without filters or neon effects */
+.chart-line {
+  fill: none;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.chart-area {
+  opacity: 0.15;
+}
+
+/* ── 5. UI Components & Typography ────────── */
+
+/* Section headers */
+.settings-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.settings-title h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Typography */
+.dash-title-sm {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.dash-value-lg {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+  line-height: 1.2;
+  margin: 8px 0 4px;
+}
+
+.data-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.data-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+/* Price indicators */
+.price-up   { color: var(--color-primary) !important; }
+.price-down { color: var(--color-danger) !important; }
+
+.price-up-bg {
+  color: var(--color-primary);
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-down-bg {
+  color: var(--color-danger);
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid #2a2e39;
+}
+
+tbody td {
+  padding: 12px;
+  border-bottom: 1px solid #2a2e39;
+  color: var(--text-main);
+  font-size: 13px;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
+.pnl-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+.pnl-value {
+  font-size: 28px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  line-height: 1.1;
+}
+
+.pnl-badge {
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  padding: 3px 9px;
+  border-radius: 4px;
+}
+
+.pnl-range-tabs {
+  display: flex;
+  gap: 4px;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 3px;
+}
+
+.pnl-tab {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.pnl-tab-active {
+  background: var(--color-primary);
+  color: #ffffff !important;
+}
+
+.historic-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  padding: 14px 0 2px 0;
+  border-top: 1px solid #2a2e39;
+  margin-top: 4px;
+}
+
+.stat-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+
+.icon-box {
+  width: 36px;
+  height: 36px;
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid #2a2e39;
+}
+
+.badge {
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+
+.badge.active   { background: transparent; color: var(--color-primary); }
+.badge.inactive { background: transparent; color: var(--text-muted); }
+
+.tx-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 10px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.tx-row:hover { background: transparent; }
+
+.dash-scroll::-webkit-scrollbar        { width: 4px; }
+.dash-scroll::-webkit-scrollbar-track  { background: transparent; }
+.dash-scroll::-webkit-scrollbar-thumb  { background: var(--glass-strong); border-radius: 4px; }
+
+/* Filter & View Toggle */
+.filter-btn {
+  background: transparent;
+  border: 1px solid #2a2e39;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+.filter-btn.active {
+  background: transparent;
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.filter-btn:hover:not(.active) {
+  background: transparent;
+}
+
+.view-toggle {
+  display: flex;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 2px;
+}
+.vt-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 5px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+.vt-btn.active {
+  background: var(--color-primary);
+  color: #ffffff;
+}
+.vt-btn:hover:not(.active) {
+  color: var(--text-main);
+}
+
+/* Progress track (TradingContractCard) */
+.progress-track {
+  display: flex;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  margin-bottom: 16px;
+}
+.progress-track > div {
+  height: 100%;
+}
+
+/* ── Balance Stats Grid ── */
+.balance-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+  width: 100%;
+}
+
+.balance-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.balance-change-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.balance-change-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── PnL Chart ── */
+.pnl-right-col {
+  text-align: right;
+}
+
+.pnl-range-wrap {
+  margin-top: 8px;
+}
+
+.pnl-chart-area {
+  height: 150px;
+}
+
+/* ── Contracts Toolbar ── */
+.contracts-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.contracts-filters {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.contracts-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.scroll-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.contracts-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-cell-padded {
+  padding: 12px;
+}
+
+.table-cell-right {
+  padding: 12px;
+  text-align: right;
+}
+
+/* ── Contract Card ── */
+.contract-card-wrap {
+  width: 100%;
+  margin: 0;
+}
+
+.contract-card-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.contract-card-pair {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.contract-card-symbol {
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.contract-card-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+.contract-card-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.contract-card-stats-right {
+  text-align: right;
+}
+
+/* ── Sidebar Actions ── */
+.wallet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.wallet-btn-full {
+  width: 100%;
+  justify-content: center;
+}
+
+.wallet-available {
+  margin-top: 15px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.wallet-available strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.activity-section {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 300px;
+}
+
+.activity-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.activity-subtitle {
+  margin-bottom: 20px;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tx-arrow {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.tx-arrow-in {
+  color: var(--color-primary);
+}
+
+.tx-arrow-out {
+  color: var(--color-danger);
+}
+
+.tx-body {
+  flex: 1;
+}
+
+.tx-type {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.tx-hash {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.tx-amount-col {
+  text-align: right;
+}
+
+.tx-amount {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tx-amount-in {
+  color: var(--color-primary);
+}
+
+.tx-amount-out {
+  color: var(--text-main);
+}
+
+.tx-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── Modal ── */
+.modal-panel {
+  width: 100%;
+  max-width: 420px;
+  padding: 30px;
+}
+
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.modal-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.modal-info-box {
+  background: transparent;
+  border: 1px solid #2a2e39;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal-info-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.modal-info-value {
+  color: var(--color-primary);
+}
+
+.modal-form-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.modal-input-wrap {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.modal-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 12px 50px 12px 14px;
+  color: var(--text-main);
+  font-size: 16px;
+  outline: none;
+}
+
+.modal-currency-suffix {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.modal-cancel-btn {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  color: var(--text-main);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-confirm-btn {
+  flex: 2;
+  justify-content: center;
+}
+
+@media (max-width: 1024px) {
+  .dash-grid { grid-template-columns: 1fr; }
+  .dash-side-col { height: auto; position: static; }
+  .static-card-wrapper {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .dash-wrapper {
+    padding-top: 10px;
+    padding-bottom: 20px;
+  }
+
+  .dash-grid {
+    width: calc(100% - 20px);
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .balance-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .balance-stats-grid > .dash-panel:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .balance-stats-grid > .dash-panel {
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+
+  .balance-card-header {
+    margin-bottom: 4px;
+  }
+
+  .balance-card-header .icon-box {
+    width: 28px;
+    height: 28px;
+  }
+
+  .balance-card-header .icon-box svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .dash-value-lg {
+    font-size: 22px;
+    margin: 2px 0 2px;
+  }
+
+  .balance-change-row {
+    font-size: 12px;
+    gap: 6px;
+  }
+
+  .pnl-value {
+    font-size: 22px;
+  }
+
+  .pnl-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pnl-right-col {
+    text-align: left;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .pnl-chart-area {
+    height: 120px;
+  }
+
+  .contracts-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .contracts-filters {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .contracts-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .wallet-actions {
+    gap: 10px;
+  }
+
+  .activity-section {
+    min-height: 200px;
+  }
+
+  .modal-panel {
+    max-width: calc(100% - 40px);
+    padding: 20px;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .modal-cancel-btn {
+    order: 2;
+  }
+
+  .modal-confirm-btn {
+    order: 1;
+  }
+}
+
+@media (max-width: 400px) {
+  .historic-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .pnl-range-tabs {
+    flex-wrap: wrap;
+  }
+
+  .settings-title h3 {
+    font-size: 13px;
+  }
+}
