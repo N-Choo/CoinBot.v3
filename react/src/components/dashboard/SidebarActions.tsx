@@ -25,42 +25,39 @@ export default function SidebarActions() {
           <div className="status-dot" />
           <h3>Wallet Actions</h3>
         </div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 20 }}>
-          <button className="start-bot-btn" style={{ width: '100%', justifyContent: 'center' }}
+        <div className="wallet-actions">
+          <button className="start-bot-btn wallet-btn-full"
             onClick={() => setModal('deposit')}>
             DEPOSIT FUNDS
           </button>
-          <button className="disconnect-btn" style={{ width: '100%', padding: 10, textAlign: 'center' }}
+          <button className="disconnect-btn wallet-btn-full" style={{ padding: 10, textAlign: 'center' }}
             onClick={() => setModal('withdraw')}>
             WITHDRAW ASSETS
           </button>
         </div>
-        <div style={{ marginTop: 15, fontSize: 11, color: 'var(--text-muted)', textAlign: 'center' }}>
-          Available: <span style={{ color: 'var(--text-main)', fontWeight: 600 }}>{user.available}</span>
+        <div className="wallet-available">
+          Available: <strong>{user.available}</strong>
         </div>
       </div>
 
-      <div className="dash-panel dash-scroll" style={{ flex: 1, overflowY: 'auto', minHeight: 300 }}>
-        <h3 style={{ margin: '0 0 4px', fontSize: 14 }}>Recent Activity</h3>
-        <div className="dash-title-sm" style={{ marginBottom: 20 }}>History</div>
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+      <div className="dash-panel dash-scroll activity-section">
+        <h3 className="activity-title">Recent Activity</h3>
+        <div className="dash-title-sm activity-subtitle">History</div>
+        <div className="activity-list">
           {tx.map(t => (
             <div key={t.id} className="tx-row">
-              <div style={{
-                color: t.in ? 'var(--color-primary)' : 'var(--color-danger)',
-                fontSize: 16, fontWeight: 'bold'
-              }}>
+              <div className={`tx-arrow ${t.in ? 'tx-arrow-in' : 'tx-arrow-out'}`}>
                 {t.in ? '\u2193' : '\u2191'}
               </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-main)' }}>{t.type}</div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.hash}</div>
+              <div className="tx-body">
+                <div className="tx-type">{t.type}</div>
+                <div className="tx-hash">{t.hash}</div>
               </div>
-              <div style={{ textAlign: 'right' }}>
-                <div style={{ fontSize: 12, fontWeight: 600, color: t.in ? 'var(--color-primary)' : 'var(--text-main)' }}>
+              <div className="tx-amount-col">
+                <div className={`tx-amount ${t.in ? 'tx-amount-in' : 'tx-amount-out'}`}>
                   {t.amount}
                 </div>
-                <div style={{ fontSize: 10, color: 'var(--text-muted)' }}>{t.time}</div>
+                <div className="tx-time">{t.time}</div>
               </div>
             </div>
           ))}
@@ -68,35 +65,26 @@ export default function SidebarActions() {
       </div>
 
       {modal && (
-        <div className="modal-overlay" onClick={close}
-          style={{
-            position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 9999
-          }}>
-          <div onClick={e => e.stopPropagation()} className="dash-panel"
-            style={{ width: '100%', maxWidth: 420, padding: 30 }}>
-            <h2 style={{ margin: '0 0 8px', fontSize: 18 }}>
+        <div className="modal-overlay" onClick={close}>
+          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
+            <h2 className="modal-title">
               {modal === 'deposit' ? 'Deposit Funds' : 'Withdraw Assets'}
             </h2>
-            <p style={{ color: 'var(--text-muted)', fontSize: 12, marginBottom: 20 }}>
+            <p className="modal-desc">
               {modal === 'deposit'
                 ? 'Transfer USD from your connected bank or wallet.'
                 : 'Transfer funds to your external wallet.'}
             </p>
 
-            <div style={{
-              background: 'transparent', border: '1px solid #2a2e39', padding: 15, borderRadius: 4,
-              marginBottom: 20, display: 'flex', flexDirection: 'column', gap: 8,
-              fontSize: 12, color: 'var(--text-muted)'
-            }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+            <div className="modal-info-box">
+              <div className="modal-info-row">
                 <span>{modal === 'deposit' ? 'Connected Wallet' : 'Available Balance'}</span>
-                <span style={{ color: 'var(--color-primary)' }}>
+                <span className="modal-info-value">
                   {modal === 'deposit' ? user.wallet : user.available}
                 </span>
               </div>
               {modal === 'withdraw' && (
-                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <div className="modal-info-row">
                   <span>24h Limit Remaining</span>
                   <span>{user.dailyLimit}</span>
                 </div>
@@ -104,32 +92,20 @@ export default function SidebarActions() {
             </div>
 
             <form onSubmit={e => { e.preventDefault(); close() }}>
-              <label style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)', marginBottom: 8, fontWeight: 600 }}>
-                Amount in USD
-              </label>
-              <div style={{ position: 'relative', marginBottom: 20 }}>
+              <label className="modal-form-label">Amount in USD</label>
+              <div className="modal-input-wrap">
                 <input
                   autoFocus required type="number" placeholder="0.00"
                   value={amount} onChange={e => setAmount(e.target.value)}
-                  style={{
-                    width: '100%', background: 'transparent', border: '1px solid #2a2e39',
-                    borderRadius: 4, padding: '12px 50px 12px 14px', color: 'var(--text-main)',
-                    fontSize: 16, outline: 'none'
-                  }}
+                  className="modal-input"
                 />
-                <span style={{ position: 'absolute', right: 14, top: '50%', transform: 'translateY(-50%)', fontSize: 12, color: 'var(--text-muted)' }}>
-                  USD
-                </span>
+                <span className="modal-currency-suffix">USD</span>
               </div>
-              <div style={{ display: 'flex', gap: 10 }}>
-                <button type="button" onClick={close}
-                  style={{
-                    flex: 1, padding: 12, background: 'transparent', border: '1px solid #2a2e39',
-                    borderRadius: 4, color: 'var(--text-main)', fontWeight: 600, cursor: 'pointer'
-                  }}>
+              <div className="modal-actions">
+                <button type="button" onClick={close} className="modal-cancel-btn">
                   CANCEL
                 </button>
-                <button type="submit" className="start-bot-btn" style={{ flex: 2, justifyContent: 'center' }}>
+                <button type="submit" className="start-bot-btn modal-confirm-btn">
                   {modal === 'deposit' ? 'CONFIRM DEPOSIT' : 'CONFIRM WITHDRAWAL'}
                 </button>
               </div>

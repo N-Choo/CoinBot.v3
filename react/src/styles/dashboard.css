@@ -390,6 +390,319 @@ tbody tr:last-child td {
   height: 100%;
 }
 
+/* ── Balance Stats Grid ── */
+.balance-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 24px;
+}
+
+.balance-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.balance-change-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.balance-change-label {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── PnL Chart ── */
+.pnl-right-col {
+  text-align: right;
+}
+
+.pnl-range-wrap {
+  margin-top: 8px;
+}
+
+.pnl-chart-area {
+  height: 150px;
+}
+
+/* ── Contracts Toolbar ── */
+.contracts-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.contracts-filters {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+}
+
+.contracts-actions {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.scroll-btns {
+  display: flex;
+  gap: 4px;
+}
+
+.contracts-empty {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+  width: 100%;
+}
+
+.table-wrap {
+  overflow-x: auto;
+}
+
+.table-cell-padded {
+  padding: 12px;
+}
+
+.table-cell-right {
+  padding: 12px;
+  text-align: right;
+}
+
+/* ── Contract Card ── */
+.contract-card-wrap {
+  width: 100%;
+  margin: 0;
+}
+
+.contract-card-header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 16px;
+}
+
+.contract-card-pair {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.contract-card-symbol {
+  font-weight: bold;
+  color: var(--color-primary);
+}
+
+.contract-card-title {
+  margin: 0;
+  font-size: 16px;
+  color: var(--text-main);
+}
+
+.contract-card-stats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.contract-card-stats-right {
+  text-align: right;
+}
+
+/* ── Sidebar Actions ── */
+.wallet-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.wallet-btn-full {
+  width: 100%;
+  justify-content: center;
+}
+
+.wallet-available {
+  margin-top: 15px;
+  font-size: 11px;
+  color: var(--text-muted);
+  text-align: center;
+}
+
+.wallet-available strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+.activity-section {
+  flex: 1;
+  overflow-y: auto;
+  min-height: 300px;
+}
+
+.activity-title {
+  margin: 0 0 4px;
+  font-size: 14px;
+}
+
+.activity-subtitle {
+  margin-bottom: 20px;
+}
+
+.activity-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tx-arrow {
+  font-size: 16px;
+  font-weight: bold;
+}
+
+.tx-arrow-in {
+  color: var(--color-primary);
+}
+
+.tx-arrow-out {
+  color: var(--color-danger);
+}
+
+.tx-body {
+  flex: 1;
+}
+
+.tx-type {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.tx-hash {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.tx-amount-col {
+  text-align: right;
+}
+
+.tx-amount {
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.tx-amount-in {
+  color: var(--color-primary);
+}
+
+.tx-amount-out {
+  color: var(--text-main);
+}
+
+.tx-time {
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+/* ── Modal ── */
+.modal-panel {
+  width: 100%;
+  max-width: 420px;
+  padding: 30px;
+}
+
+.modal-title {
+  margin: 0 0 8px;
+  font-size: 18px;
+}
+
+.modal-desc {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-bottom: 20px;
+}
+
+.modal-info-box {
+  background: transparent;
+  border: 1px solid #2a2e39;
+  padding: 15px;
+  border-radius: 4px;
+  margin-bottom: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal-info-row {
+  display: flex;
+  justify-content: space-between;
+}
+
+.modal-info-value {
+  color: var(--color-primary);
+}
+
+.modal-form-label {
+  display: block;
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+
+.modal-input-wrap {
+  position: relative;
+  margin-bottom: 20px;
+}
+
+.modal-input {
+  width: 100%;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  padding: 12px 50px 12px 14px;
+  color: var(--text-main);
+  font-size: 16px;
+  outline: none;
+}
+
+.modal-currency-suffix {
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.modal-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.modal-cancel-btn {
+  flex: 1;
+  padding: 12px;
+  background: transparent;
+  border: 1px solid #2a2e39;
+  border-radius: 4px;
+  color: var(--text-main);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.modal-confirm-btn {
+  flex: 2;
+  justify-content: center;
+}
+
 @media (max-width: 1024px) {
   .dash-grid { grid-template-columns: 1fr; }
   .dash-side-col { height: auto; position: static; }

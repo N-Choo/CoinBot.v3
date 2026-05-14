@@ -1,102 +1,42 @@
-import { Route, Routes } from "react-router-dom";
-import Topbar from "./components/topbar";
-import Trading from "./pages/tradingPage";
-import { Toaster } from "react-hot-toast";
-import CoinBot from "./pages/homePage";
-import Dashboad from "./pages/dashboard";
-import AuthGuard from "./components/auth_guard.jsx"; // Import the guard
+import { Route, Routes } from 'react-router-dom'
+import { Toaster } from 'react-hot-toast'
+import Topbar from './components/topbar'
+import AuthGuard from './components/auth_guard'
+import Landing from './pages/homePage'
+import Trading from './pages/tradingPage'
+import Dashboard from './pages/dashboard'
+import './App.css'
 
 export const PATHS = {
-  HOME: "/",
-  TRADE: "/trading",
-  DASHBOARD: "/dashboard",
-} as const;
+  HOME: '/',
+  TRADE: '/trading',
+  DASHBOARD: '/dashboard',
+} as const
 
-
-function AppRoutes() {
+export default function AppRoutes() {
   return (
     <>
-      < Toaster
-        containerStyle={{
-          top: '50%',
-          transform: 'translateY(-10%)',
-        }}
+      <Toaster
         position="top-center"
-        reverseOrder={false}
         toastOptions={{
-          // Default options for all toasts
-          duration: 1500,
+          duration: 2000,
           style: {
-            background: '#333',
-            color: '#fff',
+            background: 'var(--bg-panel)',
+            color: 'var(--text-main)',
+            border: '1px solid var(--border-light)',
             borderRadius: '10px',
-            fontSize: '14px',
-            padding: '16px',
-          },
-
-          // Specific styles for Success
-          success: {
-            duration: 1200,
-            iconTheme: {
-              primary: '#4ade80', // Tailwind-style green
-              secondary: '#fff',
-            },
-          },
-
-          // Specific styles for Error
-          error: {
-            iconTheme: {
-              primary: '#ef4444', // Tailwind-style red
-              secondary: '#fff',
-            },
-            style: {
-              border: '1px solid #ef4444',
-            },
+            fontSize: '13px',
           },
         }}
       />
       <Topbar />
-
-      <div style={{
-        display: "flex",
-        flexDirection: "row",
-        flex: 1,
-        paddingTop: "75px"
-      }}>
-
-        <main style={{
-          flex: 1,
-          position: "relative",
-          width: "100%",
-          display: "flex",
-          justifyContent: "center"
-        }}>
-          <Routes>
-            {/* Public Route */}
-            <Route path={PATHS.HOME} element={<CoinBot />} />
-
-            {/* Protected Routes */}
-            <Route
-              path={PATHS.TRADE}
-              element={
-                <AuthGuard>
-                  <Trading />
-                </AuthGuard>
-              }
-            />
-            <Route
-              path={PATHS.DASHBOARD}
-              element={
-                <AuthGuard>
-                  <Dashboad />
-                </AuthGuard>
-              }
-            />
-          </Routes>
-        </main>
+      <div className="app-content">
+        <Routes>
+          <Route path={PATHS.HOME} element={<Landing />} />
+          <Route path={PATHS.TRADE} element={<AuthGuard><Trading /></AuthGuard>} />
+          <Route path={PATHS.DASHBOARD} element={<AuthGuard><Dashboard /></AuthGuard>} />
+        </Routes>
       </div>
     </>
-  );
+  )
 }
-
-export default AppRoutes;

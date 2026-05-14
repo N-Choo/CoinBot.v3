@@ -2,7 +2,7 @@ import BalanceStats from '../components/dashboard/BalanceStats'
 import PnlChart from '../components/dashboard/PnlChart'
 import TradingContracts from '../components/dashboard/TradingContracts'
 import SidebarActions from '../components/dashboard/SidebarActions'
-import '../styles/dashbord.css'
+import '../styles/dashboard.css'
 
 export default function Dashboard() {
   return (

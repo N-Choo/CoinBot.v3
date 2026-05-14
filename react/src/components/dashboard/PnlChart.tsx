@@ -55,17 +55,17 @@ export default function PnlChart() {
   const color = up ? 'var(--color-primary)' : 'var(--color-danger)'
 
   return (
-    <div className="dash-panel pnl-panel">
+    <div className="dash-panel">
       <div className="pnl-header">
         <div>
           <div className="dash-title-sm">PnL Performance</div>
           <div className="pnl-value" style={{ color }}>${last.toLocaleString()}</div>
         </div>
-        <div style={{ textAlign: 'right' }}>
+        <div className="pnl-right-col">
           <div className="pnl-badge" style={{ color }}>
             {up ? '\u25B2' : '\u25BC'} {Math.abs(Number(pct))}%
           </div>
-          <div className="pnl-range-tabs" style={{ marginTop: 8 }}>
+          <div className="pnl-range-tabs pnl-range-wrap">
             {RANGES.map(r => (
               <button
                 key={r.label}
@@ -79,7 +79,7 @@ export default function PnlChart() {
         </div>
       </div>
 
-      <div className="chart-wrapper" style={{ height: 150 }}>
+      <div className="chart-wrapper pnl-chart-area">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none">
           <defs>
             <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
