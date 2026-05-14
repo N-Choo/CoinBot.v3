@@ -11,11 +11,11 @@ describe('TradingPage', () => {
     })
   })
 
-  it('renders the DCA Smart-Contract settings', async () => {
+  it('renders the Trading Parameters settings', async () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter><Trading /></BrowserRouter>)
     await waitFor(() => {
-      expect(screen.getByText('DCA Smart-Contract')).toBeTruthy()
+      expect(screen.getByText('Trading Parameters')).toBeTruthy()
     })
   })
 

@@ -302,6 +302,7 @@
   max-width: 1240px;
   margin: 0 auto;
   padding: 0 24px 40px;
+  overflow: hidden;
 }
 
 .reactor-box {
@@ -314,6 +315,7 @@
   align-items: center;
   gap: 24px;
   overflow: hidden;
+  width: 100%;
 }
 
 .reactor-header {
@@ -333,6 +335,7 @@
   justify-content: center;
   width: 100%;
   gap: 0;
+  overflow: hidden;
 }
 
 .reactor-node {
@@ -442,6 +445,11 @@
   50% { transform: translateY(-6px); }
 }
 
+@keyframes floatCoreMobile {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
 /* ── Footer ── */
 .footer {
   text-align: center;
@@ -491,18 +499,252 @@
 }
 
 /* ── Responsive ── */
+
+/* Tablet */
 @media (max-width: 860px) {
-  .hero h1 { font-size: 34px; }
-  .stats-inner { gap: 24px; padding: 24px; flex-wrap: wrap; }
-  .stat-div:nth-child(6) { display: none; }
-  .feat-grid { grid-template-columns: 1fr; }
-  .section-title { font-size: 24px; }
+  .hero {
+    padding: 80px 20px 40px;
+  }
+
+  .hero h1 {
+    font-size: 32px;
+    letter-spacing: -1px;
+  }
+
+  .hero-sub {
+    font-size: 14px;
+    max-width: 440px;
+  }
+
+  .hero-body {
+    gap: 16px;
+  }
+
+  .hero-actions {
+    margin-top: 4px;
+  }
+
+  .spark:nth-child(5),
+  .spark:nth-child(6),
+  .spark:nth-child(7),
+  .spark:nth-child(8) {
+    display: none;
+  }
+
+  .stats-inner {
+    gap: 24px;
+    padding: 24px 20px;
+    flex-wrap: wrap;
+    justify-content: space-around;
+  }
+
+  .stat-div:nth-child(6) {
+    display: none;
+  }
+
+  .feat-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .section-title {
+    font-size: 22px;
+  }
+
+  .section-sub {
+    margin-bottom: 28px;
+  }
+
+  /* Reactor: horizontal scroll with snap */
+  .reactor {
+    padding: 0 0 40px;
+    max-width: 100%;
+  }
+
+  .reactor-box {
+    padding: 40px 0;
+    overflow: hidden;
+    max-width: 100%;
+  }
+
+  .reactor-header {
+    padding: 0 20px;
+  }
+
+  .reactor-flow {
+    overflow-x: auto;
+    scroll-snap-type: x mandatory;
+    -webkit-overflow-scrolling: touch;
+    padding: 8px 20px 0 20px;
+    gap: 0;
+    justify-content: flex-start;
+    -ms-overflow-style: none;
+    scrollbar-width: none;
+  }
+
+  .reactor-flow::-webkit-scrollbar {
+    display: none;
+  }
+
+  .reactor-node {
+    flex-shrink: 0;
+    width: 90px;
+    scroll-snap-align: center;
+    min-width: 90px;
+  }
+
+  .reactor-line {
+    min-width: 12px;
+    flex-shrink: 0;
+  }
+
+  .footer-inner {
+    flex-direction: column;
+    gap: 8px;
+    text-align: center;
+  }
 }
 
+/* Phone */
 @media (max-width: 520px) {
-  .hero { padding: 100px 16px 40px; }
-  .hero h1 { font-size: 26px; }
-  .hero-actions { flex-direction: column; }
-  .stats-inner { gap: 16px; padding: 20px; }
-  .stat-num { font-size: 20px; }
+  .hero {
+    padding: 60px 16px 32px;
+  }
+
+  .hero h1 {
+    font-size: 24px;
+  }
+
+  .hero-sub {
+    font-size: 13px;
+    max-width: 100%;
+  }
+
+  .hero-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+
+  .hero-actions .btn-p,
+  .hero-actions .btn-s {
+    width: 100%;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .spark:nth-child(3),
+  .spark:nth-child(4) {
+    display: none;
+  }
+
+  .stats {
+    padding: 0 12px 32px;
+  }
+
+  .stats-inner {
+    width: 100%;
+    gap: 14px;
+    padding: 20px 14px;
+  }
+
+  .stat-num {
+    font-size: 20px;
+  }
+
+  .stat-label {
+    font-size: 10px;
+  }
+
+  .stat-div {
+    height: 24px;
+  }
+
+  .features {
+    padding: 24px 16px 40px;
+  }
+
+  .feat-card {
+    padding: 20px 16px;
+  }
+
+  .feat-card h3 {
+    font-size: 15px;
+  }
+
+  .feat-card p {
+    font-size: 12px;
+  }
+
+  .feat-num {
+    font-size: 10px;
+    top: 10px;
+    right: 12px;
+  }
+
+  .feat-icon {
+    width: 32px;
+    height: 32px;
+    margin-bottom: 10px;
+  }
+
+  .feat-icon svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .reactor {
+    padding: 0 0 32px;
+    overflow: hidden;
+  }
+
+  .reactor-box {
+    padding: 28px 0;
+    border-left: none;
+    border-right: none;
+    border-radius: 0;
+  }
+
+  .reactor-flow {
+    padding: 4px 8px 0 8px;
+  }
+
+  .reactor-node {
+    width: 72px;
+    min-width: 72px;
+    flex-shrink: 0;
+    scroll-snap-align: center;
+  }
+
+  .reactor-core {
+    width: 36px;
+    height: 36px;
+    animation: floatCoreMobile 3s ease-in-out infinite;
+  }
+
+  .reactor-core-inner {
+    width: 10px;
+    height: 10px;
+  }
+
+  .reactor-core::before {
+    inset: -4px;
+  }
+
+  .reactor-label {
+    font-size: 8px;
+  }
+
+  .reactor-sub {
+    font-size: 9px;
+  }
+
+  .reactor-line {
+    min-width: 8px;
+    flex-shrink: 0;
+  }
+
+  .footer {
+    padding: 24px 16px;
+    font-size: 11px;
+  }
 }

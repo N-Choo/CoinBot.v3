@@ -47,8 +47,8 @@
   border-radius: 4px;
   padding: 20px;
   position: relative;
-  overflow: hidden;
   box-sizing: border-box;
+  width: 100%;
 }
 
 /* ── 3. Static Card Sizing ──────────────── */
@@ -395,6 +395,7 @@ tbody tr:last-child td {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
   gap: 24px;
+  width: 100%;
 }
 
 .balance-card-header {
@@ -709,5 +710,136 @@ tbody tr:last-child td {
   .static-card-wrapper {
     flex: 0 0 100% !important;
     max-width: 100% !important;
+  }
+}
+
+@media (max-width: 768px) {
+  .dash-wrapper {
+    padding-top: 10px;
+    padding-bottom: 20px;
+  }
+
+  .dash-grid {
+    width: calc(100% - 20px);
+    gap: 16px;
+    min-width: 0;
+  }
+
+  .balance-stats-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    gap: 12px;
+    width: 100%;
+    min-width: 0;
+  }
+
+  .balance-stats-grid > .dash-panel:first-child {
+    grid-column: 1 / -1;
+  }
+
+  .balance-stats-grid > .dash-panel {
+    border-radius: 4px;
+    padding: 14px 16px;
+  }
+
+  .balance-card-header {
+    margin-bottom: 4px;
+  }
+
+  .balance-card-header .icon-box {
+    width: 28px;
+    height: 28px;
+  }
+
+  .balance-card-header .icon-box svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .dash-value-lg {
+    font-size: 22px;
+    margin: 2px 0 2px;
+  }
+
+  .balance-change-row {
+    font-size: 12px;
+    gap: 6px;
+  }
+
+  .pnl-value {
+    font-size: 22px;
+  }
+
+  .pnl-header {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .pnl-right-col {
+    text-align: left;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+
+  .pnl-chart-area {
+    height: 120px;
+  }
+
+  .contracts-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 12px;
+  }
+
+  .contracts-filters {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .contracts-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .wallet-actions {
+    gap: 10px;
+  }
+
+  .activity-section {
+    min-height: 200px;
+  }
+
+  .modal-panel {
+    max-width: calc(100% - 40px);
+    padding: 20px;
+  }
+
+  .modal-actions {
+    flex-direction: column;
+  }
+
+  .modal-cancel-btn {
+    order: 2;
+  }
+
+  .modal-confirm-btn {
+    order: 1;
+  }
+}
+
+@media (max-width: 400px) {
+  .historic-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+
+  .pnl-range-tabs {
+    flex-wrap: wrap;
+  }
+
+  .settings-title h3 {
+    font-size: 13px;
   }
 }

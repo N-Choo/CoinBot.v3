@@ -139,7 +139,7 @@ const Trading = () => {
             <div className="bot-settings-integrated">
               <div className="settings-title">
                 <div className="status-dot"></div>
-                <h3>DCA Smart-Contract</h3>
+                <h3>Trading Parameters</h3>
               </div>
               <div className="settings-grid">
                 {TradeSettings.map((setting) => (
