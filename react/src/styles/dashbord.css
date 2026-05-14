@@ -102,6 +102,129 @@
 }
 
 /* ── 5. UI Components & Typography ────────── */
+
+/* Section headers */
+.settings-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--color-primary);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--primary-glow);
+}
+
+.settings-title h3 {
+  margin: 0;
+  color: var(--text-main);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+/* Typography */
+.dash-title-sm {
+  font-size: 12px;
+  color: var(--text-muted);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+.dash-value-lg {
+  font-size: 32px;
+  font-weight: 800;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+  line-height: 1.2;
+  margin: 8px 0 4px;
+}
+
+.data-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.data-value {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-mono);
+  color: var(--text-main);
+}
+
+.stat-label {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-weight: 500;
+  margin-bottom: 4px;
+}
+
+/* Price indicators */
+.price-up   { color: var(--color-primary) !important; }
+.price-down { color: var(--color-danger) !important; }
+
+.price-up-bg {
+  color: var(--color-primary);
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.price-down-bg {
+  color: var(--color-danger);
+  background: transparent;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* Table styles */
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+thead th {
+  text-align: left;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  border-bottom: 1px solid #2a2e39;
+}
+
+tbody td {
+  padding: 12px;
+  border-bottom: 1px solid #2a2e39;
+  color: var(--text-main);
+  font-size: 13px;
+}
+
+tbody tr:last-child td {
+  border-bottom: none;
+}
+
+/* Modal overlay */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+}
 .pnl-header {
   display: flex;
   justify-content: space-between;
@@ -141,7 +264,7 @@
   font-size: 11px;
   font-weight: 600;
   padding: 4px 10px;
-  border-radius: 6px;
+  border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
 }

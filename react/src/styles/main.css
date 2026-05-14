@@ -1,129 +1,283 @@
-/* ========================================= */
-/* 🌞 LIGHT MODE VARIABLES (DEFAULT)         */
-/* ========================================= */
-
 :root {
-  /* --- 1. Brand Colors --- */
   --color-primary: #1dcd9f;
   --color-primary-dark: #10a37c;
-  --color-accent: #a855f7;
-  --color-danger: #ff4a4a;
-  
-  /* --- 2. Typography --- */
-  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-  --font-mono: 'JetBrains Mono', monospace;
-  
-  /* --- 3. Text Colors --- */
-  --text-main: #0f172a;        /* High contrast slate */
-  --text-muted: #64748b;       /* Medium slate */
-  --text-inverse: #ffffff;     /* White text on dark elements */
-  --text-btn: #0f172a;         /* Dark text for primary buttons */
-  --text-footer: #94a3b8;      /* Lightest text for footer */
-  
-  /* --- 4. Solid Backgrounds --- */
-  --bg-app: #f1f5f9;           /* Main body background */
-  --bg-panel: #ffffff;         /* Cards, topbar, and panels */
-  --bg-input: #f1f5f9;         /* Form inputs and search bars */
-  --bg-hover: #e2e8f0;         /* Button and list hover states */
-  --bg-active: #e6f9f5;        /* Active tab/list item background */
-  --bg-avatar: #e2e8f0;        /* Placeholder for images */
-  
-  /* --- 5. Status Backgrounds --- */
-  --bg-success: #e6f9f5;       /* Minty background for success */
-  --bg-danger: #ffeded;        /* Red background for errors/disconnect */
-  
-  /* --- 6. Borders --- */
-  --border-light: rgba(0, 0, 0, 0.05); /* Subtle dividers */
-  --border-strong: #cbd5e1;            /* Input borders, card outlines */
-  
-  /* --- 7. Shadows & Glows --- */
-  --shadow-panel: 0 8px 32px #cbd5e1;
-  --shadow-btn: 0 8px 20px #a7f3d0;
-  --primary-glow: #a7f3d0;
-  --primary-shadow: #a7f3d0;
-  --accent-alpha: rgba(168, 85, 247, 0.1); /* Soft purple glow */
-  
-  /* --- 8. Glassmorphism Overlays --- */
-  --glass-light: rgba(0, 0, 0, 0.03);  
-  --glass-medium: rgba(0, 0, 0, 0.05); 
-  --glass-hover: rgba(0, 0, 0, 0.08);  
-  --glass-strong: rgba(0, 0, 0, 0.1);  
-  
-  /* --- 9. Gradients --- */
-  --gradient-btn: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
-  --gradient-text: linear-gradient(90deg, var(--color-primary), var(--color-accent));
-  
-  /* --- 10. Layout Setup --- */
+  --color-accent: #fb7185;
+  --color-danger: #ef4444;
+  --text-main: #0f172a;
+  --text-muted: #64748b;
+  --text-muted-2: #94a3b8;
+  --text-inverse: #ffffff;
+  --text-btn: #ffffff;
+  --text-footer: #94a3b8;
+  --bg-app: #f8fafc;
+  --bg-panel: #ffffff;
+  --bg-input: #f1f5f9;
+  --bg-hover: #e2e8f0;
+  --bg-active: #e6f9f5;
+  --bg-success: #e6f9f5;
+  --bg-danger: #fef2f2;
+  --border-light: rgba(0, 0, 0, 0.06);
+  --border-strong: rgba(0, 0, 0, 0.12);
+  --glass-medium: rgba(0, 0, 0, 0.05);
+  --glass-hover: rgba(0, 0, 0, 0.08);
+  --glass-strong: rgba(0, 0, 0, 0.1);
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', monospace;
   --max-width: 1200px;
+  --gradient-btn: linear-gradient(135deg, #1dcd9f 0%, #10a37c 100%);
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.06), 0 1px 2px rgba(0, 0, 0, 0.04);
+  --shadow-btn: 0 2px 8px rgba(29, 205, 159, 0.25);
+  --primary-glow: rgba(29, 205, 159, 0.35);
+  --accent-alpha: rgba(168, 85, 247, 0.25);
+  --primary-shadow: rgba(29, 205, 159, 0.15);
 }
 
-/* ========================================= */
-/* 🌙 DARK MODE VARIABLES                    */
-/* ========================================= */
-
-[data-theme="dark"] {
-  /* Brand */
-  --color-danger: #ff5c5c;     /* Brightened for dark mode contrast */
-  
-  /* Text */
-  --text-main: #f8fafc;        /* Off-white */
-  --text-muted: #94a3b8;       /* Medium dark slate */
-  --text-inverse: #0f172a;     /* Dark slate on light buttons */
-  
-  /* Backgrounds */
-  --bg-app: #0f172a;           /* Deep slate core background (from bg.tsx) */
-  --bg-panel: transparent;         /* Lighter slate for cards */
-  --bg-input: #0f172a;         /* Inset look for inputs */
-  --bg-hover: #334155;         
-  --bg-active:  rgba(0, 0, 0, 0.4);        
-  
-  /* Status */
-  --bg-success: transparent;       
-  --bg-danger:  transparent;      
-  
-  /* Borders */
-  --border-light: #334155;     
-  --border-strong: #475569;    
-  
-  /* Shadows & Glows */
-  --shadow-panel: 0 8px 32px rgba(2, 6, 23, 0.8); /* Near black shadow */
-  --shadow-btn: 0 8px 20px rgba(6, 78, 59, 0.6);  /* Dark mint shadow */
-  --primary-glow: rgba(6, 78, 59, 0.8);
-  --primary-shadow: rgba(6, 78, 59, 0.8);
-  --accent-alpha: rgba(168, 85, 247, 0.15);
-  
-  /* Glassmorphism Overlays (Flipped to White opacity for dark mode) */
-  --glass-light: rgba(255, 255, 255, 0.03);
-  --glass-medium: rgba(255, 255, 255, 0.05);
+[data-theme='dark'] {
+  --color-primary: #1dcd9f;
+  --color-primary-dark: #10a37c;
+  --color-accent: #fb7185;
+  --color-danger: #f87171;
+  --text-main: #f1f5f9;
+  --text-muted: #94a3b8;
+  --text-muted-2: #64748b;
+  --text-inverse: #0f172a;
+  --text-btn: #ffffff;
+  --text-footer: #475569;
+  --bg-app: #0b1120;
+  --bg-panel: #131c2e;
+  --bg-input: #0b1120;
+  --bg-hover: #1e293b;
+  --bg-active: rgba(29, 205, 159, 0.1);
+  --bg-success: rgba(29, 205, 159, 0.12);
+  --bg-danger: rgba(239, 68, 68, 0.12);
+  --border-light: rgba(255, 255, 255, 0.06);
+  --border-strong: rgba(255, 255, 255, 0.1);
+  --glass-medium: rgba(255, 255, 255, 0.04);
   --glass-hover: rgba(255, 255, 255, 0.08);
   --glass-strong: rgba(255, 255, 255, 0.1);
+  --shadow-panel: 0 1px 3px rgba(0, 0, 0, 0.2), 0 1px 2px rgba(0, 0, 0, 0.15);
+  --shadow-btn: 0 2px 12px rgba(29, 205, 159, 0.3);
+  --primary-glow: rgba(29, 205, 159, 0.3);
+  --accent-alpha: rgba(168, 85, 247, 0.3);
+  --primary-shadow: rgba(29, 205, 159, 0.2);
 }
 
-/* ========================================= */
-/* GLOBAL BASE STYLES                        */
-/* ========================================= */
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-input);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--text-main);
+}
+
+/* Base styles */
+* {
+  box-sizing: border-box;
+}
 
 html, body {
   margin: 0;
   padding: 0;
+  font-family: var(--font-main);
   background-color: var(--bg-app);
   color: var(--text-main);
-  font-family: var(--font-main);
-  
-  /* Smooth transition when toggling dark mode */
-  transition: background-color 0.3s ease, color 0.3s ease;
-  
-  /* Hide scrollbars globally */
-  -ms-overflow-style: none;
-  scrollbar-width: none;
 }
 
-body::-webkit-scrollbar {
-  display: none;
+body {
+  min-height: 100vh;
 }
 
-/* Base Headings */
-h1, h2, h3, h4, h5, h6 {
+a {
+  color: var(--color-primary);
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+
+/* Panel utility */
+.panel {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  padding: 1.5rem;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+[data-theme="dark"] .panel {
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.3);
+}
+
+/* Legacy gradient button */
+.gradient-btn {
+  background: linear-gradient(135deg, var(--color-primary) 0%, var(--color-primary-dark) 100%);
+  color: var(--text-inverse);
+  border: none;
+  padding: 0.75rem 1.5rem;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.gradient-btn:hover {
+  opacity: 0.9;
+}
+
+/* Price up/down colors */
+.price-up {
+  color: #22c55e;
+}
+
+.price-down {
+  color: #ef4444;
+}
+
+.price-up-bg {
+  background-color: #dcfce7;
+  color: #16a34a;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.price-down-bg {
+  background-color: #fee2e2;
+  color: #dc2626;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+[data-theme="dark"] .price-up-bg {
+  background-color: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+[data-theme="dark"] .price-down-bg {
+  background-color: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+/* Text utilities */
+.text-right {
+  text-align: right;
+}
+
+.text-center {
+  text-align: center;
+}
+
+/* Flex utilities */
+.flex-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* Input base */
+input, select {
+  font-family: inherit;
+  background: var(--bg-input);
+  border: 1px solid var(--bg-hover);
   color: var(--text-main);
-  margin-top: 0;
+  border-radius: 6px;
+  padding: 0.5rem 0.75rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+input:focus, select:focus {
+  border-color: var(--color-primary);
+}
+
+/* Table utilities */
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th, td {
+  padding: 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--bg-hover);
+}
+
+th {
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* Card styles */
+.card {
+  background: var(--bg-panel);
+  border-radius: 12px;
+  padding: 1.5rem;
+  border: 1px solid var(--bg-hover);
+}
+
+/* Button base */
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: none;
+  font-weight: 500;
+  transition: all 0.2s;
+}
+
+.btn-primary {
+  background: var(--color-primary);
+  color: var(--text-inverse);
+}
+
+.btn-primary:hover {
+  background: var(--color-primary-dark);
+}
+
+.btn-danger {
+  background: var(--color-danger);
+  color: white;
+}
+
+/* Badge */
+.badge {
+  display: inline-block;
+  padding: 0.25rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+}
+
+.badge-success {
+  background: var(--bg-success, #dcfce7);
+  color: #16a34a;
+}
+
+.badge-danger {
+  background: var(--bg-danger, #fee2e2);
+  color: #dc2626;
+}
+
+[data-theme="dark"] .badge-success {
+  background: rgba(34, 197, 94, 0.2);
+  color: #4ade80;
+}
+
+[data-theme="dark"] .badge-danger {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
 }
