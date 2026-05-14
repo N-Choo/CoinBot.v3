@@ -8,7 +8,8 @@
   left: 50%;
   transform: translateX(-50%);
   width: calc(100% - 40px);
-  padding: 0 20px;
+  max-width: 1240px;
+  padding: 0;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -21,19 +22,19 @@
   pointer-events: auto; 
   position: relative; 
   width: 100%;
-  max-width: var(--max-width);
-  background: var(--bg-panel);
+  background: transparent;
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-  border: 1px solid var(--border-strong);
-  border-radius: 10px; 
+  border: 1px solid #2a2e39;
+  border-radius: 4px; 
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 20px;
+  padding: 0 24px;
   box-shadow: var(--shadow-panel);
   transition: all 0.3s ease;
   z-index: 10;
+  height: 66px;
 }
 
 /* ========================================= */
@@ -45,6 +46,7 @@
   align-items: center;
   gap: 10px;
   cursor: pointer;
+  padding: 0;
 }
 
 .logo-orb {
@@ -61,7 +63,7 @@
 }
 
 .brand-title {
-  color: var(--color-primary-dark);
+  color: var(--color-primary);
   font-family: var(--font-mono);
   font-weight: 700;
   font-size: 16px;
@@ -75,7 +77,7 @@
 .nav-pills {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 4px;
   z-index: 10; 
 }
 
@@ -109,9 +111,9 @@
 
 .connect-action-btn {
   background: transparent;
-  color: var(--color-primary-dark);
+  color: var(--color-primary);
   padding: 8px 20px;
-  border-radius: 5px;
+  border-radius: 4px;
   font-size: 13px;
   font-weight: 700;
   cursor: pointer;
@@ -120,7 +122,7 @@
   animation: pulseGlow 2s infinite;
   min-width: 120px; 
   min-height: 36px; 
-  border: 0;
+  border: 1px solid var(--color-primary);
 }
 
 .connect-action-btn:hover:not(:disabled):not(.is-authenticated) {
@@ -151,10 +153,10 @@
 }
 
 .disconnect-btn {
-  border: 1px solid var(--border-strong);
+  border: 1px solid #2a2e39;
   padding: 8px 20px;
   transition: all 0.3s ease;
-  border-radius: 5px;
+  border-radius: 4px;
   color: var(--text-muted);
   background: transparent;
   cursor: pointer;
@@ -257,7 +259,7 @@
   backdrop-filter: blur(24px);
   -webkit-backdrop-filter: blur(24px);
   border-radius: 10px;
-  border: 1px solid var(--border-strong);
+  border: 1px solid #2a2e39;
   box-shadow: var(--shadow-panel);
   opacity: 0;
   transform: translateY(-10px);
@@ -299,7 +301,7 @@
 .mobile-divider {
   border: 0;
   height: 1px;
-  background: var(--border-strong);
+  background: #2a2e39;
   margin: 5px 0;
 }
 
