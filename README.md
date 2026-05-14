@@ -1,3 +1,14 @@
+# CoinBot-OpenCore
+
+### The OpenCore Philosophy
+To maintain the highest standards of security and data integrity, we have adopted an **OpenCore model**:
+
+*   **Transparency:** The core authentication flow, state management, and orchestration layers are fully open-source to allow for community auditing and collaborative improvement.
+*   **Transaction Integrity:** The transaction processing logic is open to the public, ensuring that every on-chain interaction is verifiable, secure, and follows strict EIP standards.
+*   **Extensibility:** While specific proprietary strategies remain private, this repository provides the "hooks" and infrastructure for developers to build, test, and integrate their own custom features into the Mint ecosystem—**contributions are welcome by making a pull request!**
+
+---
+
 ## System Architecture
 
 The system follows a classic client-server architecture optimized for Web3 security and low-latency execution, fully containerized for development and production parity.
@@ -12,6 +23,7 @@ The system follows a classic client-server architecture optimized for Web3 secur
 #### 2. Core Components
 
 - **State Manager:** Centralized `AppState` cloned across Actix workers (PostgreSQL pool, KuCoin client, Moka caches).
+- **Transaction Layer:** Logic for validating and broadcasting on-chain interactions, ensuring auditability.
 - **Trading Engine:** (Planned) Volatility monitoring and automated execution.
 - **Orchestration:** **Docker Compose** manages networking and environment synchronization between the UI and API.
 
@@ -21,27 +33,27 @@ The system follows a classic client-server architecture optimized for Web3 secur
 
 ```text
 .
-├── docker-compose.yml           # Orchestration for Frontend & Backend
-├── server/                      # Rust Backend (Actix-Web)
-│   ├── src/                     # Handlers, Models, Routes, State
-│   ├── Cargo.toml               # Backend dependencies
-│   └── Dockerfile               # Multi-stage Rust build
-└── react/                       # Frontend (Vite + TS)
-    ├── src/                     # Components, Hooks, Pages, Services
-    ├── package.json             # Frontend dependencies
-    └── Dockerfile               # Node.js development environment
+├── docker-compose.yml         # Orchestration for Frontend & Backend
+├── server/                    # Rust Backend (Actix-Web)
+│   ├── src/                   # Handlers, Models, Routes, State, Transaction Logic
+│   ├── Cargo.toml             # Backend dependencies
+│   └── Dockerfile             # Multi-stage Rust build
+└── react/                     # Frontend (Vite + TS)
+    ├── src/                   # Components, Hooks, Pages, Services
+    ├── package.json           # Frontend dependencies
+    └── Dockerfile             # Node.js development environment
 ```
 
 ---
 
 ### Tech Stack
 
-| Layer        | Technology                                             |
-| :----------- | :----------------------------------------------------- |
-| **Backend**  | Rust (Actix-Web), PostgreSQL (SQLx), Moka Cache        |
-| **Frontend** | React 19, TypeScript, Vite, Ethers v6, Axios           |
-| **DevOps**   | **Docker**, **Docker Compose**                         |
-| **Web3**     | EIP-191 Signature Verification (ethers-rs / ethers.js) |
+| Layer | Technology |
+| :--- | :--- |
+| **Backend** | Rust (Actix-Web), PostgreSQL (SQLx), Moka Cache |
+| **Frontend** | React 19, TypeScript, Vite, Ethers v6, Axios |
+| **DevOps** | **Docker**, **Docker Compose** |
+| **Web3** | EIP-191 Signature Verification (ethers-rs / ethers.js) |
 
 ---
 
@@ -50,13 +62,14 @@ The system follows a classic client-server architecture optimized for Web3 secur
 **Prerequisites:** Docker & Docker Compose installed.
 
 1. **Configure Environment:**
-   Ensure your `.env` file exists in the root (or as specified in `docker-compose.yml`) with `DATABASE_URL` and KuCoin credentials.
+   Ensure your `.env` file exists in the root with `DATABASE_URL` and your specific API credentials.
 
 2. **Launch System:**
 
-   ```bash
+```bash
    docker compose up --build
-   ```
+   
+```
 
    _Note for Fedora users: The volume mounts utilize the `:Z` flag to handle SELinux permissions._
 
@@ -65,3 +78,7 @@ The system follows a classic client-server architecture optimized for Web3 secur
    - **Backend API:** `http://localhost:8080`
 
 ---
+
+### Contributing
+
+We believe in open tools for a decentralized world. If you find a bug or have a feature request for the core infrastructure or transaction processing layer, let us know <3
