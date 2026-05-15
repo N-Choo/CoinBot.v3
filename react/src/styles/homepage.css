@@ -336,6 +336,7 @@
   width: 100%;
   gap: 0;
   overflow: hidden;
+  padding: 8px;
 }
 
 .reactor-node {
@@ -605,7 +606,7 @@
 }
 
 /* Phone */
-@media (max-width: 520px) {
+@media (max-width: 640px) {
   .hero {
     padding: 60px 16px 32px;
   }
