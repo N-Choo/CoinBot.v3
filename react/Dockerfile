@@ -1,11 +1,14 @@
-# Use Node 22 (LTS) - includes modern npm by default
-FROM node:22-alpine
-
+# ── Build stage ──
+FROM node:22-alpine AS builder
 WORKDIR /app
-
-# We skip 'npm install -g npm' because Node 22 is already up to date
 COPY package*.json ./
-RUN npm install
+RUN npm ci
+COPY . .
+RUN npm run build
 
-EXPOSE 5173
-CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+# ── Production stage ──
+FROM nginx:1.27-alpine
+COPY nginx.conf /etc/nginx/conf.d/default.conf
+COPY --from=builder /app/dist /usr/share/nginx/html
+EXPOSE 80
+CMD ["nginx", "-g", "daemon off;"]
