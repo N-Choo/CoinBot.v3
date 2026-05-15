@@ -104,35 +104,25 @@ th {
 
 /* ── Price colors ── */
 .price-up {
-  color: #22c55e;
+  color: var(--color-up);
 }
 
 .price-down {
-  color: #ef4444;
+  color: var(--color-down);
 }
 
 .price-up-bg {
-  background-color: #dcfce7;
-  color: #16a34a;
+  background-color: var(--color-up-bg);
+  color: var(--color-up-text);
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
 }
 
 .price-down-bg {
-  background-color: #fee2e2;
-  color: #dc2626;
+  background-color: var(--color-down-bg);
+  color: var(--color-down-text);
   padding: 2px 6px;
-  border-radius: 4px;
-}
-
-[data-theme="dark"] .price-up-bg {
-  background-color: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
-}
-
-[data-theme="dark"] .price-down-bg {
-  background-color: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  border-radius: var(--radius-sm);
 }
 
 /* ── Legacy (keep for backward compat) ── */
@@ -188,7 +178,7 @@ th {
 
 .btn-danger {
   background: var(--color-danger);
-  color: white;
+  color: var(--text-btn);
 }
 
 .badge {
@@ -200,21 +190,11 @@ th {
 }
 
 .badge-success {
-  background: var(--bg-success, #dcfce7);
-  color: #16a34a;
+  background: var(--bg-success, var(--color-up-bg));
+  color: var(--color-up-text);
 }
 
 .badge-danger {
-  background: var(--bg-danger, #fee2e2);
-  color: #dc2626;
-}
-
-[data-theme="dark"] .badge-success {
-  background: rgba(34, 197, 94, 0.2);
-  color: #4ade80;
-}
-
-[data-theme="dark"] .badge-danger {
-  background: rgba(239, 68, 68, 0.2);
-  color: #f87171;
+  background: var(--bg-danger, var(--color-down-bg));
+  color: var(--color-down-text);
 }

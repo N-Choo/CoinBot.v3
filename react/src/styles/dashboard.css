@@ -4,8 +4,7 @@
 
 /* ── 1. Layout & Positioning ──────────────── */
 .dash-wrapper {
-  padding-top: 20px;
-  padding-bottom: 30px;
+  padding: 20px 20px 30px;
   width: 100%;
   display: flex;
   justify-content: center;
@@ -16,8 +15,8 @@
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 24px;
-  width: calc(100% - 40px);
-  max-width: 1240px;
+  width: 100%;
+  max-width: var(--max-width);
   margin: 0 auto;
   align-items: start;
 }
@@ -43,7 +42,7 @@
   background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 20px;
   position: relative;
@@ -201,12 +200,12 @@ thead th {
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.3px;
-  border-bottom: 1px solid #2a2e39;
+  border-bottom: 1px solid var(--border-color);
 }
 
 tbody td {
   padding: 12px;
-  border-bottom: 1px solid #2a2e39;
+  border-bottom: 1px solid var(--border-color);
   color: var(--text-main);
   font-size: 13px;
 }
@@ -219,7 +218,7 @@ tbody tr:last-child td {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0,0,0,0.7);
+  background: var(--modal-overlay);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -252,7 +251,7 @@ tbody tr:last-child td {
   display: flex;
   gap: 4px;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 3px;
 }
@@ -271,7 +270,7 @@ tbody tr:last-child td {
 
 .pnl-tab-active {
   background: var(--color-primary);
-  color: #ffffff !important;
+  color: var(--text-inverse) !important;
 }
 
 .historic-stats-grid {
@@ -279,7 +278,7 @@ tbody tr:last-child td {
   grid-template-columns: repeat(3, 1fr);
   gap: 12px;
   padding: 14px 0 2px 0;
-  border-top: 1px solid #2a2e39;
+  border-top: 1px solid var(--border-color);
   margin-top: 4px;
 }
 
@@ -298,7 +297,7 @@ tbody tr:last-child td {
   align-items: center;
   justify-content: center;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
 }
 
 .badge {
@@ -332,7 +331,7 @@ tbody tr:last-child td {
 /* Filter & View Toggle */
 .filter-btn {
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   color: var(--text-muted);
   padding: 6px 14px;
   border-radius: 4px;
@@ -353,7 +352,7 @@ tbody tr:last-child td {
 .view-toggle {
   display: flex;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 2px;
 }
@@ -370,7 +369,7 @@ tbody tr:last-child td {
 }
 .vt-btn.active {
   background: var(--color-primary);
-  color: #ffffff;
+  color: var(--text-inverse);
 }
 .vt-btn:hover:not(.active) {
   color: var(--text-main);
@@ -383,7 +382,7 @@ tbody tr:last-child td {
   border-radius: 4px;
   overflow: hidden;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   margin-bottom: 16px;
 }
 .progress-track > div {
@@ -630,7 +629,7 @@ tbody tr:last-child td {
 
 .modal-info-box {
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   padding: 15px;
   border-radius: 4px;
   margin-bottom: 20px;
@@ -666,7 +665,7 @@ tbody tr:last-child td {
 .modal-input {
   width: 100%;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 12px 50px 12px 14px;
   color: var(--text-main);
@@ -692,7 +691,7 @@ tbody tr:last-child td {
   flex: 1;
   padding: 12px;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-main);
   font-weight: 600;
@@ -715,12 +714,10 @@ tbody tr:last-child td {
 
 @media (max-width: 768px) {
   .dash-wrapper {
-    padding-top: 10px;
-    padding-bottom: 20px;
+    padding: 10px 16px 20px;
   }
 
   .dash-grid {
-    width: calc(100% - 20px);
     gap: 16px;
     min-width: 0;
   }

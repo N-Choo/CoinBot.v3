@@ -3,8 +3,7 @@
 /* ========================================= */
 
 .trading-page-wrapper {
-  padding-top: 20px; 
-  padding-bottom: 30px;
+  padding: 20px 20px 30px;
   color: var(--text-muted);
   font-family: var(--font-main);
   box-sizing: border-box;
@@ -16,8 +15,8 @@
   display: grid;
   grid-template-columns: 1fr 340px;
   gap: 24px; 
-  width: calc(100% - 40px); 
-  max-width: 1240px; 
+  width: 100%;
+  max-width: var(--max-width); 
   height: calc(100vh - 130px);
 }
 
@@ -36,7 +35,7 @@
   background: transparent;
   backdrop-filter: blur(20px);
   -webkit-backdrop-filter: blur(20px);
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   box-shadow: var(--shadow-panel);
   padding: 20px;
   border-radius: 4px;
@@ -195,7 +194,7 @@
 .input-wrapper input, .input-wrapper select {
   width: 100%;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   color: var(--text-main);
   padding: 12px 14px;
   border-radius: 4px;
@@ -248,7 +247,7 @@
   display: flex;
   align-items: center;
   background: transparent;
-  border: 1px solid #2a2e39;
+  border: 1px solid var(--border-color);
   border-radius: 4px;
   padding: 10px 14px;
   gap: 10px;
@@ -282,7 +281,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
-  border-bottom: 1px solid #2a2e39;
+  border-bottom: 1px solid var(--border-color);
 }
 
 .text-right { text-align: center; }
@@ -377,8 +376,7 @@
   }
 
   .trading-page-wrapper {
-    padding-top: 10px;
-    padding-bottom: 20px;
+    padding: 10px 20px 20px;
   }
 
   .chart-container {
@@ -416,13 +414,11 @@
 
 @media (max-width: 640px) {
   .trading-grid {
-    width: calc(100% - 20px);
     gap: 10px;
   }
 
   .trading-page-wrapper {
-    padding-top: 8px;
-    padding-bottom: 16px;
+    padding: 8px 16px 16px;
   }
 
   .chart-container {
