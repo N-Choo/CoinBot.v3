@@ -1,4 +1,4 @@
-import { useEffect, useRef, memo } from 'react'
+import { useState, useEffect, useRef, memo } from 'react'
 
 interface TradingChartProps {
   symbol: string
@@ -6,6 +6,18 @@ interface TradingChartProps {
 
 const TradingChart = memo<TradingChartProps>(({ symbol }) => {
   const container = useRef<HTMLDivElement>(null)
+  const [tvTheme, setTvTheme] = useState(() =>
+    document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+  )
+
+  useEffect(() => {
+    const observer = new MutationObserver(() => {
+      const t = document.documentElement.dataset.theme === 'dark' ? 'dark' : 'light'
+      setTvTheme(t)
+    })
+    observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] })
+    return () => observer.disconnect()
+  }, [])
 
   useEffect(() => {
     if (!container.current) return
@@ -23,9 +35,10 @@ const TradingChart = memo<TradingChartProps>(({ symbol }) => {
       symbol: formattedSymbol,
       interval: '60',
       timezone: 'Etc/UTC',
-      theme: 'dark',
+      theme: tvTheme,
       style: '1',
       locale: 'en',
+      transparent: true,
       enable_publishing: false,
       hide_top_toolbar: false,
       hide_legend: false,
@@ -34,7 +47,7 @@ const TradingChart = memo<TradingChartProps>(({ symbol }) => {
     })
 
     container.current.appendChild(script)
-  }, [symbol])
+  }, [symbol, tvTheme])
 
   return (
     <div className="tradingview-widget-container" ref={container} style={{ height: '100%', width: '100%' }}>

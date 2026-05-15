@@ -10,7 +10,9 @@ export default function BalanceStats() {
       {stats.map((stat, idx) => (
         <div key={idx} className="dash-panel" tabIndex={0}>
           <div className="balance-card-header">
-            <span className="dash-title-sm">{stat.label}</span>
+            <div className="balance-card-header-left">
+              <span className="dash-title-sm">{stat.label}</span>
+            </div>
             <div className="icon-box">
               {idx === 0 && (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -31,8 +33,9 @@ export default function BalanceStats() {
           </div>
           <div className="dash-value-lg">{stat.value}</div>
           <div className="balance-change-row">
+            <span className={`change-dot ${stat.isUp ? 'change-dot-up' : 'change-dot-down'}`} />
             <span className={stat.isUp ? 'price-up-bg' : 'price-down-bg'}>{stat.change}</span>
-            <span className="balance-change-label">vs last 24h</span>
+            <span className="balance-change-label">24h</span>
           </div>
         </div>
       ))}

@@ -22,19 +22,24 @@ function buildPath(data: { value: number }[]) {
   const min = Math.min(...vals)
   const max = Math.max(...vals)
   const range = max - min || 1
-  const H = 100 - 20
+  const padding = range * 0.1
+  const adjMin = min - padding
+  const adjMax = max + padding
+  const adjRange = adjMax - adjMin
+  const H = 80
+
   const pts = data.map((d, i) => ({
     x: (i / (data.length - 1)) * 100,
-    y: 10 + H - ((d.value - min) / range) * H,
+    y: 90 - ((d.value - adjMin) / adjRange) * H,
   }))
+
   const line = pts.map((p, i) => {
     if (i === 0) return `M${p.x.toFixed(1)},${p.y.toFixed(1)}`
-    const prev = pts[i - 1]
-    const cx = (prev.x + p.x) / 2
-    return `C${cx.toFixed(1)},${prev.y.toFixed(1)} ${cx.toFixed(1)},${p.y.toFixed(1)} ${p.x.toFixed(1)},${p.y.toFixed(1)}`
+    return `L${p.x.toFixed(1)},${p.y.toFixed(1)}`
   }).join(' ')
-  const area = `${line} L100,100 L0,100 Z`
-  return { line, area, pts }
+
+  const area = `${line} L100,90 L0,90 Z`
+  return { line, area, pts, min, max }
 }
 
 export default function PnlChart() {
@@ -62,7 +67,7 @@ export default function PnlChart() {
           <div className="pnl-value" style={{ color }}>${last.toLocaleString()}</div>
         </div>
         <div className="pnl-right-col">
-          <div className="pnl-badge" style={{ color }}>
+          <div className="pnl-badge" style={{ background: up ? 'var(--color-up-bg)' : 'var(--color-down-bg)', color: up ? 'var(--color-up-text)' : 'var(--color-down-text)' }}>
             {up ? '\u25B2' : '\u25BC'} {Math.abs(Number(pct))}%
           </div>
           <div className="pnl-range-tabs pnl-range-wrap">
@@ -81,21 +86,26 @@ export default function PnlChart() {
 
       <div className="chart-wrapper pnl-chart-area">
         <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-          <defs>
-            <linearGradient id="pg" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor={color} stopOpacity="0.3" />
-              <stop offset="100%" stopColor={color} stopOpacity="0" />
-            </linearGradient>
-          </defs>
-          <path d={path.area} fill="url(#pg)" />
-          <path d={path.line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" />
+          <path d={path.line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
 
       <div className="historic-stats-grid">
-        <div><div className="stat-label">Daily PnL</div><div className="stat-value price-up">+$420</div></div>
-        <div><div className="stat-label">Weekly PnL</div><div className="stat-value price-up">+$2,840</div></div>
-        <div><div className="stat-label">Monthly PnL</div><div className="stat-value price-up">+$11,200</div></div>
+        <div>
+          <div className="stat-label">Daily PnL</div>
+          <div className="stat-value price-up">+$420</div>
+          <div className="data-label">vs yesterday</div>
+        </div>
+        <div>
+          <div className="stat-label">Weekly PnL</div>
+          <div className="stat-value price-up">+$2,840</div>
+          <div className="data-label">vs last week</div>
+        </div>
+        <div>
+          <div className="stat-label">Monthly PnL</div>
+          <div className="stat-value price-up">+$11,200</div>
+          <div className="data-label">vs last month</div>
+        </div>
       </div>
     </div>
   )
