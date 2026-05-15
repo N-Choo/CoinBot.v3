@@ -331,14 +331,22 @@
   .brand-title { font-size: 14px; }
 }
 
+@media (max-width: 640px) {
+  .modern-header { width: calc(100% - 16px); top: 10px; }
+  .glass-container { height: 52px; padding: 0 14px; }
+  .brand-title { font-size: 13px; }
+  .logo-orb { width: 28px; height: 28px; font-size: 12px; }
+}
+
 @media (max-width: 400px) {
   .modern-header {
-    width: calc(100% - 16px);
-    top: 8px;
+    width: calc(100% - 12px);
+    top: 6px;
   }
   .glass-container {
-    height: 48px;
-    padding: 0 12px;
+    height: 44px;
+    padding: 0 10px;
   }
-  .brand-title { font-size: 13px; }
+  .brand-title { font-size: 12px; }
+  .logo-orb { width: 24px; height: 24px; font-size: 11px; }
 }

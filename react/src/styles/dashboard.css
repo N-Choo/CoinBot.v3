@@ -829,6 +829,12 @@ tbody tr:last-child td {
   }
 }
 
+@media (max-width: 640px) {
+  .dash-grid { gap: 12px; }
+  .dash-panel { padding: 14px; }
+  .dash-value-lg { font-size: 24px; }
+}
+
 @media (max-width: 400px) {
   .historic-stats-grid {
     grid-template-columns: 1fr 1fr;

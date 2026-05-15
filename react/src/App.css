@@ -11,3 +11,7 @@
   text-align: center;
   color: var(--text-muted);
 }
+
+@media (max-width: 640px) {
+  .app-content { padding-top: 56px; }
+}
