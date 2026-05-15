@@ -225,8 +225,11 @@
 
 .chart-container {
   width: 100%;
-  border: none;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
   padding: 0;
+  background: var(--bg-panel);
+  overflow: hidden;
 }
 
 /* ========================================= */

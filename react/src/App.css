@@ -3,7 +3,7 @@
    ═══════════════════════════════════════════ */
 
 .app-content {
-  padding-top: 75px;
+  padding-top: 88px;
 }
 
 .auth-loading {
@@ -12,6 +12,14 @@
   color: var(--text-muted);
 }
 
+@media (max-width: 768px) {
+  .app-content { padding-top: 78px; }
+}
+
 @media (max-width: 640px) {
-  .app-content { padding-top: 56px; }
+  .app-content { padding-top: 69px; }
+}
+
+@media (max-width: 400px) {
+  .app-content { padding-top: 57px; }
 }
