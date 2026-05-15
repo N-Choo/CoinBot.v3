@@ -5,13 +5,13 @@ import CoinBot from './homePage'
 
 describe('CoinBot (homePage)', () => {
   test('renders hero section with title', () => {
-    render(<BrowserRouter><CoinBot /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
     expect(screen.getByText('Trade smarter.')).toBeInTheDocument()
     expect(screen.getByText('Earn passively.')).toBeInTheDocument()
   })
 
   test('renders stats section', () => {
-    render(<BrowserRouter><CoinBot /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
     expect(screen.getByText('Trading Volume')).toBeInTheDocument()
     expect(screen.getByText('$450M+')).toBeInTheDocument()
     expect(screen.getByText('99.9%')).toBeInTheDocument()
@@ -20,14 +20,14 @@ describe('CoinBot (homePage)', () => {
   })
 
   test('renders feature cards', () => {
-    render(<BrowserRouter><CoinBot /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
     expect(screen.getByText('Buy Low, Sell High')).toBeInTheDocument()
     expect(screen.getByText('Auto-Stake')).toBeInTheDocument()
     expect(screen.getByText('Zero Effort')).toBeInTheDocument()
   })
 
   test('renders reactor system diagram', () => {
-    render(<BrowserRouter><CoinBot /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
     expect(screen.getByText('Deposit')).toBeInTheDocument()
     expect(screen.getByText('Execute')).toBeInTheDocument()
     expect(screen.getByText('Exchange')).toBeInTheDocument()
@@ -36,7 +36,7 @@ describe('CoinBot (homePage)', () => {
   })
 
   test('renders footer', () => {
-    render(<BrowserRouter><CoinBot /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
     expect(screen.getByText('CoinBot')).toBeInTheDocument()
   })
 })

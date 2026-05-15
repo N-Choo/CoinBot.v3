@@ -1,5 +1,11 @@
 import '@testing-library/jest-dom/vitest'
 
+const origWarn = console.warn
+console.warn = (...args: unknown[]) => {
+  if (typeof args[0] === 'string' && args[0].includes('React Router Future Flag Warning')) return
+  origWarn.call(console, ...args)
+}
+
 if (typeof IntersectionObserver === 'undefined') {
   class MockIntersectionObserver implements IntersectionObserver {
     readonly root: Element | null = null
