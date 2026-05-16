@@ -51,11 +51,15 @@
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │                      DECISION LAYER                                 │   │
 │  │                                                                     │   │
-│  │  if score >  threshold:    SIGNAL = BUY                             │   │
-│  │  if score < -threshold:    SIGNAL = SELL                            │   │
-│  │  else:                     SIGNAL = HOLD                            │   │
-│  │                                                                     │   │
-│  │  if confidence < min_conf: SIGNAL = HOLD (uncertain)                │   │
+│  │  ┌──────────────────────┐  ┌────────────────────────────────────┐   │   │
+│  │  │ Rule-based (simple)  │  │ ML-based (advanced)                │   │   │
+│  │  │                      │  │                                    │   │   │
+│  │  │ if score > threshold │  │ RandomForestClassifier              │   │   │
+│  │  │   → BUY              │  │ Features: sentiment, price_chg,    │   │   │
+│  │  │ if score < -threshold│  │   volume, article_count, rsi,      │   │   │
+│  │  │   → SELL             │  │   sentiment_std, day_of_week       │   │   │
+│  │  │ else → HOLD          │  │ Label: up in 5 days? (1/0)         │   │   │
+│  │  └──────────────────────┘  └────────────────────────────────────┘   │   │
 │  └────────────────────────────┬─────────────────────────────────────────┘   │
 │                               ▼                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
@@ -469,7 +473,72 @@ print(resp.choices[0].message.content)  # "1"
 
 ---
 
-## 8. Common Pitfalls
+## 8. ML Model — Features & Training
+
+### Recommended Model
+
+```python
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
+import pandas as pd
+
+df = pd.DataFrame({
+    "sentiment":         [0.8, -0.6, 0.2, -0.9, 0.5],
+    "price_change_1d":   [1.2, -2.1, 0.3, -0.8, 1.5],
+    "price_change_5d":   [3.1, -4.2, 0.8, -3.5, 2.9],
+    "volume_change":     [0.5, -0.3, 0.1, -0.7, 0.4],
+    "article_count":     [12,   8,   3,   15,   6],
+    "sentiment_std":     [0.2,  0.4, 0.1,  0.5, 0.3],
+    "rsi_14":            [65,   32,  55,   28,  60],
+    "day_of_week":       [1,    3,   5,    2,   4],
+})
+Y = [1, 0, 1, 0, 1]  # 1 = price up in 5 days, 0 = down
+
+X_train, X_test, y_train, y_test = train_test_split(df, Y, test_size=0.2)
+model = RandomForestClassifier(n_estimators=100)
+model.fit(X_train, y_train)
+
+print(f"Accuracy: {model.score(X_test, y_test):.0%}")
+print(f"Feature importance: {dict(zip(df.columns, model.feature_importances_))}")
+```
+
+### Feature Dictionary
+
+| Feature | Range | Why It Matters |
+|---------|-------|----------------|
+| `sentiment` | -1 .. +1 | News sentiment from analysis layer |
+| `price_change_1d` | % | Short-term momentum |
+| `price_change_5d` | % | Medium-term trend |
+| `volume_change` | ratio | Volume spike = interest |
+| `article_count` | int | More articles = more attention |
+| `sentiment_std` | 0 .. 1 | Disagreement = uncertainty |
+| `rsi_14` | 0 .. 100 | Overbought/oversold signal |
+| `day_of_week` | 0 .. 6 | Weekly seasonality |
+
+### Prediction Target
+
+| Target | Interval | Difficulty | Best For |
+|--------|----------|------------|----------|
+| Next 1 day | Very short | Hard (noisy) | Scalping |
+| Next 3-5 days | Short | Sweet spot | News-driven trading |
+| Next 10-20 days | Medium | Easier | Swing trading |
+
+**Recommended:** predict if price is **higher in 5 days** — short enough for news impact, long enough to filter noise.
+
+### Minimum Data Requirements
+
+| Data points | Quality |
+|-------------|---------|
+| < 100 | Unreliable, high variance |
+| 200-500 | Usable, basic patterns |
+| 500-2000 | Good, stable predictions |
+| 2000+ | Solid, actionable |
+
+RandomForest is robust against overfitting even with limited data, but aim for **at least 200 samples** (roughly 1 year of daily data).
+
+---
+
+## 9. Common Pitfalls
 
 1. **Too few articles** — 1-2 articles give noisy signals. Wait until >=5.
 2. **Stale news** — an article from 3 days ago about a price move that already happened
