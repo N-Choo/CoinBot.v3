@@ -46,10 +46,12 @@ The system follows a classic client-server architecture optimized for Web3 secur
 │   ├── src/                   # Handlers, Models, Routes, State, Transaction Logic
 │   ├── Cargo.toml             # Backend dependencies
 │   └── Dockerfile             # Multi-stage Rust build
-└── react/                     # Frontend (Vite + TS)
-    ├── src/                   # Components, Hooks, Pages, Services
-    ├── package.json           # Frontend dependencies
-    └── Dockerfile             # Node.js development environment
+├── react/                     # Frontend (Vite + TS)
+│   ├── src/                   # Components, Hooks, Pages, Services
+│   ├── package.json           # Frontend dependencies
+│   └── Dockerfile             # Node.js development environment
+└── system_architecture/       # Blueprints & architecture docs
+    └── news_trader_agent_blueprint.md
 ```
 
 ---
