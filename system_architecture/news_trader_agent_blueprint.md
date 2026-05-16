@@ -51,15 +51,17 @@
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
 │  │                      DECISION LAYER                                 │   │
 │  │                                                                     │   │
-│  │  ┌──────────────────────┐  ┌────────────────────────────────────┐   │   │
-│  │  │ Rule-based (simple)  │  │ ML-based (advanced)                │   │   │
-│  │  │                      │  │                                    │   │   │
-│  │  │ if score > threshold │  │ RandomForestClassifier              │   │   │
-│  │  │   → BUY              │  │ Features: sentiment, price_chg,    │   │   │
-│  │  │ if score < -threshold│  │   volume, article_count, rsi,      │   │   │
-│  │  │   → SELL             │  │   sentiment_std, day_of_week       │   │   │
-│  │  │ else → HOLD          │  │ Label: up in 5 days? (1/0)         │   │   │
-│  │  └──────────────────────┘  └────────────────────────────────────┘   │   │
+│  │  ┌──────────────────────────────────────────────────────────────┐   │   │
+│  │  │  Hybrid: Price Rule + News Sentiment                         │   │   │
+│  │  │                                                               │   │   │
+│  │  │  price_change = (today / 5_days_ago) - 1                     │   │   │
+│  │  │                                                               │   │   │
+│  │  │  if price_change >  5%  and sentiment >  0:  SELL            │   │   │
+│  │  │  if price_change < -5%  and sentiment <  0:  BUY             │   │   │
+│  │  │  if price_change >  5%  and sentiment <= 0:  HOLD            │   │   │
+│  │  │  if price_change < -5%  and sentiment >= 0:  HOLD            │   │   │
+│  │  │  else: HOLD (no strong price move)                            │   │   │
+│  │  └──────────────────────────────────────────────────────────────┘   │   │
 │  └────────────────────────────┬─────────────────────────────────────────┘   │
 │                               ▼                                             │
 │  ┌──────────────────────────────────────────────────────────────────────┐   │
@@ -128,15 +130,23 @@ AGGREGATE (all articles in last N hours):
        │
        ▼
 DECISION:
-  if final_score > 0.15 and confidence > 0.3:
-      signal = "BUY"
-      reason = f"Positive sentiment ({final_score:.2f})"
-  elif final_score < -0.15 and confidence > 0.3:
+  price_change = (price_today / price_5d_ago) - 1
+
+  if price_change > 0.05 and sentiment > 0:
       signal = "SELL"
-      reason = f"Negative sentiment ({final_score:.2f})"
+      reason = f"Price up {price_change:.1%}, news positive → take profit"
+  elif price_change < -0.05 and sentiment < 0:
+      signal = "BUY"
+      reason = f"Price down {price_change:.1%}, news negative → buy dip"
+  elif price_change > 0.05 and sentiment <= 0:
+      signal = "HOLD"
+      reason = f"Price up {price_change:.1%} but news not confirming"
+  elif price_change < -0.05 and sentiment >= 0:
+      signal = "HOLD"
+      reason = f"Price down {price_change:.1%} but news not confirming"
   else:
       signal = "HOLD"
-      reason = f"Weak signal ({final_score:.2f}, conf={confidence:.2f})"
+      reason = f"No strong price move ({price_change:.1%})"
 ```
 
 ---
@@ -274,28 +284,28 @@ User        NewsTraderEngine      NewsAPI         VADER/LLM        User Output
  │                  │                │                │                │
  │  1. run()        │                │                │                │
  │─────────────────▶│                │                │                │
- │                  │  2. GET articles                 │                │
+ │                  │  2. GET articles                │                │
  │                  │───────────────▶│                │                │
  │                  │◀───────────────│                │                │
  │                  │  3. Article[]  │                │                │
  │                  │                │                │                │
- │                  │  loop for each article:          │                │
- │                  │  ────────────────────────────────│                │
- │                  │  4. analyze(article)             │                │
- │                  │─────────────────────────────────▶│                │
- │                  │    5. return sentiment (-1..+1)  │                │
- │                  │◀─────────────────────────────────│                │
+ │                  │ loop for each article:          │                │
+ │                  │ ────────────────────────────────│                │
+ │                  │ 4. analyze(article)             │                │
+ │                  │────────────────────────────────▶│                │
+ │                  │   5. return sentiment (-1..+1)  │                │
+ │                  │◀────────────────────────────────│                │
  │                  │                │                │                │
- │                  │  6. aggregate()                  │                │
- │                  │  ── compute weighted avg ──      │                │
- │                  │  ── compute confidence ──        │                │
- │                  │  ── apply threshold ──           │                │
+ │                  │ 6. aggregate()                  │                │
+ │                  │ ── compute weighted avg ──      │                │
+ │                  │ ── compute confidence ──        │                │
+ │                  │ ── apply threshold ──           │                │
  │                  │                │                │                │
  │  7. return Signal                                  │                │
- │◀────────────────│                │                │                │
+ │◀──────────────── │                │                │                │
  │                  │                │                │                │
  │  8. Show result  │                │                │                │
- │◀───────────────────────────────────────────────────────────────────│
+ │◀───────────────── ──────────────────────────────────────────────────│
  │                  │                │                │                │
 ```
 
@@ -303,12 +313,12 @@ User        NewsTraderEngine      NewsAPI         VADER/LLM        User Output
 
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│                        MESSAGE QUEUE (RabbitMQ / Redis)           │
-│                                                                    │
-│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐   │
-│  │ articles │    │  scored  │    │ signals  │    │ trades   │   │
-│  │  .queue  │    │ .queue   │    │ .queue   │    │ .queue   │   │
-│  └──────────┘    └──────────┘    └──────────┘    └──────────┘   │
+│                        MESSAGE QUEUE (RabbitMQ / Redis)          │
+│                                                                  │
+│  ┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐    │
+│  │ articles │    │  scored  │    │ signals  │    │ trades   │    │
+│  │  .queue  │    │ .queue   │    │ .queue   │    │ .queue   │    │
+│  └──────────┘    └──────────┘    └──────────┘    └──────────┘    │
 └──────────────────────────────────────────────────────────────────┘
          ▲               ▲               ▲               ▲
          │               │               │               │
@@ -419,32 +429,32 @@ news_trader/
 
 ---
 
-## 6. Implementation Phases (MVP → Full)
+## 6. Implementation Phases
 
-| Phase | What | Estimate |
-|-------|------|----------|
-| **1** | `Article` + `Signal` data classes | 1 hour |
-| **2** | `fetcher.py` — NewsAPI + yfinance price | 2 hours |
-| **3** | `sentiment.py` — VADER | 1 hour |
-| **4** | `weights.py` + `aggregation.py` | 1 hour |
-| **5** | `threshold.py` → Signal with BUY/SELL/HOLD | 1 hour |
-| **6** | `main.py` — CLI that runs everything | 1 hour |
-| **7** | `database.py` — log to SQLite | 2 hours |
-| **8** | `backtester.py` — simulate over historical data | 4 hours |
-| **9** | `alerter.py` — Telegram notifications | 2 hours |
-| **10** | `trader.py` — Alpaca API for live trading | 4 hours |
+| Phase  | What                                                | Estimate |
+| ------ | --------------------------------------------------- | -------- |
+| **1**  | `yfinance` price fetcher                            | 1 hour   |
+| **2**  | `Article` + `Signal` data classes                   | 1 hour   |
+| **3**  | `fetcher.py` — NewsAPI                              | 2 hours  |
+| **4**  | `sentiment.py` — VADER                              | 1 hour   |
+| **5**  | `aggregation.py` — aggregate + decision logic       | 1 hour   |
+| **6**  | `main.py` — CLI that runs prediction                | 1 hour   |
+| **7**  | `database.py` — log signals to SQLite               | 2 hours  |
+| **8**  | `backtester.py` — historical simulation             | 2 hours  |
+| **9**  | `alerter.py` — Telegram / Discord notifications     | 2 hours  |
+| **10** | `trader.py` — Alpaca API for live trading           | 4 hours  |
 
-**MVP = phases 1–6** (~7 hours).
+**Total estimate: ~17 hours** (2-3 days full-time)
 
 ---
 
 ## 7. Sentiment Methods Comparison
 
-| Method | Speed | Accuracy | Needs API? | When to Use |
-|--------|-------|----------|------------|-------------|
-| **VADER** | 1000 art/sec | 60-70% | No | Prototyping, high volume |
-| **FinBERT** | 100 art/sec | 80-85% | No (local) | Better accuracy, still fast |
-| **GPT-4 / Claude** | 5 art/sec | 90-95% | Yes ($) | Best quality, low volume |
+| Method             | Speed        | Accuracy | Needs API? | When to Use                 |
+| ------------------ | ------------ | -------- | ---------- | --------------------------- |
+| **VADER**          | 1000 art/sec | 60-70%   | No         | Prototyping, high volume    |
+| **FinBERT**        | 100 art/sec  | 80-85%   | No (local) | Better accuracy, still fast |
+| **GPT-4 / Claude** | 5 art/sec    | 90-95%   | Yes ($)    | Best quality, low volume    |
 
 ```python
 # VADER (free, local, fast)
@@ -473,68 +483,56 @@ print(resp.choices[0].message.content)  # "1"
 
 ---
 
-## 8. ML Model — Features & Training
+## 8. Combined Strategy — Price Rule + News Sentiment
 
-### Recommended Model
+### Core Logic
 
 ```python
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-import pandas as pd
+import yfinance as yf
 
-df = pd.DataFrame({
-    "sentiment":         [0.8, -0.6, 0.2, -0.9, 0.5],
-    "price_change_1d":   [1.2, -2.1, 0.3, -0.8, 1.5],
-    "price_change_5d":   [3.1, -4.2, 0.8, -3.5, 2.9],
-    "volume_change":     [0.5, -0.3, 0.1, -0.7, 0.4],
-    "article_count":     [12,   8,   3,   15,   6],
-    "sentiment_std":     [0.2,  0.4, 0.1,  0.5, 0.3],
-    "rsi_14":            [65,   32,  55,   28,  60],
-    "day_of_week":       [1,    3,   5,    2,   4],
-})
-Y = [1, 0, 1, 0, 1]  # 1 = price up in 5 days, 0 = down
+def get_signal(ticker="AAPL"):
+    hist = yf.download(ticker, period="1mo")
+    price_today = hist["Close"].iloc[-1]
+    price_5d_ago = hist["Close"].iloc[-6]
+    price_change = (price_today / price_5d_ago) - 1
 
-X_train, X_test, y_train, y_test = train_test_split(df, Y, test_size=0.2)
-model = RandomForestClassifier(n_estimators=100)
-model.fit(X_train, y_train)
+    sentiment = get_aggregated_sentiment(ticker)
 
-print(f"Accuracy: {model.score(X_test, y_test):.0%}")
-print(f"Feature importance: {dict(zip(df.columns, model.feature_importances_))}")
+    if price_change > 0.05 and sentiment > 0:
+        return "SELL", f"Price up {price_change:.1%} + positive news"
+    elif price_change < -0.05 and sentiment < 0:
+        return "BUY", f"Price down {price_change:.1%} + negative news"
+    elif price_change > 0.05 and sentiment <= 0:
+        return "HOLD", f"Price up {price_change:.1%} but news not confirming"
+    elif price_change < -0.05 and sentiment >= 0:
+        return "HOLD", f"Price down {price_change:.1%} but news not confirming"
+    else:
+        return "HOLD", f"No strong move ({price_change:.1%})"
 ```
 
-### Feature Dictionary
+### Why This Works
 
-| Feature | Range | Why It Matters |
-|---------|-------|----------------|
-| `sentiment` | -1 .. +1 | News sentiment from analysis layer |
-| `price_change_1d` | % | Short-term momentum |
-| `price_change_5d` | % | Medium-term trend |
-| `volume_change` | ratio | Volume spike = interest |
-| `article_count` | int | More articles = more attention |
-| `sentiment_std` | 0 .. 1 | Disagreement = uncertainty |
-| `rsi_14` | 0 .. 100 | Overbought/oversold signal |
-| `day_of_week` | 0 .. 6 | Weekly seasonality |
+| Scenario | Price | News | Action | Logic |
+|----------|-------|------|--------|-------|
+| Overpriced + hype | +8% | +0.7 | SELL | Mean reversion, sentiment confirms |
+| Oversold + fear | -7% | -0.6 | BUY | Buy the dip, sentiment confirms |
+| Up without reason | +6% | 0.0 | HOLD | No confirmation, wait |
+| Down without reason | -6% | 0.1 | HOLD | No confirmation, wait |
 
-### Prediction Target
+Price rule alone catches ~80% of signals. News sentiment acts as a **filter** to avoid false signals, not as the primary driver.
 
-| Target | Interval | Difficulty | Best For |
-|--------|----------|------------|----------|
-| Next 1 day | Very short | Hard (noisy) | Scalping |
-| Next 3-5 days | Short | Sweet spot | News-driven trading |
-| Next 10-20 days | Medium | Easier | Swing trading |
+### Implementation Phases
 
-**Recommended:** predict if price is **higher in 5 days** — short enough for news impact, long enough to filter noise.
-
-### Minimum Data Requirements
-
-| Data points | Quality |
-|-------------|---------|
-| < 100 | Unreliable, high variance |
-| 200-500 | Usable, basic patterns |
-| 500-2000 | Good, stable predictions |
-| 2000+ | Solid, actionable |
-
-RandomForest is robust against overfitting even with limited data, but aim for **at least 200 samples** (roughly 1 year of daily data).
+| Phase | What | Estimate |
+|-------|------|----------|
+| **1** | `yfinance` price fetcher | 1 hour |
+| **2** | Sentiment analyzer (VADER) | 1 hour |
+| **3** | News fetcher (NewsAPI) | 2 hours |
+| **4** | Aggregation + decision logic | 1 hour |
+| **5** | Backtest over 1-2 years | 2 hours |
+| **6** | Telegram / Discord alert | 2 hours |
+| **7** | Live trading (Alpaca) | 4 hours |
+| **Total** | | **~13 hours** |
 
 ---
 
