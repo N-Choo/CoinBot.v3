@@ -1,76 +1,73 @@
-# Flear — Open Source Trading & Web3 Tools
+<div align="center">
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=2,3&height=200&section=header&text=CoinBot%20V3&fontSize=64&animation=fadeIn&fontAlignY=36&desc=CORE&descSize=20&descAlignY=54" alt="CoinBot V3 Banner" />
+</div>
+<p align="center">
+  <b>A trading engine that learns. Powered by ML and local LLMs.</b>
+</p>
+<div align="center">
+  <img src="https://img.shields.io/badge/Rust-Actix--Web-orange?style=for-the-badge&logo=rust&logoColor=white" />
+  <img src="https://img.shields.io/badge/React-19-blue?style=for-the-badge&logo=react&logoColor=white" />
+  <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/PostgreSQL-SQLx-336791?style=for-the-badge&logo=postgresql&logoColor=white" />
+  <img src="https://img.shields.io/badge/KuCoin-API-24b47e?style=for-the-badge&logo=kucoin&logoColor=white" />
+  <img src="https://img.shields.io/badge/Docker-Compose-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
+</div>
 
-Open source tools, bots, and architecture blueprints for trading, Web3, and DeFi. MIT licensed — use it, learn from it, break it, fix it.
+<br />
 
 ---
-
-## What's Inside
-
-| Directory | Description |
-|-----------|-------------|
-| `server/` | Rust backend (Actix-Web) — Web3 auth, trading engine |
-| `react/` | React 19 + TypeScript frontend |
-| `system_architecture/` | Blueprints — News Trader Agent, system design docs |
-
----
-
-### File System Structure
-
+## Architecture
 ```text
 .
-├── docker-compose.yml         # Orchestration for Frontend & Backend
-├── server/                    # Rust Backend (Actix-Web)
-│   ├── src/                   # Handlers, Models, Routes, State, Transaction Logic
-│   ├── Cargo.toml             # Backend dependencies
-│   └── Dockerfile             # Multi-stage Rust build
-├── react/                     # Frontend (Vite + TS)
-│   ├── src/                   # Components, Hooks, Pages, Services
-│   ├── package.json           # Frontend dependencies
-│   └── Dockerfile             # Node.js development environment
-└── system_architecture/       # Blueprints & architecture docs
-    └── news_trader_agent_blueprint.md
+├── server/                          # Rust (Actix-Web)
+│   ├── Cargo.toml
+│   ├── Dockerfile
+│   └── src/
+│       ├── main.rs                  # HttpServer entry
+│       ├── config.rs                # AppConfig, CORS
+│       ├── state.rs                 # PgPool, cache, KuCoin client
+│       ├── routes.rs
+│       ├── handlers/user/auth.rs    # EIP-191 auth endpoints
+│       └── models/                  # DTOs, AppError
+│
+├── react/                           # Vite + React 19 + TS
+│   ├── Dockerfile
+│   ├── nginx.conf
+│   ├── package.json
+│   └── src/
+│       ├── App.tsx                  # Routes: /, /trading, /dashboard
+│       ├── components/              # topbar, auth_guard, dashboard/, landing/, trading/
+│       ├── hooks/                   # useAuth, useTheme, useScrollAnimation
+│       ├── pages/                   # homePage, dashboard, tradingPage
+│       ├── services/                # connectWallet, kucoin
+│       └── styles/
+│
+└── system_architecture/
+    └── trader_agent_blueprint.md
 ```
 
+## Features
+### Backend
+- [x] EIP-191 wallet-based authentication (challenge → sign → session)
+- [x] Session cookie management (Moka cache, TTL-based)
+- [x] CI pipeline (fmt, clippy, cargo test)
+- [ ] ML signal pipeline (see `system_architecture/`)
+- [ ] Local LLM trade agent
+- [ ] Strategy backtesting engine
+### Frontend
+- [x] Wallet connect / disconnect flow (ethers.js + EIP-191)
+- [x] TradingView chart integration
+- [x] Portfolio dashboard (balance stats, P&L chart, contract cards)
+- [x] Landing page (hero, pipeline animation, feature cards)
+- [x] Dark/light theme toggle
+- [x] Auth-guarded routing (redirect if unauthenticated)
 ---
 
-### Tech Stack
-
-| Component | Technology |
-|-----------|-----------|
-| **Backend** | Rust (Actix-Web), PostgreSQL (SQLx), Moka Cache |
-| **Frontend** | React 19, TypeScript, Vite, Ethers v6, Axios |
-| **DevOps** | Docker, Docker Compose |
-| **Web3** | EIP-191 Signature Verification (ethers-rs / ethers.js) |
-| **Trading Bots** | Python, yfinance, VADER, scikit-learn |
-
+## API Overview
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `/api/user/auth` | Request EIP-191 signing challenge (nonce) |
+| `POST` | `/api/user/auth` | Submit signed message → session cookie |
+| `POST` | `/api/user/logout` | Invalidate session |
+| `POST` | `/api/user/verify` | Check session validity |
 ---
-
-### Development Setup
-
-**Prerequisites:** Docker & Docker Compose installed.
-
-1. **Configure Environment:**
-   Ensure your `.env` file exists in the root with `DATABASE_URL` and your specific API credentials.
-
-2. **Launch System:**
-
-```bash
-   docker compose up --build
-   
-```
-
-   _Note for Fedora users: The volume mounts utilize the `:Z` flag to handle SELinux permissions._
-
-3. **Access:**
-   - **Frontend:** `http://localhost:5173`
-   - **Backend API:** `http://localhost:8080`
-
----
-
-### Contributing
-
-PRs are welcome. Found a bug? Open an issue. Want a feature? Build it and send a PR. This is open source — all contributions improve the project for everyone.
-
-### License
-
-MIT — do whatever you want. See [LICENSE](LICENSE).
