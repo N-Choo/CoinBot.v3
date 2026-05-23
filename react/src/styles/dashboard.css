@@ -835,7 +835,11 @@ tbody tr:last-child td {
     padding: 14px 16px;
   }
 
-  .balance-card-header {
+.balance-stats-grid > .dash-panel {
+  height: 100%;
+}
+
+.balance-card-header {
     margin-bottom: 4px;
   }
 
