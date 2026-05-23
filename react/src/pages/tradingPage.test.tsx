@@ -5,7 +5,7 @@ import { BrowserRouter } from 'react-router-dom'
 describe('TradingPage', () => {
   it('renders the TradingView chart container', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByText('BTC/USDT')).toBeTruthy()
     })
@@ -13,7 +13,7 @@ describe('TradingPage', () => {
 
   it('renders the Trading Parameters settings', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByText('Trading Parameters')).toBeTruthy()
     })
@@ -21,7 +21,7 @@ describe('TradingPage', () => {
 
   it('renders mock market list with trading pairs', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByText('SOL')).toBeTruthy()
       expect(screen.getByText('DOGE')).toBeTruthy()
@@ -31,7 +31,7 @@ describe('TradingPage', () => {
 
   it('shows price for selected pair in header', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       const prices = screen.getAllByText('64,230.50')
       expect(prices.length).toBeGreaterThan(0)
@@ -40,7 +40,7 @@ describe('TradingPage', () => {
 
   it('selects a different pair from market list', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByText('SOL')).toBeTruthy()
     })
@@ -53,7 +53,7 @@ describe('TradingPage', () => {
 
   it('renders the search input', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByPlaceholderText('Search markets...')).toBeTruthy()
     })
@@ -61,7 +61,7 @@ describe('TradingPage', () => {
 
   it('renders the START TRADING button', async () => {
     const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter><Trading /></BrowserRouter>)
+    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
       expect(screen.getByText('START TRADING')).toBeTruthy()
     })

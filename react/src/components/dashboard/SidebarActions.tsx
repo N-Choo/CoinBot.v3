@@ -26,12 +26,20 @@ export default function SidebarActions() {
           <h3>Wallet Actions</h3>
         </div>
         <div className="wallet-actions">
-          <button className="start-bot-btn wallet-btn-full"
+          <button className="wallet-btn wallet-btn-deposit"
             onClick={() => setModal('deposit')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="5" x2="12" y2="19" />
+              <polyline points="19 12 12 19 5 12" />
+            </svg>
             DEPOSIT FUNDS
           </button>
-          <button className="disconnect-btn wallet-btn-full" style={{ padding: 10, textAlign: 'center' }}
+          <button className="wallet-btn wallet-btn-withdraw"
             onClick={() => setModal('withdraw')}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+              <line x1="12" y1="19" x2="12" y2="5" />
+              <polyline points="5 12 12 5 19 12" />
+            </svg>
             WITHDRAW ASSETS
           </button>
         </div>
@@ -42,12 +50,18 @@ export default function SidebarActions() {
 
       <div className="dash-panel dash-scroll activity-section">
         <h3 className="activity-title">Recent Activity</h3>
-        <div className="dash-title-sm activity-subtitle">History</div>
+        <div className="dash-title-sm activity-subtitle">Transaction History</div>
         <div className="activity-list">
           {tx.map(t => (
             <div key={t.id} className="tx-row">
-              <div className={`tx-arrow ${t.in ? 'tx-arrow-in' : 'tx-arrow-out'}`}>
-                {t.in ? '\u2193' : '\u2191'}
+              <div className={`tx-icon ${t.in ? 'tx-icon-in' : 'tx-icon-out'}`}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+                  {t.in ? (
+                    <><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></>
+                  ) : (
+                    <><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></>
+                  )}
+                </svg>
               </div>
               <div className="tx-body">
                 <div className="tx-type">{t.type}</div>

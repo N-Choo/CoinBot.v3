@@ -15,7 +15,7 @@ axios.defaults.timeout = 5000;
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>
     {/* 2. Wrap your Routes inside BrowserRouter */}
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <AppRoutes />
     </BrowserRouter>
   </React.StrictMode>
