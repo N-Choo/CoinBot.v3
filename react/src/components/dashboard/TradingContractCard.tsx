@@ -29,7 +29,7 @@ export default function TradingContractCard({ data }: { data?: { status?: string
       </div>
 
       <div className="progress-track">
-        <div style={{ width: `${stakePct}%`, background: 'var(--color-accent)', transition: 'width 1s ease' }} title="Staked" />
+        <div style={{ width: `${stakePct}%`, background: '#f87171', transition: 'width 1s ease' }} title="Staked" />
         <div style={{ width: `${tradePct}%`, background: 'var(--color-primary)', transition: 'width 1s ease' }} title="Trading" />
         <div style={{ width: `${freePct}%`, background: 'var(--text-muted)', transition: 'width 1s ease' }} title="Free" />
       </div>
@@ -37,7 +37,7 @@ export default function TradingContractCard({ data }: { data?: { status?: string
       <div className="contract-card-stats">
         <div>
           <div className="data-label">Staked</div>
-          <div className="data-value" style={{ color: 'var(--color-accent)' }}>${stake.toLocaleString()}</div>
+          <div className="data-value" style={{ color: '#f87171' }}>${stake.toLocaleString()}</div>
         </div>
         <div className="contract-card-stats-right">
           <div className="data-label">Trading</div>

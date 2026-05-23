@@ -135,7 +135,7 @@
 }
 
 .dash-value-lg {
-  font-size: 32px;
+  font-size: 22px;
   font-weight: 800;
   font-family: var(--font-mono);
   color: var(--text-main);
@@ -393,9 +393,16 @@ tbody tr:last-child td {
 /* ── Balance Stats Grid ── */
 .balance-stats-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  grid-template-columns: repeat(3, 1fr);
   gap: 24px;
   width: 100%;
+  min-width: 0;
+}
+
+.balance-stats-grid > .dash-panel {
+  height: 100%;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .balance-card-header {
@@ -798,10 +805,6 @@ tbody tr:last-child td {
 @media (max-width: 1024px) {
   .dash-grid { grid-template-columns: 1fr; }
   .dash-side-col { height: auto; position: static; }
-  .static-card-wrapper {
-    flex: 0 0 100% !important;
-    max-width: 100% !important;
-  }
 }
 
 @media (max-width: 768px) {
@@ -851,7 +854,7 @@ tbody tr:last-child td {
   }
 
   .dash-value-lg {
-    font-size: 22px;
+    font-size: 20px;
     margin: 2px 0 2px;
   }
 
@@ -922,10 +925,17 @@ tbody tr:last-child td {
   }
 }
 
+@media (max-width: 768px) {
+  .static-card-wrapper {
+    flex: 0 0 100% !important;
+    max-width: 100% !important;
+  }
+}
+
 @media (max-width: 640px) {
   .dash-grid { gap: 12px; }
   .dash-panel { padding: 14px; }
-  .dash-value-lg { font-size: 24px; }
+  .dash-value-lg { font-size: 20px; }
 }
 
 @media (max-width: 400px) {
