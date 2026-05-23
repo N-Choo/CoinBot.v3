@@ -3,22 +3,30 @@
 ### The OpenCore Philosophy
 To maintain the highest standards of security and data integrity, we have adopted an **OpenCore model**:
 
-*   **Transparency:** The core authentication flow, state management, and orchestration layers are fully open-source to allow for community auditing and collaborative improvement.
-*   **Transaction Integrity:** The transaction processing logic is open to the public, ensuring that every on-chain interaction is verifiable, secure, and follows strict EIP standards.
-*   **Extensibility:** While specific proprietary strategies remain private, this repository provides the "hooks" and infrastructure for developers to build, test, and integrate their own custom features into the Mint ecosystem—**contributions are welcome by making a pull request!**
+* **Transparency:** The core authentication flow, state management, and orchestration layers are fully open-source to allow for proof of action read access.
+* **Transaction Integrity:** The transaction processing logic is open to the public, ensuring that every on-chain interaction is verifiable, secure, and follows strict EIP standards.
+* **Extensibility:** While specific proprietary strategies remain private, this repository provides the "hooks" and infrastructure for developers to build, test, and integrate their own custom features into the Mint ecosystem — **contributions are welcome by making a pull request!**
 
 ---
+
 
 ## System Architecture
 
 The system follows a classic client-server architecture optimized for Web3 security and low-latency execution, fully containerized for development and production parity.
 
-#### 1. Authentication Flow (EIP-191)
+### 1. Authentication Flow (EIP-191)
 
 - **Challenge:** React frontend requests a unique nonce from the Rust server via `/api/user/auth`.
 - **State:** Server generates a UUID nonce and stores it in a **Moka** cache (5-min TTL).
 - **Signature:** User signs the nonce using **Ethers v6** via their browser wallet.
-- **Verification:** Server recovers the address; if valid, it establishes a session via HttpOnly cookie.
+- **Verification:** Server recovers the address; if valid, it establishes a session.
+
+#### Security Layers
+- **Layer 1 ```Defualt```:** 5-minute session.
+- **Layer 2 ```Optional```:** Layer 1 + IP binding.
+  - Sessions are locked to one page at a time in **read-only mode** — no interaction with objects on the page.
+  - If the IP has not changed, the session **automatically renews** for another 5 minutes on the same page.
+  - To access a new page or perform an emergency action (withdraw, stop trade), a **new session must be obtained**.
 
 #### 2. Core Components
 
