@@ -16,7 +16,9 @@
 <br />
 
 ---
+
 ## Architecture
+
 ```text
 .
 ├── Cargo.toml                       # Workspace root w/ shared deps
@@ -49,21 +51,61 @@
     └── trader_agent_blueprint.md
 ```
 
+## Security Architecture
+
+### Separation of Duties (SoD)
+
+Each business function runs in its own isolated process with its own database.
+No single service performs both deposit and withdrawal logic.
+
+| Service        | Responsibility                  | Cannot access       |
+| -------------- | ------------------------------- | ------------------- |
+| `api_gateway`  | Auth, routing, WebSocket push   | Modify balances     |
+| `deposit`      | Record deposits, report balance | Process withdrawals |
+| `withdrawal`   | Process withdrawals             | Deposit DB          |
+| `trade-engine` | ML signals via Redis            | Any wallet data     |
+
+### Ethical Walls
+
+Communication between services is restricted to defined interfaces:
+
+```
+Client (caller)        Interface                  Server (owner)
+───────────────────────────────────────────────────────────────
+api_gateway ──gRPC──▶ WithdrawalService          withdrawal
+api_gateway ──gRPC──▶ DepositService             deposit
+withdrawal  ──gRPC──▶ DepositService (balance)   deposit
+trade-engine──Redis──▶ tx:deposits / tx:withdrawals (events only)
+```
+
+**Three enforcement layers:**
+
+1. **Crate boundaries** — each crate only imports `common` (shared types, proto stubs). No crate imports another service's internals.
+2. **Docker isolation** — each container has credentials for its own database only. No cross-service DB access.
+3. **Proto contracts** — services only expose what `proto/*.proto` defines. The Rust compiler rejects mismatches.
+
+See `prototypes/proto/README.md` for the full gRPC + Redis communication guide.
+
 ## Features
+
 ### Backend
+
 - [x] EIP-191 wallet-based authentication (challenge → sign → session)
 - [x] Session cookie management (Moka cache, TTL-based)
 - [x] CI pipeline (fmt, clippy, cargo test)
 - [ ] ML signal pipeline (see `system_architecture/`)
 - [ ] Local LLM trade agent
 - [ ] Strategy backtesting engine
+
 ### Frontend
+
 - [x] Wallet connect / disconnect flow (ethers.js + EIP-191)
 - [x] TradingView chart integration
 - [x] Portfolio dashboard (balance stats, P&L chart, contract cards)
 - [x] Landing page (hero, pipeline animation, feature cards)
 - [x] Dark/light theme toggle
 - [x] Auth-guarded routing (redirect if unauthenticated)
+
 ---
 
 ## Local Development
@@ -84,10 +126,12 @@ make frontend-lint-fix  # auto-fix frontend lint
 ```
 
 ## API Overview
-| Method | Endpoint | Description |
-|---|---|---|
-| `GET` | `/api/user/auth` | Request EIP-191 signing challenge (nonce) |
-| `POST` | `/api/user/auth` | Submit signed message → session cookie |
-| `POST` | `/api/user/logout` | Invalidate session |
-| `POST` | `/api/user/verify` | Check session validity |
+
+| Method | Endpoint           | Description                               |
+| ------ | ------------------ | ----------------------------------------- |
+| `GET`  | `/api/user/auth`   | Request EIP-191 signing challenge (nonce) |
+| `POST` | `/api/user/auth`   | Submit signed message → session cookie    |
+| `POST` | `/api/user/logout` | Invalidate session                        |
+| `POST` | `/api/user/verify` | Check session validity                    |
+
 ---

@@ -1,6 +1,12 @@
 [workspace]
 resolver = "2"
-members = ["api_gateway"]
+members = [
+    "api_gateway",
+    "prototypes/grpc-example",
+    "prototypes/crates/common",
+    "prototypes/crates/deposit",
+    "prototypes/crates/withdrawal",
+]
 
 [workspace.dependencies]
 actix-web = "4.13.0"

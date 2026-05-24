@@ -1,0 +1,27 @@
+syntax = "proto3";
+package wallet;
+
+message BalanceRequest {
+  string user_id = 1;
+}
+
+message BalanceResponse {
+  string balance = 1;
+  string currency = 2;
+}
+
+message TransferRequest {
+  string from_user = 1;
+  string to_user = 2;
+  string amount = 3;
+}
+
+message TransferResponse {
+  bool success = 1;
+  string tx_id = 2;
+}
+
+service Wallet {
+  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+  rpc Transfer(TransferRequest) returns (TransferResponse);
+}

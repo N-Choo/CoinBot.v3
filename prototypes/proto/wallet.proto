@@ -1,0 +1,64 @@
+syntax = "proto3";
+package wallet;
+
+// ── Messages ──
+
+message BalanceRequest {
+  string user_id = 1;
+}
+
+message BalanceResponse {
+  string balance = 1;
+  string currency = 2;
+}
+
+message HistoryRequest {
+  string user_id = 1;
+  int32 limit = 2;
+}
+
+message HistoryResponse {
+  repeated TxEntry entries = 1;
+}
+
+message TxEntry {
+  string tx_id = 1;
+  string amount = 2;
+  string kind = 3;      // "deposit" | "withdrawal"
+  int64 timestamp = 4;
+}
+
+message WithdrawalRequest {
+  string user_id = 1;
+  string amount = 2;
+  string address = 3;   // destination
+}
+
+message WithdrawalResponse {
+  bool success = 1;
+  string tx_id = 2;
+}
+
+message DashboardRequest {
+  string user_id = 1;
+}
+
+message DashboardResponse {
+  string balance = 1;
+  repeated TxEntry recent = 2;
+}
+
+// ── Services ──
+
+service DepositService {
+  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
+  rpc GetHistory(HistoryRequest) returns (HistoryResponse);
+}
+
+service WithdrawalService {
+  rpc SubmitWithdrawal(WithdrawalRequest) returns (WithdrawalResponse);
+}
+
+service GatewayService {
+  rpc GetDashboard(DashboardRequest) returns (DashboardResponse);
+}
