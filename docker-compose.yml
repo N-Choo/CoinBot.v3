@@ -1,14 +1,14 @@
 services:
   backend:
     build:
-      context: ./server
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: api_gateway/Dockerfile
     env_file:
-      - ./server/.env
+      - .env
     ports:
       - "8080:8080"
     volumes:
-      - ./server:/app
+      - .:/app
       - /app/target
     environment:
       - RUST_LOG=debug
