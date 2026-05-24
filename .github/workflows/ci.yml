@@ -20,11 +20,11 @@ jobs:
       - name: Cache Dependencies
         uses: Swatinem/rust-cache@v2
       - name: Check Format
-        run: cargo fmt --all -- --check
+        run: make fmt
       - name: Clippy (Linter)
-        run: cargo clippy -- -D warnings
+        run: make clippy
       - name: Run Tests
-        run: cargo test -p api-gateway --lib
+        run: make test
 
   # --- Frontend Checks ---
   frontend-test:

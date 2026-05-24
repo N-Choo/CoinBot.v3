@@ -125,6 +125,37 @@ make test       # Rust tests
 make frontend-lint-fix  # auto-fix frontend lint
 ```
 
+### CI Pipeline
+
+The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push to `main` and
+pull requests. It mirrors `make ci` — two jobs:
+
+| Job | Checks |
+|---|---|
+| `backend-test` | Format (`make fmt`), Clippy (`make clippy`), Tests (`make test`) |
+| `frontend-test` | Lint, Test, Build |
+
+**Which packages are checked** is defined by `PACKAGES` in the Makefile:
+
+```makefile
+PACKAGES = api-gateway
+```
+
+Add new services to this list to include them in CI. Add new checks by extending
+the Makefile — CI calls `make` targets, not raw cargo commands.
+
+To run the full CI pipeline locally:
+
+```sh
+make ci
+```
+
+Or a single job:
+
+```sh
+make fmt clippy test   # equivalent to backend-test
+```
+
 ## API Overview
 
 | Method | Endpoint           | Description                               |

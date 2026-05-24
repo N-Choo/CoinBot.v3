@@ -1,15 +1,17 @@
+PACKAGES = api-gateway
+
 .PHONY: ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build
 
 ci: fmt-fix clippy test frontend-lint-fix frontend-test frontend-build
 
 fmt:
-	cargo fmt --all -- --check
+	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
 
 fmt-fix:
-	cargo fmt --all
+	cargo fmt $(addprefix -p ,$(PACKAGES))
 
 clippy:
-	cargo clippy -- -D warnings
+	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
 	cargo test -p api-gateway --lib
