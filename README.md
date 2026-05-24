@@ -19,7 +19,9 @@
 ## Architecture
 ```text
 .
-├── server/                          # Rust (Actix-Web)
+├── Cargo.toml                       # Workspace root w/ shared deps
+├── Makefile                         # Local CI runner
+├── api_gateway/                     # Rust (Actix-Web)
 │   ├── Cargo.toml
 │   ├── Dockerfile
 │   └── src/
@@ -42,6 +44,7 @@
 │       ├── services/                # connectWallet, kucoin
 │       └── styles/
 │
+├── docker-compose.yml
 └── system_architecture/
     └── trader_agent_blueprint.md
 ```
@@ -62,6 +65,23 @@
 - [x] Dark/light theme toggle
 - [x] Auth-guarded routing (redirect if unauthenticated)
 ---
+
+## Local Development
+
+Run all CI checks (fmt → clippy → test → frontend lint → test → build):
+
+```sh
+make ci
+```
+
+Or individually:
+
+```sh
+make fmt-fix    # auto-format Rust
+make clippy     # Rust lints
+make test       # Rust tests
+make frontend-lint-fix  # auto-fix frontend lint
+```
 
 ## API Overview
 | Method | Endpoint | Description |
