@@ -1,0 +1,23 @@
+[package]
+name = "api-gateway"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+actix-web.workspace = true
+anyhow.workspace = true
+env_logger.workspace = true
+uuid.workspace = true
+serde.workspace = true
+log.workspace = true
+moka.workspace = true
+sqlx.workspace = true
+ethers.workspace = true
+thiserror.workspace = true
+kucoin.workspace = true
+dotenvy.workspace = true
+actix-cors.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+

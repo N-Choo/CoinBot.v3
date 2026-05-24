@@ -4,7 +4,7 @@ use actix_web::{
     web,
 };
 use dotenvy::dotenv;
-use server::{config::AppConfig, logger::init_logger, routes::api_routes};
+use api_gateway::{config::AppConfig, logger::init_logger, routes::api_routes};
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -12,7 +12,7 @@ async fn main() -> anyhow::Result<()> {
     init_logger();
 
     let config = AppConfig::from_env()?;
-    let app_state = server::state::AppState::new(&config).await?;
+    let app_state = api_gateway::state::AppState::new(&config).await?;
     let config_data = web::Data::new(config.clone());
 
     // Initial HTTP workers to handle inncomming TCP connections.

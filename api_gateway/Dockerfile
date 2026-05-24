@@ -5,26 +5,22 @@ FROM chef AS planner
 COPY . .
 RUN cargo chef prepare --recipe-path recipe.json
 
-# ── Dev stage (fast debug build) ──
 FROM chef AS dev-builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --recipe-path recipe.json
 COPY . .
-RUN cargo build
+RUN cargo build -p api-gateway
 
-# ── Prod stage (optimized release) ──
-FROM chef AS builder 
+FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
-RUN cargo chef cook --recipe-path recipe.json
+RUN cargo chef cook --recipe-path recipe.json --release
 COPY . .
-RUN cargo build --release
+RUN cargo build -p api-gateway --release
 
-# ── Runtime ──
 FROM debian:bookworm-slim AS runtime
 WORKDIR /app
 RUN apt-get update && apt-get install -y ca-certificates && rm -rf /var/lib/apt/lists/*
 
-COPY --from=builder /app/target/release/server /usr/local/bin/app
+COPY --from=builder /app/target/release/api-gateway /usr/local/bin/app
 EXPOSE 8080
 CMD ["app"]
-
