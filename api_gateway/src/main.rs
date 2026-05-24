@@ -3,8 +3,8 @@ use actix_web::{
     middleware::{Logger, NormalizePath},
     web,
 };
-use dotenvy::dotenv;
 use api_gateway::{config::AppConfig, logger::init_logger, routes::api_routes};
+use dotenvy::dotenv;
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
