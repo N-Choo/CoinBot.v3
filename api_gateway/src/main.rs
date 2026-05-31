@@ -1,3 +1,4 @@
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
     App, HttpServer,
     middleware::{Logger, NormalizePath},
@@ -15,9 +16,16 @@ async fn main() -> anyhow::Result<()> {
     let app_state = api_gateway::state::AppState::new(&config).await?;
     let config_data = web::Data::new(config.clone());
 
+    let governor = GovernorConfigBuilder::default()
+        .seconds_per_request(10)
+        .burst_size(20)
+        .finish()
+        .unwrap();
+
     // Initial HTTP workers to handle inncomming TCP connections.
     HttpServer::new(move || {
         App::new()
+            .wrap(Governor::new(&governor))
             .wrap(config_data.get_cors())
             .wrap(NormalizePath::trim())
             .wrap(Logger::new("%a\t | %s\t | %Dms\t | %r\t"))

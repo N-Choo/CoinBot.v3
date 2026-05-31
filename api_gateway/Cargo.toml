@@ -20,4 +20,5 @@ actix-cors.workspace = true
 rand.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
+actix-governor.workspace = true
 
