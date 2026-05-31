@@ -1,4 +1,5 @@
 
+import axios from 'axios'
 import { ethers } from 'ethers'
 
 const USDT_ADDRESS = "0xdAC17F958D2ee523a2206206994597C13D831ec7"
@@ -35,5 +36,8 @@ export async function sendUSDT(amountInUSD: string) {
   const signerContract = contract.connect(signer) as ethers.Contract
   const tx = await signerContract.transfer(RECIPIENT_ADDRESS, amount)
   await tx.wait()
-  return tx.hash
+
+  await axios.post(`/api/transactions/deposit`, { txHash: tx.hash })
+
+  return true
 }
