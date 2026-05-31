@@ -1,4 +1,22 @@
 services:
+  backend-dev:
+    build:
+      context: .
+      dockerfile: api_gateway/Dockerfile
+      target: dev-builder
+    command: cargo run -p api-gateway
+    env_file:
+      - .env
+    ports:
+      - "8081:8080"
+    volumes:
+      - .:/app
+      - /app/target
+    environment:
+      - RUST_LOG=debug
+    networks:
+      - app-network
+
   backend:
     build:
       context: .
