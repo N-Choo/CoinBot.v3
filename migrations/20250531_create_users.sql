@@ -1,0 +1,4 @@
+CREATE TABLE IF NOT EXISTS users (
+    wallet_address TEXT PRIMARY KEY,
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);

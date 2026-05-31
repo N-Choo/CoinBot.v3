@@ -21,6 +21,11 @@ impl AppState {
             .await
             .context("Failed to connect to the Database")?;
 
+        sqlx::migrate!("../migrations")
+            .run(&db_pool)
+            .await
+            .map_err(|e| anyhow::anyhow!("Failed to run database migrations: {e}"))?;
+
         let nonce_cache = Cache::builder()
             .max_capacity(250)
             .time_to_live(Duration::from_secs(60 * 5))
