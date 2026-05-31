@@ -2,7 +2,7 @@ name: Flear Full-Stack CI
 
 on:
   push:
-    branches: [main, "feature/**"]
+    branches: [main, "feature/**", "FEAT/**"]
   pull_request:
     branches: [main]
 
