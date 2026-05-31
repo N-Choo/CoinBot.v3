@@ -713,6 +713,7 @@ tbody tr:last-child td {
   width: 100%;
   max-width: 420px;
   padding: 30px;
+  background: var(--bg-panel);
 }
 
 .modal-title {
@@ -788,18 +789,27 @@ tbody tr:last-child td {
 
 .modal-cancel-btn {
   flex: 1;
-  padding: 12px;
+  padding: 14px 20px;
   background: transparent;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
+  line-height: 1;
 }
 
 .modal-confirm-btn {
   flex: 2;
+  padding: 14px 20px;
   justify-content: center;
+  line-height: 1;
+}
+
+.modal-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  padding-bottom: 14px;
 }
 
 @media (max-width: 1024px) {

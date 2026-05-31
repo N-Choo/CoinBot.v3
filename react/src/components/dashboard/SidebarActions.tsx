@@ -1,10 +1,33 @@
 import { useState } from 'react'
+import axios from 'axios'
+import { sendUSDT } from '../../services/transaction'
+
 
 export default function SidebarActions() {
   const [modal, setModal] = useState<'deposit' | 'withdraw' | null>(null)
   const [amount, setAmount] = useState('')
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState('')
 
-  const close = () => { setModal(null); setAmount('') }
+  const close = () => { setModal(null); setAmount(''); setError('') }
+
+  const submit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setLoading(true)
+    setError('')
+    try {
+      if (modal === 'deposit') {
+        await sendUSDT(amount)
+      } else {
+        await axios.post(`/api/transactions/withdraw`, { amount })
+      }
+      close()
+    } catch (err: any) {
+      setError(err?.response?.data?.error || err?.message || 'Transaction failed')
+    } finally {
+      setLoading(false)
+    }
+  }
 
   const tx = [
     { id: 1, type: 'Deposit', hash: '0x7a3B...f9E2', amount: '+$5,000', time: '2 min ago', in: true },
@@ -105,7 +128,7 @@ export default function SidebarActions() {
               )}
             </div>
 
-            <form onSubmit={e => { e.preventDefault(); close() }}>
+            <form onSubmit={submit}>
               <label className="modal-form-label">Amount in USD</label>
               <div className="modal-input-wrap">
                 <input
@@ -115,12 +138,13 @@ export default function SidebarActions() {
                 />
                 <span className="modal-currency-suffix">USD</span>
               </div>
+              {error && <div className="modal-error">{error}</div>}
               <div className="modal-actions">
-                <button type="button" onClick={close} className="modal-cancel-btn">
+                <button type="button" onClick={close} className="modal-cancel-btn" disabled={loading}>
                   CANCEL
                 </button>
-                <button type="submit" className="start-bot-btn modal-confirm-btn">
-                  {modal === 'deposit' ? 'CONFIRM DEPOSIT' : 'CONFIRM WITHDRAWAL'}
+                <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
+                  {loading ? 'PROCESSING...' : modal === 'deposit' ? 'CONFIRM DEPOSIT' : 'CONFIRM WITHDRAWAL'}
                 </button>
               </div>
             </form>
