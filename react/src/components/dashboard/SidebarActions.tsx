@@ -1,15 +1,22 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { sendUSDT } from '../../services/transaction'
-
+import { sendCoin, getBalance, COINS } from '../../services/transaction'
+import type { CoinSymbol } from '../../services/transaction'
 
 export default function SidebarActions() {
   const [modal, setModal] = useState<'deposit' | 'withdraw' | null>(null)
+  const [coin, setCoin] = useState<CoinSymbol>('usdt')
   const [amount, setAmount] = useState('')
+  const [balance, setBalance] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
-  const close = () => { setModal(null); setAmount(''); setError('') }
+  const close = () => { setModal(null); setCoin('usdt'); setAmount(''); setError('') }
+
+  useEffect(() => {
+    if (!modal) return
+    getBalance(coin).then(setBalance).catch(() => setBalance('—'))
+  }, [modal, coin])
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -17,7 +24,7 @@ export default function SidebarActions() {
     setError('')
     try {
       if (modal === 'deposit') {
-        await sendUSDT(amount)
+        await sendCoin(amount, coin)
       } else {
         await axios.post(`/api/transactions/withdraw`, { amount })
       }
@@ -101,31 +108,74 @@ export default function SidebarActions() {
         </div>
       </div>
 
-      {modal && (
+      {modal === 'deposit' && (
         <div className="modal-overlay" onClick={close}>
           <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
-            <h2 className="modal-title">
-              {modal === 'deposit' ? 'Deposit Funds' : 'Withdraw Assets'}
-            </h2>
-            <p className="modal-desc">
-              {modal === 'deposit'
-                ? 'Transfer USD from your connected bank or wallet.'
-                : 'Transfer funds to your external wallet.'}
-            </p>
+            <h2 className="modal-title">Deposit Funds</h2>
+            <p className="modal-desc">Select a coin and enter the amount to deposit.</p>
+
+            <div className="coin-selector">
+              {(Object.values(COINS) as CoinConfig[]).map(c => (
+                <button
+                  key={c.symbol}
+                  className={`coin-option${coin === c.symbol ? ' coin-option-active' : ''}`}
+                  onClick={() => setCoin(c.symbol)}
+                >
+                  {c.label}
+                </button>
+              ))}
+            </div>
 
             <div className="modal-info-box">
               <div className="modal-info-row">
-                <span>{modal === 'deposit' ? 'Connected Wallet' : 'Available Balance'}</span>
-                <span className="modal-info-value">
-                  {modal === 'deposit' ? user.wallet : user.available}
-                </span>
+                <span>Connected Wallet</span>
+                <span className="modal-info-value">{user.wallet}</span>
               </div>
-              {modal === 'withdraw' && (
-                <div className="modal-info-row">
-                  <span>24h Limit Remaining</span>
-                  <span>{user.dailyLimit}</span>
-                </div>
-              )}
+              <div className="modal-info-row">
+                <span>Balance</span>
+                <span className="modal-info-value">{balance} {COINS[coin].label}</span>
+              </div>
+            </div>
+
+            <form onSubmit={submit}>
+              <label className="modal-form-label">Amount</label>
+              <div className="modal-input-wrap">
+                <input
+                  autoFocus required type="number" placeholder="0.00"
+                  value={amount} onChange={e => setAmount(e.target.value)}
+                  className="modal-input"
+                />
+                <span className="modal-currency-suffix">{COINS[coin].label}</span>
+              </div>
+              {error && <div className="modal-error">{error}</div>}
+              <div className="modal-actions">
+                <button type="button" onClick={close} className="modal-cancel-btn" disabled={loading}>
+                  CANCEL
+                </button>
+                <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
+                  {loading ? 'PROCESSING...' : 'CONFIRM DEPOSIT'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {modal === 'withdraw' && (
+        <div className="modal-overlay" onClick={close}>
+          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
+            <h2 className="modal-title">Withdraw Assets</h2>
+            <p className="modal-desc">Transfer funds to your external wallet.</p>
+
+            <div className="modal-info-box">
+              <div className="modal-info-row">
+                <span>Available Balance</span>
+                <span className="modal-info-value">{user.available}</span>
+              </div>
+              <div className="modal-info-row">
+                <span>24h Limit Remaining</span>
+                <span>{user.dailyLimit}</span>
+              </div>
             </div>
 
             <form onSubmit={submit}>
@@ -144,7 +194,7 @@ export default function SidebarActions() {
                   CANCEL
                 </button>
                 <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
-                  {loading ? 'PROCESSING...' : modal === 'deposit' ? 'CONFIRM DEPOSIT' : 'CONFIRM WITHDRAWAL'}
+                  {loading ? 'PROCESSING...' : 'CONFIRM WITHDRAWAL'}
                 </button>
               </div>
             </form>
