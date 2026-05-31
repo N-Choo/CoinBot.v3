@@ -29,8 +29,14 @@ export default function SidebarActions() {
         await axios.post(`/api/transactions/withdraw`, { amount })
       }
       close()
-    } catch (err: any) {
-      setError(err?.response?.data?.error || err?.message || 'Transaction failed')
+    } catch (err: unknown) {
+      let msg = 'Transaction failed'
+      if (err instanceof Error) msg = err.message
+      if (err && typeof err === 'object' && 'response' in err) {
+        const resp = (err as { response: { data: { error?: string } } }).response
+        if (resp?.data?.error) msg = resp.data.error
+      }
+      setError(msg)
     } finally {
       setLoading(false)
     }
