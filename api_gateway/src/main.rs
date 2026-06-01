@@ -31,6 +31,7 @@ async fn main() -> anyhow::Result<()> {
             .wrap(Logger::new("%a\t | %s\t | %Dms\t | %r\t"))
             .app_data(web::Data::new(app_state.nonce_cache.clone()))
             .app_data(web::Data::new(app_state.session_cache.clone()))
+            .app_data(web::Data::new(app_state.db_pool.clone()))
             .configure(api_routes)
     })
     .workers(config.n_worker)
