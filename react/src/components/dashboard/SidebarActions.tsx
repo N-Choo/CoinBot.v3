@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import axios from 'axios'
-import { sendCoin, getBalance, COINS } from '../../services/transaction'
+import { sendCoin, getBalance, COINS, type CoinConfig } from '../../services/transaction'
 import type { CoinSymbol } from '../../services/transaction'
 
 export default function SidebarActions() {
