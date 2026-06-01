@@ -1,9 +1,12 @@
 PACKAGES = api-gateway
 
-.PHONY: help ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod prod-build logs logs-backend test-api
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod prod-build logs logs-backend test-api
 
 help:
 	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Docker"
+	@echo "  clean        Remove all containers, images, and volumes"
 	@echo ""
 	@echo "Development"
 	@echo "  dev          Start backend-dev (cargo run) + frontend (Vite HMR)"
@@ -58,6 +61,9 @@ frontend-test: frontend-install
 
 frontend-build: frontend-install
 	cd react && npm run build
+
+clean:
+	docker compose down --rmi all -v
 
 dev:
 	docker compose up --no-deps backend-dev frontend
