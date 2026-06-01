@@ -343,6 +343,7 @@ dependencies = [
  "actix-web",
  "anyhow",
  "chrono",
+ "common",
  "dotenvy",
  "env_logger",
  "ethers",
@@ -850,11 +851,15 @@ checksum = "1d07550c9036bf2ae0c684c4297d503f838287c83c53686d05370d0e139ae570"
 name = "common"
 version = "0.1.0"
 dependencies = [
+ "chrono",
+ "ethers",
  "prost",
  "serde",
+ "sqlx",
  "thiserror 2.0.18",
  "tonic",
  "tonic-build",
+ "uuid 1.23.1",
 ]
 
 [[package]]
@@ -2086,16 +2091,6 @@ dependencies = [
  "ff",
  "rand_core 0.6.4",
  "subtle",
-]
-
-[[package]]
-name = "grpc-example"
-version = "0.1.0"
-dependencies = [
- "prost",
- "tokio",
- "tonic",
- "tonic-build",
 ]
 
 [[package]]
@@ -5875,15 +5870,6 @@ dependencies = [
  "serde_json",
  "unicode-xid",
  "wasmparser",
-]
-
-[[package]]
-name = "withdrawal"
-version = "0.1.0"
-dependencies = [
- "common",
- "tokio",
- "tonic",
 ]
 
 [[package]]

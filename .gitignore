@@ -3,3 +3,4 @@ docs/*
 *.log
 .opencode/
 target/
+.superpowers/

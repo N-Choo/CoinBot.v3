@@ -14,12 +14,18 @@ and client compile from the same file.
 ### Messages — "what data looks like"
 
 ```protobuf
-message BalanceRequest {
-  string user_id = 1;   // field name + field id
+message TicketRequest {
+  string tx_hash = 1;
+  string uid = 2;
+  string from = 3;
+  string to = 4;
+  string ticker = 5;
+  string amount = 6;
 }
-message BalanceResponse {
-  string balance = 1;   // string is fine for money (no float rounding)
-  string currency = 2;
+message TicketResponse {
+  string ticket_id = 1;
+  string timestamp = 2;
+  bool accepted = 3;
 }
 ```
 
@@ -38,8 +44,7 @@ Rules:
 
 ```protobuf
 service DepositService {
-  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
-  // ↑ service name    ↑ RPC name  ↑ input      ↑ output
+  rpc CreateTicket0(TicketRequest) returns (TicketResponse);
 }
 ```
 
@@ -50,51 +55,50 @@ Compiled by `tonic-build` → generates:
 ## Client vs Server
 
 ```
-┌─ Server (deposit) ───────────────────┐
-│                                       │
-│  struct DepositServer;                 │
-│                                        │
-│  impl DepositService for DepositServer {  ← implement the trait
-│    async fn get_balance(...) { ... }   │
-│  }                                     │
-│                                        │
-│  Server::builder()                     │
-│    .add_service(DepositServiceServer::new(...))  ← register
-│    .serve("0.0.0.0:50051")            ← listen on port
-│    .await?                             │
-└────────────────────────────────────────┘
+┌─ Server (deposit-worker) ────────────────┐
+│                                           │
+│  struct DepositServer;                    │
+│                                           │
+│  impl DepositService for DepositServer {   │
+│    async fn create_ticket0(...) { ... }   │
+│  }                                        │
+│                                           │
+│  Server::builder()                        │
+│    .add_service(DepositServiceServer::new(...))
+│    .serve("0.0.0.0:50051")               │
+│    .await?                                │
+└───────────────────────────────────────────┘
 
-┌─ Client (withdrawal) ─────────────────┐
-│                                        │
-│  let mut client =                      │
-│    DepositServiceClient::connect(      │
-│      "http://deposit:50051"            │  ← connect to server
-│    ).await?;                            │
-│                                        │
-│  let resp = client                     │
-│    .get_balance(BalanceRequest {       │  ← call like a function
-│      user_id: "abc".into()             │
-│    }).await?;                           │
-│                                        │
-│  println!("{}", resp.balance);         │  ← use the response
-└────────────────────────────────────────┘
+┌─ Client (api_gateway) ──────────────────┐
+│                                          │
+│  let mut client =                        │
+│    DepositServiceClient::connect(        │
+│      "http://deposit-worker:50051"       │
+│    ).await?;                              │
+│                                          │
+│  let resp = client                       │
+│    .create_ticket0(TicketRequest { ... })│
+│    .await?;                               │
+│                                          │
+│  println!("{}", resp.ticket_id);         │
+└──────────────────────────────────────────┘
 ```
 
 ### Why field id matters
 
 ```protobuf
-message BalanceRequest {
-  string user_id = 1;   // id 1 → sent as 1 on the wire
+message TicketRequest {
+  string tx_hash = 1;   // id 1 → sent as 1 on the wire
 }
 
 // Safe evolution:
-message BalanceRequest {
-  string customer_id = 1;  // renamed, id 1 still = same wire tag → old clients work
+message TicketRequest {
+  string transaction_hash = 1;  // renamed, id 1 still = same wire tag → old clients work
 }
 
 // Breaking change:
-message BalanceRequest {
-  string user_id = 2;  // changed from 1 → 2, old clients send id 1 → server sees unknown field
+message TicketRequest {
+  string tx_hash = 2;  // changed from 1 → 2, old clients send id 1 → server sees unknown field
 }
 ```
 
@@ -112,41 +116,32 @@ message BalanceRequest {
 ## How `common` ties it together
 
 ```
-proto/wallet.proto          ← one file, one truth
+proto/wallet.proto          ← single source of truth
         │
- common/build.rs            ← runs at compile time, reads proto, generates Rust
+ common/build.rs            ← tonic-build compiles proto at compile time
         │
- common/src/lib.rs          ← re-exports generated stubs
-       ╱    ╲
-deposit    withdrawal       ← both get identical types
+ common/src/lib.rs          ← re-exports generated types + traits
+        │
+ deposit-worker             ← implements DepositService trait
+ api_gateway                ← can call via DepositServiceClient
 ```
 
 The `common` crate is only a library — it has no `main.rs` and cannot run.
-It exists purely so deposit and withdrawal share the **exact same** message types
-and service traits. If the proto changes, both must recompile.
+It exists so all services share the **exact same** message types and service
+traits. If the proto changes, all consuming crates must recompile.
 
 ## Proto service organization
 
-Each business domain gets its own service in the proto:
+The proto currently defines a single service:
 
 ```protobuf
 service DepositService {
-  rpc GetBalance(BalanceRequest) returns (BalanceResponse);
-  rpc GetHistory(HistoryRequest) returns (HistoryResponse);
-}
-
-service WithdrawalService {
-  rpc SubmitWithdrawal(WithdrawalRequest) returns (WithdrawalResponse);
-}
-
-service GatewayService {
-  rpc GetDashboard(DashboardRequest) returns (DashboardResponse);
+  rpc CreateTicket0(TicketRequest) returns (TicketResponse);
 }
 ```
 
-- DepositService is **implemented** by the deposit crate (server)
-- WithdrawalService is **implemented** by the withdrawal crate (server) or called via client
-- GatewayService would be an aggregation endpoint in api_gateway
+- `DepositService` is **implemented** by `deposit-worker` (gRPC server)
+- `api_gateway` can call it via `DepositServiceClient`
 
 ## Separation of Duties (SoD)
 
@@ -155,10 +150,8 @@ both deposit and withdrawal logic.
 
 | Process | Responsibility | Cannot do |
 |---|---|---|
-| `deposit` | Record deposits, report balance | Process withdrawals |
-| `withdrawal` | Process withdrawals | Access deposit DB |
-| `api_gateway` | Auth, routing, UI push | Modify balances |
-| `trade-engine` | ML signals | Access any wallet data |
+| `deposit-worker` | Record deposits via gRPC | Process withdrawals |
+| `api_gateway` | Auth, routing | Modify balances |
 
 Enforced by:
 
@@ -173,21 +166,20 @@ An ethical wall prevents information flow between services that should not share
 In this architecture, the wall is **inherent in the process boundaries**:
 
 ```
-┌─ Withdrawal ─────────────────┐
+┌─ deposit-worker ─────────────┐
 │                               │
-│  wants: user balance          │
-│  has access to: withdrawal DB │
+│  owns: deposits DB            │
+│  exposes: CreateTicket0       │  ← gRPC: "record this deposit"
 │                               │
-│  ✅ Can call: GetBalance      │  ← gRPC: "does user have 500?"
-│  ❌ Cannot: query deposit DB  │  ← no credentials
-│  ❌ Cannot: read deposit rows │  ← not in schema
+│  ❌ Cannot: auth sessions     │  ← no access to users table
+│  ❌ Cannot: read api keys     │  ← not in schema
 │                               │
 └───────────────────────────────┘
 ```
 
-The withdrawal service never touches deposit data directly. It asks the deposit
-service "does this user have enough funds?" through gRPC and gets a controlled
-answer. No shared database, no shared memory, no shared secrets.
+`api_gateway` never touches deposit data directly. It calls `CreateTicket0`
+through gRPC and gets a controlled response. No shared database, no shared
+memory, no shared secrets.
 
 **Three layers of enforcement:**
 
@@ -210,11 +202,11 @@ This is the guarantee — mismatched contracts don't compile.
 ## Running the services
 
 ```sh
-# Terminal 1 — start deposit server
+# Terminal 1 — start deposit-worker gRPC server
 cargo run -p deposit
 
-# Terminal 2 — call it from withdrawal client
-cargo run -p withdrawal
+# Terminal 2 — start api_gateway HTTP server
+cargo run -p api-gateway
 ```
 
 ## Redis Communication
@@ -227,9 +219,7 @@ Two Redis patterns are used:
 Best for: transaction events, trade signals (must not lose data).
 
 ```
-deposit ──▶ "tx:deposits"     stream ──▶ api_gateway consumes → push to UI
-withdrawal ──▶ "tx:withdrawals" stream ──▶ api_gateway consumes → push to UI
-trade-engine ──▶ "trade:signals" stream ──▶ deposit/withdrawal consume → act on signal
+deposit-worker ──▶ "tx:deposits" stream ──▶ api_gateway consumes → push to UI
 ```
 
 Streams persist until explicitly trimmed. If a consumer disconnects, it can resume
@@ -253,7 +243,7 @@ from where it left off — unlike pub/sub.
 Best for: live dashboard updates, status notifications (ok to lose).
 
 ```
-deposit ──▶ "status:updates" pub ──▶ api_gateway → WebSocket → React
+deposit-worker ──▶ "status:updates" pub ──▶ api_gateway → WebSocket → React
 ```
 
 If no one is listening, the message disappears. That's fine for live updates —

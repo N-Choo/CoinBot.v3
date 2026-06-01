@@ -2,10 +2,8 @@
 resolver = "2"
 members = [
     "api_gateway",
-    "prototypes/grpc-example",
-    "prototypes/crates/common",
-    "prototypes/crates/deposit",
-    "prototypes/crates/withdrawal",
+    "common",
+    "deposit-worker",
 ]
 
 [workspace.dependencies]

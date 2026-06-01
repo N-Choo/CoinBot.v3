@@ -29,14 +29,17 @@ impl DepositFilter {
     pub fn new() -> Self {
         Self::default()
     }
+
     pub fn with_user(mut self, uid: Uuid) -> Self {
         self.user_uid = Some(uid);
         self
     }
+
     pub fn with_status(mut self, status: &str) -> Self {
         self.status = Some(status.into());
         self
     }
+
     pub fn with_tx_hash(mut self, hash: &str) -> Self {
         self.tx_hash = Some(hash.into());
         self

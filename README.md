@@ -23,16 +23,34 @@
 .
 ├── Cargo.toml                       # Workspace root w/ shared deps
 ├── Makefile                         # Local CI runner
-├── api_gateway/                     # Rust (Actix-Web)
+├── api_gateway/                     # Rust (Actix-Web) — auth, routing
 │   ├── Cargo.toml
 │   ├── Dockerfile
 │   └── src/
 │       ├── main.rs                  # HttpServer entry
 │       ├── config.rs                # AppConfig, CORS
+│       ├── constants.rs             # Token addresses, platform wallet
 │       ├── state.rs                 # PgPool, cache, KuCoin client
 │       ├── routes.rs
-│       ├── handlers/user/auth.rs    # EIP-191 auth endpoints
+│       ├── handlers/                # EIP-191 auth, deposit HTTP handlers
 │       └── models/                  # DTOs, AppError
+│
+├── common/                          # Shared library (proto stubs, db, rpc)
+│   ├── Cargo.toml
+│   ├── build.rs                     # Compiles proto/wallet.proto via tonic
+│   └── src/
+│       ├── lib.rs                   # Re-exports gRPC types, ServiceConfig
+│       ├── db/                      # DB models, queries, Deposit, DepositFilter
+│       └── rpc.rs                   # Ethereum RPC client (get_transaction)
+│
+├── deposit-worker/                  # Rust (tonic) — gRPC deposit server
+│   ├── Cargo.toml
+│   ├── Dockerfile
+│   └── src/main.rs                  # DepositService gRPC skeleton
+│
+├── proto/
+│   ├── wallet.proto                 # gRPC contract (DepositService)
+│   └── README.md                    # gRPC patterns & conventions
 │
 ├── react/                           # Vite + React 19 + TS
 │   ├── Dockerfile
@@ -58,33 +76,28 @@
 Each business function runs in its own isolated process with its own database.
 No single service performs both deposit and withdrawal logic.
 
-| Service        | Responsibility                  | Cannot access       |
-| -------------- | ------------------------------- | ------------------- |
-| `api_gateway`  | Auth, routing, WebSocket push   | Modify balances     |
-| `deposit`      | Record deposits, report balance | Process withdrawals |
-| `withdrawal`   | Process withdrawals             | Deposit DB          |
-| `trade-engine` | ML signals via Redis            | Any wallet data     |
+| Service           | Responsibility                  | Cannot access   |
+| ----------------- | ------------------------------- | --------------- |
+| `api_gateway`     | Auth, routing                   | Modify balances |
+| `deposit-worker`  | Record deposits via gRPC        | Withdrawal DB   |
 
 ### Ethical Walls
 
 Communication between services is restricted to defined interfaces:
 
 ```
-Client (caller)        Interface                  Server (owner)
-───────────────────────────────────────────────────────────────
-api_gateway ──gRPC──▶ WithdrawalService          withdrawal
-api_gateway ──gRPC──▶ DepositService             deposit
-withdrawal  ──gRPC──▶ DepositService (balance)   deposit
-trade-engine──Redis──▶ tx:deposits / tx:withdrawals (events only)
+Client (caller)        Interface                Server (owner)
+─────────────────────────────────────────────────────────────
+api_gateway ──gRPC──▶ DepositService           deposit-worker
 ```
 
 **Three enforcement layers:**
 
 1. **Crate boundaries** — each crate only imports `common` (shared types, proto stubs). No crate imports another service's internals.
 2. **Docker isolation** — each container has credentials for its own database only. No cross-service DB access.
-3. **Proto contracts** — services only expose what `proto/*.proto` defines. The Rust compiler rejects mismatches.
+3. **Proto contracts** — services only expose what `proto/wallet.proto` defines. The Rust compiler rejects mismatches.
 
-See `prototypes/proto/README.md` for the full gRPC + Redis communication guide.
+See `proto/README.md` for the full gRPC + Redis communication guide.
 
 ## Features
 

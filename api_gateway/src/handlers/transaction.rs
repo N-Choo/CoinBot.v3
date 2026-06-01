@@ -2,12 +2,15 @@ use actix_web::{HttpResponse, Responder, web};
 use ethers::types::Transaction as EthTx;
 use sqlx::PgPool;
 
+use common::{
+    db::{self, deposit::Deposit},
+    rpc::Rpc,
+};
+
 use crate::{
     constants::{PLATFORM_WALLET, TOKENS},
-    db::{self, deposit::Deposit},
     handlers::user::auth::CacheType,
     models::transaction::DepositPayloadRequest,
-    services::rpc::Rpc,
 };
 
 struct DepositInfo {

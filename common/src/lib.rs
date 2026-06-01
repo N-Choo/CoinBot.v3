@@ -2,10 +2,11 @@ mod proto {
     tonic::include_proto!("wallet");
 }
 
-// Re-export everything from the generated proto module at the crate root
 pub use proto::*;
 
-// Shared error type for all services
+pub mod db;
+pub mod rpc;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     #[error("not found: {0}")]
