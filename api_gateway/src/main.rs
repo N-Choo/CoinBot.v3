@@ -4,8 +4,9 @@ use actix_web::{
     middleware::{Logger, NormalizePath},
     web,
 };
-use api_gateway::{config::AppConfig, logger::init_logger, routes::api_routes};
+use api_gateway::{config::AppConfig, routes::api_routes};
 use dotenvy::dotenv;
+use share::logger::init_logger;
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -32,6 +33,7 @@ async fn main() -> anyhow::Result<()> {
             .app_data(web::Data::new(app_state.nonce_cache.clone()))
             .app_data(web::Data::new(app_state.session_cache.clone()))
             .app_data(web::Data::new(app_state.db_pool.clone()))
+            .app_data(web::Data::new(app_state.grpc_deposit.clone()))
             .configure(api_routes)
     })
     .workers(config.n_worker)

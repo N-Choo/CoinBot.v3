@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use kucoin::client::rest::{Credentials, KuCoinClient};
 use moka::future::Cache;
 use sqlx::PgPool;
+use tonic::transport::Channel;
 
 use crate::config::AppConfig;
 
@@ -13,6 +14,7 @@ pub struct AppState {
     pub nonce_cache: Cache<String, String>,
     pub session_cache: Cache<String, String>,
     pub kc_client: KuCoinClient,
+    pub grpc_deposit: Channel,
 }
 
 impl AppState {
@@ -41,11 +43,18 @@ impl AppState {
 
         let kc_client = KuCoinClient::new(master_key);
 
+        let grpc_deposit = Channel::from_shared(config.grpc_deposit.clone())
+            .context("Invalid gRPC endpoint")?
+            .connect()
+            .await
+            .context("Failed to connect to deposit-worker gRPC")?;
+
         Ok(Self {
             db_pool,
             nonce_cache,
             session_cache,
             kc_client,
+            grpc_deposit,
         })
     }
 }

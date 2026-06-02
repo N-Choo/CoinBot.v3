@@ -13,6 +13,7 @@ pub struct AppConfig {
     pub api_key: String,
     pub api_secret: String,
     pub api_passphrase: String,
+    pub grpc_deposit: String,
 }
 
 impl AppConfig {
@@ -32,6 +33,8 @@ impl AppConfig {
             api_key: env::var("API_KEY").context("Missing: API_KEY")?,
             api_secret: env::var("API_SECRET").context("Missing: API_SECRET")?,
             api_passphrase: env::var("API_PASSPHRASE").context("Missing: API_PASSPHRASE")?,
+            grpc_deposit: env::var("GRPC_DEPOSIT_ENDPOINT")
+                .unwrap_or_else(|_| "http://127.0.0.1:50051".to_string()),
         })
     }
 

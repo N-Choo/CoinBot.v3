@@ -1,4 +1,34 @@
 services:
+  deposit-worker:
+    build:
+      context: .
+      dockerfile: deposit-worker/Dockerfile
+      target: dev-builder
+    command: cargo run -p deposit
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=debug
+      - GRPC_ADDR=0.0.0.0:50051
+    networks:
+      - app-network
+
+  deposit-worker-prod:
+    build:
+      context: .
+      dockerfile: deposit-worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - GRPC_ADDR=0.0.0.0:50051
+    networks:
+      - app-network
+    profiles:
+      - prod
+
   backend-dev:
     build:
       context: .
@@ -14,6 +44,9 @@ services:
       - /app/target
     environment:
       - RUST_LOG=debug
+      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
+    depends_on:
+      - deposit-worker
     networks:
       - app-network
 
@@ -25,13 +58,15 @@ services:
       - .env
     ports:
       - "8080:8080"
-    volumes:
-      - .:/app
-      - /app/target
     environment:
       - RUST_LOG=debug
+      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
+    depends_on:
+      - deposit-worker
     networks:
       - app-network
+    profiles:
+      - prod
 
   frontend:
     image: node:22-alpine
@@ -43,11 +78,11 @@ services:
       - ./react:/app:Z
       - /app/node_modules
     depends_on:
-      - backend
+      - backend-dev
     networks:
       - app-network
     environment:
-      - VITE_API_URL=http://localhost:8080
+      - VITE_API_URL=http://localhost:8081
 
   frontend-prod:
     profiles:

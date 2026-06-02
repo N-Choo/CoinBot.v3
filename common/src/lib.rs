@@ -4,9 +4,6 @@ mod proto {
 
 pub use proto::*;
 
-pub mod db;
-pub mod rpc;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
     #[error("not found: {0}")]
@@ -19,7 +16,6 @@ pub enum ServiceError {
     Internal(String),
 }
 
-// Shared config (each service loads from env)
 #[derive(Debug, Clone, serde::Deserialize)]
 pub struct ServiceConfig {
     pub grpc_host: String,

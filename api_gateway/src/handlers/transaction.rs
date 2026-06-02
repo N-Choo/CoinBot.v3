@@ -2,10 +2,12 @@ use actix_web::{HttpResponse, Responder, web};
 use ethers::types::Transaction as EthTx;
 use sqlx::PgPool;
 
-use common::{
-    db::{self, deposit::Deposit},
-    rpc::Rpc,
+use common::{TicketRequest, deposit_service_client::DepositServiceClient};
+use share::{
+    db,
+    rpc::{Rpc, erc20_transfer_amount},
 };
+use tonic::transport::Channel;
 
 use crate::{
     constants::{PLATFORM_WALLET, TOKENS},
@@ -18,12 +20,14 @@ struct DepositInfo {
 }
 
 pub struct Transaction {}
+
 impl Transaction {
     pub async fn deposit(
         header: actix_web::HttpRequest,
         payload: web::Json<DepositPayloadRequest>,
         session_cache: web::Data<CacheType>,
         pool: web::Data<PgPool>,
+        grpc_deposit: web::Data<Channel>,
     ) -> impl Responder {
         let wallet = match Self::authenticate(&header, &session_cache).await {
             Some(w) => w,
@@ -58,15 +62,45 @@ impl Transaction {
             }
         };
 
-        if let Err(e) =
-            Deposit::create_pending(&pool, user_uid, &payload.tx_hash, &tx, &info.ticker).await
-        {
-            log::error!("Failed to create deposit: {}", e);
-            return HttpResponse::InternalServerError().finish();
-        }
+        let amount = if info.ticker == "ETH" {
+            tx.value.to_string()
+        } else {
+            erc20_transfer_amount(&tx.input)
+        };
 
-        log::info!("Pending deposit: {} from {}", info.ticker, wallet);
-        HttpResponse::Ok().finish()
+        let to = tx.to.map(|a| format!("0x{:x}", a)).unwrap_or_default();
+
+        let mut client = DepositServiceClient::new(grpc_deposit.get_ref().clone());
+
+        let resp = match client
+            .create_ticket0(TicketRequest {
+                tx_hash: payload.tx_hash.clone(),
+                uid: user_uid.to_string(),
+                from: format!("0x{:x}", tx.from),
+                to,
+                ticker: info.ticker.clone(),
+                amount,
+            })
+            .await
+        {
+            Ok(r) => r.into_inner(),
+            Err(e) => {
+                log::error!("Failed to create deposit: {}", e);
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        log::info!(
+            "Ticket {} created for {} {}",
+            resp.ticket_id,
+            info.ticker,
+            wallet
+        );
+        HttpResponse::Ok().json(serde_json::json!({
+            "ticket_id": resp.ticket_id,
+            "timestamp": resp.timestamp,
+            "accepted": resp.accepted,
+        }))
     }
 
     async fn authenticate(header: &actix_web::HttpRequest, cache: &CacheType) -> Option<String> {

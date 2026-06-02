@@ -5,9 +5,9 @@ edition = "2024"
 
 [dependencies]
 common = { path = "../common" }
+share = { path = "../share" }
 actix-web.workspace = true
 anyhow.workspace = true
-env_logger.workspace = true
 uuid.workspace = true
 serde.workspace = true
 log.workspace = true
@@ -22,5 +22,5 @@ rand.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 actix-governor.workspace = true
-chrono.workspace = true
+tonic = "0.12"
 

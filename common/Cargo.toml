@@ -8,10 +8,6 @@ tonic = "0.12"
 prost = "0.13"
 serde = { version = "1", features = ["derive"] }
 thiserror.workspace = true
-sqlx.workspace = true
-uuid.workspace = true
-ethers.workspace = true
-chrono.workspace = true
 
 [build-dependencies]
 tonic-build = "0.12"
