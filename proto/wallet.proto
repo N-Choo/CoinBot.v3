@@ -4,10 +4,7 @@ package wallet;
 message TicketRequest {
   string tx_hash = 1;
   string uid = 2;
-  string from = 3;
-  string to = 4;
   string ticker = 5;
-  string amount = 6;
 }
 
 message TicketResponse {

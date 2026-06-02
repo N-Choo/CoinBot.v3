@@ -29,11 +29,13 @@ impl Transaction {
         pool: web::Data<PgPool>,
         grpc_deposit: web::Data<Channel>,
     ) -> impl Responder {
+        // Phase 1: Auth-Control
         let wallet = match Self::authenticate(&header, &session_cache).await {
             Some(w) => w,
             None => return HttpResponse::Unauthorized().finish(),
         };
 
+        // Phase 2: Fetch transaction data from trusted source.
         let tx = match Rpc::get_transaction(&payload.tx_hash).await {
             Ok(t) => t,
             Err(e) => {
@@ -42,6 +44,7 @@ impl Transaction {
             }
         };
 
+        // Phase 3: Transaction validation.
         let info = match Self::validate(&tx) {
             Some(i) => i,
             None => {
@@ -62,24 +65,13 @@ impl Transaction {
             }
         };
 
-        let amount = if info.ticker == "ETH" {
-            tx.value.to_string()
-        } else {
-            erc20_transfer_amount(&tx.input)
-        };
-
-        let to = tx.to.map(|a| format!("0x{:x}", a)).unwrap_or_default();
-
+        // Submit Deposit Ticket.
         let mut client = DepositServiceClient::new(grpc_deposit.get_ref().clone());
-
         let resp = match client
             .create_ticket0(TicketRequest {
                 tx_hash: payload.tx_hash.clone(),
                 uid: user_uid.to_string(),
-                from: format!("0x{:x}", tx.from),
-                to,
                 ticker: info.ticker.clone(),
-                amount,
             })
             .await
         {
