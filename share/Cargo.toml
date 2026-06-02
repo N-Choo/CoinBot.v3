@@ -1,0 +1,11 @@
+[package]
+name = "share"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+ethers.workspace = true
+sqlx.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+env_logger.workspace = true

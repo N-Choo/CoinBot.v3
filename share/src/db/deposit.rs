@@ -1,3 +1,4 @@
+use crate::rpc::erc20_transfer_amount;
 use ethers::types::Transaction as EthTx;
 use sqlx::PgPool;
 use uuid::Uuid;
@@ -75,7 +76,7 @@ impl Deposit {
         let amount = if ticker == "ETH" {
             tx.value.to_string()
         } else {
-            "0".into()
+            erc20_transfer_amount(&tx.input)
         };
 
         sqlx::query_as::<_, Self>(

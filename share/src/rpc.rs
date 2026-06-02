@@ -1,3 +1,4 @@
+use ethers::abi::{decode, ParamType};
 use ethers::{providers::Middleware, types::Transaction as EthTx};
 
 pub struct Rpc;
@@ -22,5 +23,22 @@ impl Rpc {
             .await
             .map_err(|e| format!("RPC error: {}", e))?
             .ok_or_else(|| "Transaction not found".to_string())
+    }
+}
+
+pub fn erc20_transfer_amount(input: &[u8]) -> String {
+    const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+
+    if input.len() < 4 || input[..4] != TRANSFER_SELECTOR {
+        return "0".into();
+    }
+
+    match decode(&[ParamType::Address, ParamType::Uint(256)], &input[4..]) {
+        Ok(tokens) => tokens[1]
+            .clone()
+            .into_uint()
+            .map(|v| v.to_string())
+            .unwrap_or_else(|| "0".into()),
+        Err(_) => "0".into(),
     }
 }
