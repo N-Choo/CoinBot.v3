@@ -1,4 +1,4 @@
-PACKAGES = api-gateway
+PACKAGES = api-gateway share deposit
 
 .PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod prod-build logs logs-backend test-api
 
@@ -9,13 +9,13 @@ help:
 	@echo "  clean        Remove all containers, images, and volumes"
 	@echo ""
 	@echo "Development"
-	@echo "  dev          Start backend-dev (cargo run) + frontend (Vite HMR)"
+	@echo "  dev          Start deposit-worker + backend-dev + frontend"
 	@echo "  test-api     Run curl tests against the API"
 	@echo "  logs         Follow logs from all services"
 	@echo "  logs-backend Follow backend logs"
 	@echo ""
 	@echo "Production"
-	@echo "  prod         Build + start production backend + frontend (detached)"
+	@echo "  prod         Build + start all production services (detached)"
 	@echo "  prod-build   Build production images without running"
 	@echo ""
 	@echo "Rust"
@@ -66,13 +66,13 @@ clean:
 	docker compose down --rmi all -v
 
 dev:
-	docker compose up --no-deps backend-dev frontend
+	docker compose up backend-dev frontend
 
 prod-build:
-	docker compose build backend frontend-prod
+	docker compose build deposit-worker-prod backend frontend-prod
 
 prod:
-	docker compose -f docker-compose.yml --profile prod up -d backend frontend-prod
+	docker compose --profile prod up -d deposit-worker-prod backend frontend-prod
 
 logs:
 	docker compose logs -f
