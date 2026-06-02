@@ -3,10 +3,7 @@ use ethers::types::Transaction as EthTx;
 use sqlx::PgPool;
 
 use common::{TicketRequest, deposit_service_client::DepositServiceClient};
-use share::{
-    db,
-    rpc::{Rpc, erc20_transfer_amount},
-};
+use share::{db, rpc::Rpc};
 use tonic::transport::Channel;
 
 use crate::{

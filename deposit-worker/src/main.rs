@@ -1,13 +1,10 @@
-mod grpc_handler;
-mod task;
-
 use tokio::sync::mpsc;
 use tonic::transport::Server;
 use tonic_health::server::health_reporter;
 
 use common::deposit_service_server::DepositServiceServer;
-use grpc_handler::DepositServer;
-use task::{run_dispatcher, DepositTask};
+use deposit::grpc_handler::DepositServer;
+use deposit::task::{run_dispatcher, DepositTask};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
