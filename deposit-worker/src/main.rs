@@ -1,49 +1,13 @@
-use tonic::{transport::Server, Request, Response, Status};
+mod grpc_handler;
+mod task;
+
+use tokio::sync::mpsc;
+use tonic::transport::Server;
 use tonic_health::server::health_reporter;
 
-use common::deposit_service_server::{DepositService, DepositServiceServer};
-use common::{TicketRequest, TicketResponse};
-use share::db::deposit::Deposit;
-use share::rpc::Rpc;
-
-pub struct DepositServer {
-    pool: sqlx::PgPool,
-}
-
-#[tonic::async_trait]
-impl DepositService for DepositServer {
-    async fn create_ticket0(
-        &self,
-        req: Request<TicketRequest>,
-    ) -> Result<Response<TicketResponse>, Status> {
-        let req = req.into_inner();
-        log::info!("create_ticket0: tx={} ticker={}", req.tx_hash, req.ticker);
-
-        let tx = Rpc::get_transaction(&req.tx_hash).await.map_err(|e| {
-            log::warn!("get_transaction failed: {e}");
-            Status::invalid_argument(format!("invalid tx: {e}"))
-        })?;
-
-        let user_uid = req
-            .uid
-            .parse()
-            .map_err(|_| Status::invalid_argument("invalid uid"))?;
-
-        let deposit = Deposit::create_pending(&self.pool, user_uid, &req.tx_hash, &tx, &req.ticker)
-            .await
-            .map_err(|e| {
-                log::error!("create_pending failed: {e}");
-                Status::internal(e.to_string())
-            })?;
-
-        log::info!("ticket created: {}", deposit.id);
-        Ok(Response::new(TicketResponse {
-            ticket_id: deposit.id.to_string(),
-            timestamp: deposit.created_at.to_rfc3339(),
-            accepted: true,
-        }))
-    }
-}
+use common::deposit_service_server::DepositServiceServer;
+use grpc_handler::DepositServer;
+use task::{run_dispatcher, DepositTask};
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -56,12 +20,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let pool = sqlx::PgPool::connect(&database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
 
+    let (tx, rx) = mpsc::channel::<DepositTask>(256);
+    let max_concurrent = std::env::var("DEPOSIT_WORKERS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(2);
+    let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(max_concurrent));
+
+    run_dispatcher(pool.clone(), rx, semaphore);
+
     let (mut health_reporter, health_service) = health_reporter();
     health_reporter
         .set_serving::<DepositServiceServer<DepositServer>>()
         .await;
 
-    let service = DepositServiceServer::new(DepositServer { pool });
+    let service = DepositServiceServer::new(DepositServer { tx });
 
     log::info!("Deposit service on {}", addr);
     Server::builder()
