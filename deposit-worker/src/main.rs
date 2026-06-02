@@ -19,30 +19,22 @@ impl DepositService for DepositServer {
         let req = req.into_inner();
         log::info!("create_ticket0: tx={} ticker={}", req.tx_hash, req.ticker);
 
-        let tx = Rpc::get_transaction(&req.tx_hash)
-            .await
-            .map_err(|e| {
-                log::warn!("get_transaction failed: {e}");
-                Status::invalid_argument(format!("invalid tx: {e}"))
-            })?;
+        let tx = Rpc::get_transaction(&req.tx_hash).await.map_err(|e| {
+            log::warn!("get_transaction failed: {e}");
+            Status::invalid_argument(format!("invalid tx: {e}"))
+        })?;
 
         let user_uid = req
             .uid
             .parse()
             .map_err(|_| Status::invalid_argument("invalid uid"))?;
 
-        let deposit = Deposit::create_pending(
-            &self.pool,
-            user_uid,
-            &req.tx_hash,
-            &tx,
-            &req.ticker,
-        )
-        .await
-        .map_err(|e| {
-            log::error!("create_pending failed: {e}");
-            Status::internal(e.to_string())
-        })?;
+        let deposit = Deposit::create_pending(&self.pool, user_uid, &req.tx_hash, &tx, &req.ticker)
+            .await
+            .map_err(|e| {
+                log::error!("create_pending failed: {e}");
+                Status::internal(e.to_string())
+            })?;
 
         log::info!("ticket created: {}", deposit.id);
         Ok(Response::new(TicketResponse {

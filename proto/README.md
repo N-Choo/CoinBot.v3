@@ -116,19 +116,24 @@ message TicketRequest {
 ## How `common` ties it together
 
 ```
-proto/wallet.proto          ← single source of truth
+proto/wallet.proto            ← single source of truth
         │
- common/build.rs            ← tonic-build compiles proto at compile time
+ common/build.rs              ← tonic-build compiles proto at compile time
         │
- common/src/lib.rs          ← re-exports generated types + traits
+ common/src/lib.rs            ← re-exports generated types + traits
         │
- deposit-worker             ← implements DepositService trait
- api_gateway                ← can call via DepositServiceClient
+        ├── deposit-worker    ← implements DepositService trait (server)
+        └── api_gateway       ← calls via DepositServiceClient (client)
+
+share/                       ← DB models, Ethereum RPC, ABI decoding
+        │
+        ├── deposit-worker    ← Deposit::create_pending, Rpc::get_transaction
+        └── api_gateway       ← db::get_uid, Rpc::get_transaction
 ```
 
-The `common` crate is only a library — it has no `main.rs` and cannot run.
-It exists so all services share the **exact same** message types and service
-traits. If the proto changes, all consuming crates must recompile.
+`common` holds the **contract** — proto types and traits that all services agree on.
+`share` holds the **implementation** — DB queries, blockchain calls.
+If the proto changes, `common` recompiles and every crate consuming it must follow.
 
 ## Proto service organization
 
