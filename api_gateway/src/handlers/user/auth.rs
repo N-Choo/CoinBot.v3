@@ -26,8 +26,8 @@ impl AuthController {
     /// # Returns
     /// - HTTP response with the generated nonce.
     ///
-    /// # Errors
-    /// - Returns 500 if nonce generation or cache storage fails.
+    /// # Panics
+    /// - Panics if nonce cache insert fails (debug builds).
     pub async fn request_challenge(
         query: web::Query<ChallengeQuery>,
         nonce_cache: web::Data<CacheType>,
@@ -44,7 +44,7 @@ impl AuthController {
         HttpResponse::Ok().json(ChallengeResponse { nonce })
     }
 
-    /// Handles POST /api/user/authenticantion
+    /// Handles POST /api/user/authentication
     /// Verifies the signature of the nonce and issues a session cookie.
     ///
     /// # Arguments
@@ -123,8 +123,6 @@ impl AuthController {
                 HttpResponse::Unauthorized().body("Invalid session")
             }
         } else {
-            // INFO : Add logging, track, and monitor missing session cookies to identify potential
-            // issues or attacks.
             HttpResponse::BadRequest().body("No session cookie found")
         }
     }
@@ -146,7 +144,7 @@ impl AuthController {
             }
         };
 
-        info!("Decrypted wallet: {:?}", wallet_addr);
+        info!("Recovered wallet: {:?}", wallet_addr);
         let full_address = format!("0x{:x}", wallet_addr); // Standard hex .
         Ok(full_address.to_lowercase())
     }

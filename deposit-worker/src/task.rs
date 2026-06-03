@@ -52,7 +52,7 @@ pub fn run_dispatcher(
             let permit = match semaphore.clone().acquire_owned().await {
                 Ok(p) => p,
                 Err(_) => {
-                    log::error!("Semaphore closed --- shutting down dispatcher");
+                    log::error!("Failed to acquire semaphore permit — shutting down dispatcher");
                     break;
                 }
             };
