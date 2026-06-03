@@ -4,7 +4,10 @@ use sqlx::PgPool;
 
 use common::{TicketRequest, deposit_service_client::DepositServiceClient};
 use ethers::types::Address;
-use share::{db, rpc::{Rpc, erc20_transfer_recipient}};
+use share::{
+    db,
+    rpc::{Rpc, erc20_transfer_recipient},
+};
 use tonic::transport::Channel;
 
 use crate::{
@@ -13,8 +16,8 @@ use crate::{
     models::transaction::DepositPayloadRequest,
 };
 
-struct DepositInfo {
-    ticker: String,
+pub(crate) struct DepositInfo {
+    pub(crate) ticker: String,
 }
 
 pub struct Transaction {}
@@ -114,7 +117,7 @@ impl Transaction {
         cache.get(cookie.value()).await
     }
 
-    fn validate(tx: &EthTx) -> Option<DepositInfo> {
+    pub(crate) fn validate(tx: &EthTx) -> Option<DepositInfo> {
         let host = *PLATFORM_WALLET;
 
         if tx.to == Some(host) {
