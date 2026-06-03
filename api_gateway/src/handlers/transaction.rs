@@ -3,7 +3,8 @@ use ethers::types::Transaction as EthTx;
 use sqlx::PgPool;
 
 use common::{TicketRequest, deposit_service_client::DepositServiceClient};
-use share::{db, rpc::Rpc};
+use ethers::types::Address;
+use share::{db, rpc::{Rpc, erc20_transfer_recipient}};
 use tonic::transport::Channel;
 
 use crate::{
@@ -109,6 +110,19 @@ impl Transaction {
         if let Some(to) = tx.to {
             let addr = format!("0x{:x}", to);
             if let Some(&(_, ticker)) = TOKENS.iter().find(|(a, _)| *a == addr) {
+                let input = tx.input.as_ref();
+                let recipient = erc20_transfer_recipient(input)?;
+
+                let recipient_addr: Address = recipient.parse().ok()?;
+                if recipient_addr != host {
+                    log::warn!(
+                        "ERC20 recipient mismatch: expected={:?}, got={}",
+                        host,
+                        recipient
+                    );
+                    return None;
+                }
+
                 return Some(DepositInfo {
                     ticker: ticker.into(),
                 });

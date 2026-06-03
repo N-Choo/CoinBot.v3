@@ -33,12 +33,30 @@ pub fn erc20_transfer_amount(input: &[u8]) -> String {
         return "0".into();
     }
 
-    match decode(&[ParamType::Address, ParamType::Uint(256)], &input[4..]) {
-        Ok(tokens) => tokens[1]
-            .clone()
-            .into_uint()
-            .map(|v| v.to_string())
-            .unwrap_or_else(|| "0".into()),
-        Err(_) => "0".into(),
+    match decode_erc20_transfer(&input[4..]) {
+        Some((_, amount)) => amount.to_string(),
+        None => "0".into(),
+    }
+}
+
+pub fn erc20_transfer_recipient(input: &[u8]) -> Option<String> {
+    const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+
+    if input.len() < 4 || input[..4] != TRANSFER_SELECTOR {
+        return None;
+    }
+
+    decode_erc20_transfer(&input[4..])
+        .map(|(recipient, _)| format!("0x{:x}", recipient))
+}
+
+fn decode_erc20_transfer(data: &[u8]) -> Option<(ethers::types::Address, ethers::types::U256)> {
+    match decode(&[ParamType::Address, ParamType::Uint(256)], data) {
+        Ok(tokens) => {
+            let recipient = tokens[0].clone().into_address()?;
+            let amount = tokens[1].clone().into_uint()?;
+            Some((recipient, amount))
+        }
+        Err(_) => None,
     }
 }
