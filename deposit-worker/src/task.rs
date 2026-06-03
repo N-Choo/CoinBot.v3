@@ -49,7 +49,13 @@ pub fn run_dispatcher(
 ) {
     tokio::spawn(async move {
         while let Some(task) = rx.recv().await {
-            let permit = semaphore.clone().acquire_owned().await.unwrap();
+            let permit = match semaphore.clone().acquire_owned().await {
+                Ok(p) => p,
+                Err(_) => {
+                    log::error!("Semaphore closed --- shutting down dispatcher");
+                    break;
+                }
+            };
             let pool = pool.clone();
             tokio::spawn(async move {
                 let result = process_task(&pool, &task.tx_hash, &task.uid, &task.ticker).await;
