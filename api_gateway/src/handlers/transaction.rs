@@ -33,7 +33,7 @@ impl Transaction {
             None => return HttpResponse::Unauthorized().finish(),
         };
 
-        // Phase 2: Fetch transaction data from trusted source.
+        // Phase 2: Fetch transaction and verify on-chain success.
         let tx = match Rpc::get_transaction(&payload.tx_hash).await {
             Ok(t) => t,
             Err(e) => {
@@ -41,6 +41,11 @@ impl Transaction {
                 return HttpResponse::BadRequest().finish();
             }
         };
+
+        if let Err(e) = Rpc::confirm_onchain_success(&payload.tx_hash).await {
+            log::warn!("receipt check failed for {}: {}", payload.tx_hash, e);
+            return HttpResponse::BadRequest().finish();
+        }
 
         // Phase 3: Transaction validation.
         let info = match Self::validate(&tx) {
