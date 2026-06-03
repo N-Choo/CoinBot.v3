@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod prod-build logs logs-backend test-api
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api
 
 help:
 	@echo "Usage: make <target>"
@@ -23,6 +23,7 @@ help:
 	@echo "  fmt-fix      Fix formatting"
 	@echo "  clippy       Lint (deny warnings)"
 	@echo "  test         Run unit tests"
+	@echo "  proto        Compile wallet.proto (verify proto only)"
 	@echo ""
 	@echo "Frontend"
 	@echo "  frontend-lint      Lint frontend"
@@ -45,7 +46,7 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
-	cargo test -p api-gateway --lib
+	cargo test $(addprefix -p ,$(PACKAGES))
 
 frontend-install:
 	cd react && npm ci
@@ -82,3 +83,6 @@ logs-backend:
 
 test-api:
 	./test-api.sh
+
+proto:
+	cargo build -p common --timings
