@@ -47,7 +47,18 @@ impl Transaction {
             return HttpResponse::BadRequest().finish();
         }
 
-        // Phase 3: Transaction validation.
+        // Phase 3: Verify sender matches authenticated user.
+        let sender = format!("0x{:x}", tx.from);
+        if sender != wallet {
+            log::warn!(
+                "tx.from mismatch: session wallet={}, tx sender={}",
+                wallet,
+                sender
+            );
+            return HttpResponse::Forbidden().finish();
+        }
+
+        // Phase 4: Transaction validation.
         let info = match Self::validate(&tx) {
             Some(i) => i,
             None => {
