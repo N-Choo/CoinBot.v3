@@ -45,9 +45,7 @@ impl AppState {
 
         let grpc_deposit = Channel::from_shared(config.grpc_deposit.clone())
             .context("Invalid gRPC endpoint")?
-            .connect()
-            .await
-            .context("Failed to connect to deposit-worker gRPC")?;
+            .connect_lazy();
 
         Ok(Self {
             db_pool,
