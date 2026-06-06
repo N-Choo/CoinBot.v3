@@ -1,7 +1,8 @@
-use crate::rpc::erc20_transfer_amount;
 use ethers::types::Transaction as EthTx;
-use sqlx::PgPool;
+use sqlx::{PgPool, Transaction};
 use uuid::Uuid;
+
+use crate::erc20::Erc20;
 
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct Deposit {
@@ -19,52 +20,6 @@ pub struct Deposit {
     pub reason: Option<String>,
 }
 
-#[derive(Default)]
-pub struct DepositFilter {
-    user_uid: Option<Uuid>,
-    status: Option<String>,
-    tx_hash: Option<String>,
-}
-
-impl DepositFilter {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub fn with_user(mut self, uid: Uuid) -> Self {
-        self.user_uid = Some(uid);
-        self
-    }
-
-    pub fn with_status(mut self, status: &str) -> Self {
-        self.status = Some(status.into());
-        self
-    }
-
-    pub fn with_tx_hash(mut self, hash: &str) -> Self {
-        self.tx_hash = Some(hash.into());
-        self
-    }
-
-    pub async fn execute(&self, pool: &PgPool) -> Result<Vec<Deposit>, sqlx::Error> {
-        use sqlx::QueryBuilder;
-        let mut builder = QueryBuilder::new("SELECT * FROM deposits WHERE 1=1");
-
-        if let Some(ref uid) = self.user_uid {
-            builder.push(" AND user_uid = ").push_bind(uid);
-        }
-        if let Some(ref status) = self.status {
-            builder.push(" AND status = ").push_bind(status);
-        }
-        if let Some(ref hash) = self.tx_hash {
-            builder.push(" AND tx_hash = ").push_bind(hash);
-        }
-
-        builder.push(" ORDER BY created_at DESC");
-        builder.build_query_as().fetch_all(pool).await
-    }
-}
-
 impl Deposit {
     pub async fn create_pending(
         pool: &PgPool,
@@ -76,7 +31,7 @@ impl Deposit {
         let amount = if ticker == "ETH" {
             tx.value.to_string()
         } else {
-            erc20_transfer_amount(&tx.input)
+            Erc20::decode_amount(&tx.input)
         };
 
         sqlx::query_as::<_, Self>(
@@ -102,10 +57,10 @@ impl Deposit {
     }
 
     pub async fn confirm(
-        pool: &PgPool,
+        tx: &mut Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         amount: &str,
-        block_nr: i64,
+        block_nr: Option<i64>,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(
             r#"
@@ -118,11 +73,15 @@ impl Deposit {
         .bind(amount)
         .bind(block_nr)
         .bind(id)
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await
     }
 
-    pub async fn fail(pool: &PgPool, id: Uuid, reason: &str) -> Result<Self, sqlx::Error> {
+    pub async fn fail(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        reason: &str,
+    ) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(
             r#"
             UPDATE deposits
@@ -133,7 +92,7 @@ impl Deposit {
         )
         .bind(reason)
         .bind(id)
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await
     }
 }

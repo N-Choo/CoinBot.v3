@@ -4,10 +4,7 @@ use sqlx::PgPool;
 
 use common::{TicketRequest, deposit_service_client::DepositServiceClient};
 use ethers::types::Address;
-use share::{
-    db,
-    rpc::{Rpc, erc20_transfer_recipient},
-};
+use share::{db, erc20::Erc20, rpc::Rpc};
 use tonic::transport::Channel;
 
 use crate::{
@@ -130,7 +127,7 @@ impl Transaction {
             let addr = format!("0x{:x}", to);
             if let Some(&(_, ticker)) = TOKENS.iter().find(|(a, _)| *a == addr) {
                 let input = tx.input.as_ref();
-                let recipient = erc20_transfer_recipient(input)?;
+                let recipient = Erc20::decode_recipient(input)?;
 
                 let recipient_addr: Address = recipient.parse().ok()?;
                 if recipient_addr != host {

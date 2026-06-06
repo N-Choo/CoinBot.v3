@@ -35,22 +35,28 @@
 │       ├── handlers/                # EIP-191 auth, deposit HTTP handlers
 │       └── models/                  # DTOs, AppError
 │
-├── common/                          # Shared library (proto stubs, db, rpc)
-│   ├── Cargo.toml
+├── common/                          # Proto-compiled gRPC stubs
 │   ├── build.rs                     # Compiles proto/wallet.proto via tonic
-│   └── src/
-│       ├── lib.rs                   # Re-exports gRPC types, ServiceConfig
-│       ├── db/                      # DB models, queries, Deposit, DepositFilter
-│       └── rpc.rs                   # Ethereum RPC client (get_transaction)
+│   └── src/lib.rs                   # Re-exports gRPC types
 │
-├── deposit-worker/                  # Rust (tonic) — gRPC deposit server
+├── share/                           # Shared library — DB models, RPC client, ERC20 decoding
+│   ├── Cargo.toml
+│   └── src/
+│       ├── db/                      # Deposit, DepositFilter, User models
+│       ├── rpc.rs                   # Ethereum RPC client (get_transaction)
+│       └── erc20.rs                 # ERC20 transfer() calldata decoder
+│
+├── deposit-worker/                  # Rust (tonic) — gRPC deposit server + sweeper
 │   ├── Cargo.toml
 │   ├── Dockerfile
-│   └── src/main.rs                  # DepositService gRPC skeleton
+│   └── src/
+│       ├── main.rs                  # gRPC server entry
+│       ├── grpc_handler.rs          # DepositService RPC implementation
+│       ├── task.rs                  # Async dispatcher with semaphore
+│       └── deposit_sweeper.rs       # Background KuCoin deposit sync
 │
 ├── proto/
-│   ├── wallet.proto                 # gRPC contract (DepositService)
-│   └── README.md                    # gRPC patterns & conventions
+│   └── wallet.proto                 # gRPC contract (DepositService)
 │
 ├── react/                           # Vite + React 19 + TS
 │   ├── Dockerfile
@@ -67,6 +73,28 @@
 ├── docker-compose.yml
 └── system_architecture/
     └── trader_agent_blueprint.md
+```
+
+## Architecture Flow
+
+```
+User → React SPA (Vite :5173)
+          │  HTTP (JSON)
+          ▼
+API Gateway (actix-web :8080)
+  ├── POST /api/user/auth      → EIP-191 challenge → session cookie
+  ├── POST /api/transactions/deposit → verify tx → gRPC to worker
+  ├── PostgreSQL ── users, deposits
+  └── gRPC ────────────────────────────────────────────────┐
+                                                           │
+                                                           ▼
+                                              Deposit Worker (tonic :50051)
+                                                ├── Validates on-chain tx (Ethereum RPC)
+                                                ├── Creates pending deposit
+                                                └── KuCoin API ─── transfer to spot
+
+Deposit Sweeper (background loop every 60s)
+  └── Checks KuCoin deposit status → confirms → adds user balance
 ```
 
 ## Security Architecture
@@ -151,7 +179,7 @@ pull requests. It mirrors `make ci` — two jobs:
 **Which packages are checked** is defined by `PACKAGES` in the Makefile:
 
 ```makefile
-PACKAGES = api-gateway
+PACKAGES = api-gateway share deposit-worker
 ```
 
 Add new services to this list to include them in CI. Add new checks by extending
