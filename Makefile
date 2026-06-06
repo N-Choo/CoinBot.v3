@@ -67,7 +67,7 @@ clean:
 	docker compose down --rmi all -v
 
 dev:
-	docker compose up backend-dev frontend
+	docker compose up backend-dev deposit frontend
 
 prod-build:
 	docker compose build deposit-worker-prod backend frontend-prod
