@@ -48,3 +48,39 @@ jobs:
         run: cd react && npm run test
       - name: Type Check & Build
         run: cd react && npm run build
+
+  # --- Push ARM64 images to registry (main only) ---
+  push-arm:
+    name: Build & Push ARM64
+    needs: [backend-test, frontend-test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Build & push backend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: api_gateway/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/coinbot-backend:latest
+      - name: Build & push deposit-worker
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: deposit-worker/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/coinbot-worker:latest
+      - name: Build & push frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: react/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ github.repository_owner }}/coinbot-frontend:latest
