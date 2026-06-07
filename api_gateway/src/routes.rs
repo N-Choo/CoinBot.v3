@@ -21,6 +21,7 @@ pub fn api_routes(cfg: &mut web::ServiceConfig) {
                     .route("/deposit", web::post().to(Transaction::deposit))
                     .route("", web::get().to(Transaction::list)),
                 // .route("/withdraw", web::post().to(Transaction::withdraw)),
-            ),
+            )
+            .route("/config", web::get().to(crate::constants::get_config)),
     );
 }

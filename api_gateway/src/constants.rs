@@ -7,5 +7,14 @@ pub const TOKENS: &[(&str, &str)] = &[
     ("0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48", "USDC"),
 ];
 
-const PLATFORM_ADD: &str = "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c";
+pub const PLATFORM_ADD: &str = "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c";
 pub static PLATFORM_WALLET: LazyLock<Address> = LazyLock::new(|| PLATFORM_ADD.parse().unwrap());
+
+use actix_web::{HttpResponse, Responder};
+
+pub async fn get_config() -> impl Responder {
+    HttpResponse::Ok().json(serde_json::json!({
+        "platform_wallet": PLATFORM_ADD,
+        "tokens": TOKENS,
+    }))
+}

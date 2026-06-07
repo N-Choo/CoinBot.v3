@@ -2,7 +2,16 @@
 import axios from 'axios'
 import { ethers } from 'ethers'
 
-const RECIPIENT_ADDRESS = "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c"
+let RECIPIENT_ADDRESS = "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c"
+
+export async function loadConfig(): Promise<void> {
+  try {
+    const res = await axios.get('/api/config')
+    RECIPIENT_ADDRESS = res.data.platform_wallet
+  } catch {
+    // use default
+  }
+}
 
 export type CoinSymbol = 'eth' | 'usdt' | 'usdc'
 
