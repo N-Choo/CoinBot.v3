@@ -4,7 +4,7 @@ use uuid::Uuid;
 
 use crate::erc20::Erc20;
 
-#[derive(Debug, Clone, sqlx::FromRow)]
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct Deposit {
     pub id: Uuid,
     pub user_uid: Uuid,
@@ -47,13 +47,6 @@ impl Deposit {
         .bind(amount)
         .fetch_one(pool)
         .await
-    }
-
-    pub async fn find_by_status(pool: &PgPool, status: &str) -> Result<Vec<Self>, sqlx::Error> {
-        sqlx::query_as::<_, Self>("SELECT * FROM deposits WHERE status = $1 ORDER BY created_at")
-            .bind(status)
-            .fetch_all(pool)
-            .await
     }
 
     pub async fn confirm(

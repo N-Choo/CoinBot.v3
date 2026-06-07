@@ -9,3 +9,4 @@ sqlx.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 env_logger.workspace = true
+serde.workspace = true
