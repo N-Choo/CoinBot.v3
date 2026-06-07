@@ -4278,6 +4278,7 @@ dependencies = [
  "chrono",
  "env_logger",
  "ethers",
+ "serde",
  "sqlx",
  "uuid 1.23.1",
 ]

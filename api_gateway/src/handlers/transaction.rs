@@ -4,7 +4,11 @@ use sqlx::PgPool;
 
 use common::{TicketRequest, deposit_service_client::DepositServiceClient};
 use ethers::types::Address;
-use share::{db, erc20::Erc20, rpc::Rpc};
+use share::{
+    db::{self, deposit::DepositFilter},
+    erc20::Erc20,
+    rpc::Rpc,
+};
 use tonic::transport::Channel;
 
 use crate::{
@@ -20,6 +24,38 @@ pub(crate) struct DepositInfo {
 pub struct Transaction {}
 
 impl Transaction {
+    pub async fn list(
+        header: actix_web::HttpRequest,
+        session_cache: web::Data<CacheType>,
+        pool: web::Data<PgPool>,
+    ) -> impl Responder {
+        let wallet = match Self::authenticate(&header, &session_cache).await {
+            Some(w) => w,
+            None => return HttpResponse::Unauthorized().finish(),
+        };
+
+        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return HttpResponse::Ok().json(Vec::<serde_json::Value>::new()),
+            Err(e) => {
+                log::error!("list: find_by_wallet failed: {}", e);
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        match DepositFilter::new()
+            .with_user(user.uid)
+            .execute(&pool)
+            .await
+        {
+            Ok(deposits) => HttpResponse::Ok().json(deposits),
+            Err(e) => {
+                log::error!("list: fetch failed for uid={}: {}", user.uid, e);
+                HttpResponse::InternalServerError().finish()
+            }
+        }
+    }
+
     pub async fn deposit(
         header: actix_web::HttpRequest,
         payload: web::Json<DepositPayloadRequest>,
