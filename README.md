@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=2,3&height=200&section=header&text=CoinBot%20V3&fontSize=64&animation=fadeIn&fontAlignY=36&desc=CORE&descSize=20&descAlignY=54" alt="CoinBot V3 Banner" />
+  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=2,3&height=200&section=header&text=CoinBot%20V3&fontSize=64&animation=fadeIn&fontAlignY=36&descSize=20&descAlignY=54" alt="CoinBot V3 Banner" />
 </div>
 <p align="center">
   <b>A trading engine that learns. Powered by ML and local LLMs.</b>
@@ -19,191 +19,58 @@
 
 ## Architecture
 
-```text
-.
-├── Cargo.toml                       # Workspace root w/ shared deps
-├── Makefile                         # Local CI runner
-├── api_gateway/                     # Rust (Actix-Web) — auth, routing
-│   ├── Cargo.toml
-│   ├── Dockerfile
-│   └── src/
-│       ├── main.rs                  # HttpServer entry
-│       ├── config.rs                # AppConfig, CORS
-│       ├── constants.rs             # Token addresses, platform wallet
-│       ├── state.rs                 # PgPool, cache, KuCoin client
-│       ├── routes.rs
-│       ├── handlers/                # EIP-191 auth, deposit HTTP handlers
-│       └── models/                  # DTOs, AppError
-│
-├── common/                          # Proto-compiled gRPC stubs
-│   ├── build.rs                     # Compiles proto/wallet.proto via tonic
-│   └── src/lib.rs                   # Re-exports gRPC types
-│
-├── share/                           # Shared library — DB models, RPC client, ERC20 decoding
-│   ├── Cargo.toml
-│   └── src/
-│       ├── db/                      # Deposit, DepositFilter, User models
-│       ├── rpc.rs                   # Ethereum RPC client (get_transaction)
-│       └── erc20.rs                 # ERC20 transfer() calldata decoder
-│
-├── deposit-worker/                  # Rust (tonic) — gRPC deposit server + sweeper
-│   ├── Cargo.toml
-│   ├── Dockerfile
-│   └── src/
-│       ├── main.rs                  # gRPC server entry
-│       ├── grpc_handler.rs          # DepositService RPC implementation
-│       ├── task.rs                  # Async dispatcher with semaphore
-│       └── deposit_sweeper.rs       # Background KuCoin deposit sync
-│
-├── proto/
-│   └── wallet.proto                 # gRPC contract (DepositService)
-│
-├── react/                           # Vite + React 19 + TS
-│   ├── Dockerfile
-│   ├── nginx.conf
-│   ├── package.json
-│   └── src/
-│       ├── App.tsx                  # Routes: /, /trading, /dashboard
-│       ├── components/              # topbar, auth_guard, dashboard/, landing/, trading/
-│       ├── hooks/                   # useAuth, useTheme, useScrollAnimation
-│       ├── pages/                   # homePage, dashboard, tradingPage
-│       ├── services/                # connectWallet, kucoin
-│       └── styles/
-│
-├── docker-compose.yml
-└── system_architecture/
-    └── trader_agent_blueprint.md
+```
+User → React SPA → API Gateway (actix-web :8080)
+                        ├── PostgreSQL (users, deposits)
+                        └── gRPC → Deposit Worker (:50051)
+                                        └── KuCoin sweep → balance credit
+
+Deposit Worker (background)
+    └── Polls KuCoin every 60s → confirms → credits user
 ```
 
-## Architecture Flow
+## Stack
 
-```
-User → React SPA (Vite :5173)
-          │  HTTP (JSON)
-          ▼
-API Gateway (actix-web :8080)
-  ├── POST /api/user/auth      → EIP-191 challenge → session cookie
-  ├── POST /api/transactions/deposit → verify tx → gRPC to worker
-  ├── PostgreSQL ── users, deposits
-  └── gRPC ────────────────────────────────────────────────┐
-                                                           │
-                                                           ▼
-                                              Deposit Worker (tonic :50051)
-                                                ├── Validates on-chain tx (Ethereum RPC)
-                                                ├── Creates pending deposit
-                                                └── KuCoin API ─── transfer to spot
+- **Backend:** Rust (Actix-Web, Tonic, SQLx)
+- **Frontend:** React 19 + TypeScript + Vite
+- **Database:** PostgreSQL
+- **Infrastructure:** Docker Compose, gRPC, GitHub Actions
 
-Deposit Sweeper (background loop every 60s)
-  └── Checks KuCoin deposit status → confirms → adds user balance
+## Quick start
+
+```bash
+make dev              # starts all services (backend + worker + frontend)
+make ci               # full pipeline (fmt → clippy → test → build)
 ```
 
-## Security Architecture
+## API
 
-### Separation of Duties (SoD)
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET    | /api/user/auth | Request signing challenge (nonce) |
+| POST   | /api/user/auth | Submit signed message → session cookie |
+| GET    | /api/config | Platform wallet address, supported tokens |
+| GET    | /api/transactions | List user deposits |
+| POST   | /api/transactions/deposit | Submit deposit tx hash |
+| POST   | /api/user/verify | Check session validity |
 
-Each business function runs in its own isolated process with its own database.
-No single service performs both deposit and withdrawal logic.
-
-| Service           | Responsibility                  | Cannot access   |
-| ----------------- | ------------------------------- | --------------- |
-| `api_gateway`     | Auth, routing                   | Modify balances |
-| `deposit-worker`  | Record deposits via gRPC        | Withdrawal DB   |
-
-### Ethical Walls
-
-Communication between services is restricted to defined interfaces:
+## Project structure
 
 ```
-Client (caller)        Interface                Server (owner)
-─────────────────────────────────────────────────────────────
-api_gateway ──gRPC──▶ DepositService           deposit-worker
+api_gateway/       HTTP API — auth, routing, deposit validation
+common/            Proto-compiled gRPC stubs
+share/             Shared DB models, RPC client, ERC20 decoder
+deposit-worker/    gRPC server + background KuCoin sweeper
+react/             SPA dashboard + trading interface
+proto/             gRPC contract definitions
+migrations/        SQL migrations
 ```
-
-**Three enforcement layers:**
-
-1. **Crate boundaries** — each crate only imports `common` (shared types, proto stubs). No crate imports another service's internals.
-2. **Docker isolation** — each container has credentials for its own database only. No cross-service DB access.
-3. **Proto contracts** — services only expose what `proto/wallet.proto` defines. The Rust compiler rejects mismatches.
-
-See `proto/README.md` for the full gRPC + Redis communication guide.
 
 ## Features
 
-### Backend
-
-- [x] EIP-191 wallet-based authentication (challenge → sign → session)
-- [x] Session cookie management (Moka cache, TTL-based)
-- [x] CI pipeline (fmt, clippy, cargo test)
-- [ ] ML signal pipeline (see `system_architecture/`)
-- [ ] Local LLM trade agent
-- [ ] Strategy backtesting engine
-
-### Frontend
-
-- [x] Wallet connect / disconnect flow (ethers.js + EIP-191)
-- [x] TradingView chart integration
-- [x] Portfolio dashboard (balance stats, P&L chart, contract cards)
-- [x] Landing page (hero, pipeline animation, feature cards)
-- [x] Dark/light theme toggle
-- [x] Auth-guarded routing (redirect if unauthenticated)
-
----
-
-## Local Development
-
-Run all CI checks (fmt → clippy → test → frontend lint → test → build):
-
-```sh
-make ci
-```
-
-Or individually:
-
-```sh
-make fmt-fix    # auto-format Rust
-make clippy     # Rust lints
-make test       # Rust tests
-make frontend-lint-fix  # auto-fix frontend lint
-```
-
-### CI Pipeline
-
-The GitHub Actions workflow (`.github/workflows/ci.yml`) runs on push to `main` and
-pull requests. It mirrors `make ci` — two jobs:
-
-| Job | Checks |
-|---|---|
-| `backend-test` | Format (`make fmt`), Clippy (`make clippy`), Tests (`make test`) |
-| `frontend-test` | Lint, Test, Build |
-
-**Which packages are checked** is defined by `PACKAGES` in the Makefile:
-
-```makefile
-PACKAGES = api-gateway share deposit-worker
-```
-
-Add new services to this list to include them in CI. Add new checks by extending
-the Makefile — CI calls `make` targets, not raw cargo commands.
-
-To run the full CI pipeline locally:
-
-```sh
-make ci
-```
-
-Or a single job:
-
-```sh
-make fmt clippy test   # equivalent to backend-test
-```
-
-## API Overview
-
-| Method | Endpoint           | Description                               |
-| ------ | ------------------ | ----------------------------------------- |
-| `GET`  | `/api/user/auth`   | Request EIP-191 signing challenge (nonce) |
-| `POST` | `/api/user/auth`   | Submit signed message → session cookie    |
-| `POST` | `/api/user/logout` | Invalidate session                        |
-| `POST` | `/api/user/verify` | Check session validity                    |
-
----
+- [x] EIP-191 wallet-based authentication
+- [x] ETH, USDT, USDC deposit support
+- [x] On-chain verification (receipt, sender, ERC20 recipient)
+- [x] Background KuCoin deposit sweeper
+- [x] Transactional user balance management
+- [x] ARM64 Docker images via CI
