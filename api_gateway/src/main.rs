@@ -19,7 +19,7 @@ async fn main() -> anyhow::Result<()> {
 
     let governor = GovernorConfigBuilder::default()
         .seconds_per_request(10)
-        .burst_size(20)
+        .burst_size(60)
         .finish()
         .unwrap();
 
