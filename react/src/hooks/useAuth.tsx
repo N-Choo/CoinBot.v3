@@ -23,13 +23,14 @@ export const useAuth = () => {
     return () => { cancelled = true }
   }, [])
 
-  const login = useCallback(async () => {
+  const login = useCallback(async (): Promise<boolean> => {
     setIsLoading(true)
     try {
       const success = await connectWallet()
       if (success) {
         setIsAuthenticated(true)
         toast.success('Wallet connected')
+        return true
       }
     } catch (err: unknown) {
       const msg = err instanceof Error && err.message === 'NO_WALLET'
@@ -39,6 +40,7 @@ export const useAuth = () => {
     } finally {
       setIsLoading(false)
     }
+    return false
   }, [])
 
   const logout = useCallback(async () => {

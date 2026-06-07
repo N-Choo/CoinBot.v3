@@ -6,10 +6,7 @@ export default function HeroSection() {
   const { isAuthenticated, login } = useAuth()
 
   const handleStart = async () => {
-    if (isAuthenticated) {
-      navigate('/trading')
-    } else {
-      await login()
+    if (isAuthenticated || await login()) {
       navigate('/trading')
     }
   }

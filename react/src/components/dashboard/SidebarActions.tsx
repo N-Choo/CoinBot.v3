@@ -1,7 +1,15 @@
 import { useState, useEffect } from 'react'
-import axios from 'axios'
-import { sendCoin, getBalance, COINS, type CoinConfig } from '../../services/transaction'
-import type { CoinSymbol } from '../../services/transaction'
+import { sendCoin, getBalance, getActivity, withdraw, COINS, type CoinConfig } from '../../services/transaction'
+import type { CoinSymbol, ActivityItem } from '../../services/transaction'
+
+const DECIMALS: Record<string, number> = { USDT: 6, USDC: 6, ETH: 18 }
+
+function formatAmount(raw: string, ticker: string): string {
+  const dec = DECIMALS[ticker.toUpperCase()] ?? 18
+  const num = Number(raw) / 10 ** dec
+  if (num === 0) return '0'
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: dec })
+}
 
 export default function SidebarActions() {
   const [modal, setModal] = useState<'deposit' | 'withdraw' | null>(null)
@@ -10,8 +18,18 @@ export default function SidebarActions() {
   const [balance, setBalance] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
+  const [activities, setActivities] = useState<ActivityItem[]>([])
+  const [detail, setDetail] = useState<ActivityItem | null>(null)
 
   const close = () => { setModal(null); setCoin('usdt'); setAmount(''); setError('') }
+
+  useEffect(() => {
+    let cancelled = false
+    getActivity().then(data => {
+      if (!cancelled) setActivities(data)
+    }).catch(() => {})
+    return () => { cancelled = true }
+  }, [])
 
   useEffect(() => {
     if (!modal) return
@@ -25,8 +43,9 @@ export default function SidebarActions() {
     try {
       if (modal === 'deposit') {
         await sendCoin(amount, coin)
+        getActivity().then(setActivities).catch(() => {})
       } else {
-        await axios.post(`/api/transactions/withdraw`, { amount })
+        await withdraw(amount)
       }
       close()
     } catch (err: unknown) {
@@ -41,12 +60,6 @@ export default function SidebarActions() {
       setLoading(false)
     }
   }
-
-  const tx = [
-    { id: 1, type: 'Deposit', hash: '0x7a3B...f9E2', amount: '+$5,000', time: '2 min ago', in: true },
-    { id: 2, type: 'Withdraw', hash: '0x4c1D...a3B7', amount: '-$1,200', time: '18 min ago', in: false },
-    { id: 3, type: 'Deposit', hash: '0x9f2E...c4D8', amount: '+$8,500', time: '1h ago', in: true },
-  ]
 
   const user = {
     available: '$48,230.15',
@@ -88,31 +101,66 @@ export default function SidebarActions() {
         <h3 className="activity-title">Recent Activity</h3>
         <div className="dash-title-sm activity-subtitle">Transaction History</div>
         <div className="activity-list">
-          {tx.map(t => (
-            <div key={t.id} className="tx-row">
-              <div className={`tx-icon ${t.in ? 'tx-icon-in' : 'tx-icon-out'}`}>
+          {activities.map(t => (
+            <div key={t.id} className="tx-row" onClick={() => setDetail(t)} style={{ cursor: 'pointer' }}>
+              <div className="tx-icon tx-icon-in">
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                  {t.in ? (
-                    <><line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" /></>
-                  ) : (
-                    <><line x1="12" y1="19" x2="12" y2="5" /><polyline points="5 12 12 5 19 12" /></>
-                  )}
+                  <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
                 </svg>
               </div>
               <div className="tx-body">
-                <div className="tx-type">{t.type}</div>
-                <div className="tx-hash">{t.hash}</div>
+                <div className="tx-type">Deposit {t.ticker}</div>
+                <div className="tx-hash">{t.tx_hash.slice(0, 10)}...</div>
               </div>
               <div className="tx-amount-col">
-                <div className={`tx-amount ${t.in ? 'tx-amount-in' : 'tx-amount-out'}`}>
-                  {t.amount}
+                <div className={`tx-amount ${t.status === 'confirmed' ? 'tx-amount-in' : 'tx-amount-out'}`}>
+                  {formatAmount(t.amount, t.ticker)}
                 </div>
-                <div className="tx-time">{t.time}</div>
+                <div className="tx-time">{new Date(t.created_at).toLocaleString()}</div>
               </div>
             </div>
           ))}
         </div>
       </div>
+
+      {detail && (
+        <div className="modal-overlay" onClick={() => setDetail(null)}>
+          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel" style={{ minWidth: 440, padding: 0 }}>
+            <div style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: 'var(--border-hud)' }}>
+              <div>
+                <div className="section-label" style={{ marginBottom: 2 }}>Deposit</div>
+                <div style={{ fontSize: 20, fontWeight: 700 }}>{detail.ticker} — {formatAmount(detail.amount, detail.ticker)}</div>
+              </div>
+              <span className={`badge ${detail.status === 'confirmed' ? 'badge-success' : 'badge-danger'}`}>
+                {detail.status === 'confirmed' ? '✓ Confirmed' : '◷ Pending'}
+              </span>
+            </div>
+
+            <div className="modal-info-box" style={{ margin: '16px 20px' }}>
+              <div className="modal-info-row">
+                <span>Transaction Hash</span>
+                <span className="modal-info-value" style={{ fontSize: 11, wordBreak: 'break-all', maxWidth: 260, textAlign: 'right' }}>{detail.tx_hash}</span>
+              </div>
+              <div className="modal-info-row">
+                <span>Ticket ID</span>
+                <span className="modal-info-value" style={{ fontSize: 11 }}>{detail.id}</span>
+              </div>
+              <div className="modal-info-row">
+                <span>Created</span>
+                <span className="modal-info-value">{new Date(detail.created_at).toLocaleString()}</span>
+              </div>
+              <div className="modal-info-row">
+                <span>Raw Amount</span>
+                <span className="modal-info-value" style={{ fontFamily: 'var(--font-mono)' }}>{detail.amount}</span>
+              </div>
+            </div>
+
+            <div className="modal-actions" style={{ padding: '0 20px 20px' }}>
+              <button onClick={() => setDetail(null)} className="modal-cancel-btn">CLOSE</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal === 'deposit' && (
         <div className="modal-overlay" onClick={close}>

@@ -68,6 +68,7 @@ export async function sendCoin(amount: string, coin: CoinSymbol): Promise<boolea
     }
     const tx = await signer.sendTransaction({ to: RECIPIENT_ADDRESS, value: amountParsed })
     await tx.wait()
+    await axios.post('/api/transactions/deposit', { tx_hash: tx.hash })
   } else {
     const contract = new ethers.Contract(cfg.address!, ERC20_ABI, provider)
     const balance = await contract.balanceOf(sender)
@@ -82,4 +83,22 @@ export async function sendCoin(amount: string, coin: CoinSymbol): Promise<boolea
   }
 
   return true
+}
+
+export interface ActivityItem {
+  id: string
+  ticker: string
+  amount: string
+  status: string
+  created_at: string
+  tx_hash: string
+}
+
+export async function getActivity(): Promise<ActivityItem[]> {
+  const res = await axios.get('/api/transactions')
+  return res.data.slice(0, 20)
+}
+
+export async function withdraw(amount: string): Promise<void> {
+  await axios.post('/api/transactions/withdraw', { amount })
 }
