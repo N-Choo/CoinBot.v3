@@ -1,10 +1,12 @@
+use actix_governor::{Governor, GovernorConfigBuilder};
 use actix_web::{
     App, HttpServer,
     middleware::{Logger, NormalizePath},
     web,
 };
-use api_gateway::{config::AppConfig, logger::init_logger, routes::api_routes};
+use api_gateway::{config::AppConfig, routes::api_routes};
 use dotenvy::dotenv;
+use share::logger::init_logger;
 
 #[actix_web::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,14 +17,23 @@ async fn main() -> anyhow::Result<()> {
     let app_state = api_gateway::state::AppState::new(&config).await?;
     let config_data = web::Data::new(config.clone());
 
+    let governor = GovernorConfigBuilder::default()
+        .seconds_per_request(10)
+        .burst_size(60)
+        .finish()
+        .unwrap();
+
     // Initial HTTP workers to handle inncomming TCP connections.
     HttpServer::new(move || {
         App::new()
+            .wrap(Governor::new(&governor))
             .wrap(config_data.get_cors())
             .wrap(NormalizePath::trim())
             .wrap(Logger::new("%a\t | %s\t | %Dms\t | %r\t"))
             .app_data(web::Data::new(app_state.nonce_cache.clone()))
             .app_data(web::Data::new(app_state.session_cache.clone()))
+            .app_data(web::Data::new(app_state.db_pool.clone()))
+            .app_data(web::Data::new(app_state.grpc_deposit.clone()))
             .configure(api_routes)
     })
     .workers(config.n_worker)

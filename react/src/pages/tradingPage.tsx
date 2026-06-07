@@ -38,7 +38,6 @@ const Trading = () => {
       parameters: botSettings
     }
 
-    console.log('Payload:', payload)
     alert(`Starting bot on ${payload.pair}\n\nParameters:\n${JSON.stringify(payload.parameters, null, 2)}`)
   }
 

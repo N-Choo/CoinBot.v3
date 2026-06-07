@@ -1,0 +1,18 @@
+syntax = "proto3";
+package wallet;
+
+message TicketRequest {
+  string tx_hash = 1;
+  string uid = 2;
+  string ticker = 5;
+}
+
+message TicketResponse {
+  string ticket_id = 1;
+  string timestamp = 2;
+  bool accepted = 3;
+}
+
+service DepositService {
+  rpc CreateTicket0(TicketRequest) returns (TicketResponse);
+}

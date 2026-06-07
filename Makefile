@@ -1,6 +1,38 @@
-PACKAGES = api-gateway
+PACKAGES = api-gateway share deposit
 
-.PHONY: ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api
+
+help:
+	@echo "Usage: make <target>"
+	@echo ""
+	@echo "Docker"
+	@echo "  clean        Remove all containers, images, and volumes"
+	@echo ""
+	@echo "Development"
+	@echo "  dev          Start deposit-worker + backend-dev + frontend"
+	@echo "  test-api     Run curl tests against the API"
+	@echo "  logs         Follow logs from all services"
+	@echo "  logs-backend Follow backend logs"
+	@echo ""
+	@echo "Production"
+	@echo "  prod         Build + start all production services (detached)"
+	@echo "  prod-build   Build production images without running"
+	@echo ""
+	@echo "Rust"
+	@echo "  fmt          Check formatting"
+	@echo "  fmt-fix      Fix formatting"
+	@echo "  clippy       Lint (deny warnings)"
+	@echo "  test         Run unit tests"
+	@echo "  proto        Compile wallet.proto (verify proto only)"
+	@echo ""
+	@echo "Frontend"
+	@echo "  frontend-lint      Lint frontend"
+	@echo "  frontend-lint-fix  Auto-fix frontend lint"
+	@echo "  frontend-test      Run frontend tests"
+	@echo "  frontend-build     Build frontend for production"
+	@echo ""
+	@echo "CI"
+	@echo "  ci           Run full CI pipeline (fmt + clippy + test + lint + build)"
 
 ci: fmt-fix clippy test frontend-lint-fix frontend-test frontend-build
 
@@ -14,7 +46,7 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
-	cargo test -p api-gateway --lib
+	cargo test $(addprefix -p ,$(PACKAGES))
 
 frontend-install:
 	cd react && npm ci
@@ -30,3 +62,27 @@ frontend-test: frontend-install
 
 frontend-build: frontend-install
 	cd react && npm run build
+
+clean:
+	docker compose down --rmi all -v
+
+dev:
+	docker compose up backend-dev deposit-worker frontend
+
+prod-build:
+	docker compose build deposit-worker-prod backend frontend-prod
+
+prod:
+	docker compose --profile prod up -d deposit-worker-prod backend frontend-prod
+
+logs:
+	docker compose logs -f
+
+logs-backend:
+	docker compose logs backend -f
+
+test-api:
+	./test-api.sh
+
+proto:
+	cargo build -p common --timings

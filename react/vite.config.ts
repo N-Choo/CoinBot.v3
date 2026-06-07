@@ -9,10 +9,8 @@ export default defineConfig({
     allowedHosts: ["fedora.ibex-mooneye.ts.net"],
     proxy: {
       '/api': {
-        // Use the Docker service name 'backend' and port 8080
-        target: 'http://backend:8080',
+        target: 'http://backend-dev:8080',
         changeOrigin: true,
-        // rewrite: (path) => path.replace(/^\/api/, ''), 
       }
     }
   },

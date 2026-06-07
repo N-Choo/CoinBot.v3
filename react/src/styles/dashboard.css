@@ -708,11 +708,50 @@ tbody tr:last-child td {
   color: var(--text-muted);
 }
 
+/* ── Coin Selector ── */
+.coin-selector {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.coin-option {
+  flex: 1;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.coin-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.coin-option-active {
+  border-color: var(--color-primary);
+  background: var(--color-primary);
+  color: var(--text-btn);
+}
+
+.coin-option-active:hover {
+  background: var(--color-primary);
+  color: var(--text-btn);
+}
+
 /* ── Modal ── */
 .modal-panel {
   width: 100%;
   max-width: 420px;
   padding: 30px;
+  background: var(--bg-panel);
 }
 
 .modal-title {
@@ -788,18 +827,27 @@ tbody tr:last-child td {
 
 .modal-cancel-btn {
   flex: 1;
-  padding: 12px;
+  padding: 14px 20px;
   background: transparent;
   border: 1px solid var(--border-color);
   border-radius: 4px;
   color: var(--text-main);
   font-weight: 600;
   cursor: pointer;
+  line-height: 1;
 }
 
 .modal-confirm-btn {
   flex: 2;
+  padding: 14px 20px;
   justify-content: center;
+  line-height: 1;
+}
+
+.modal-error {
+  color: #ff6b6b;
+  font-size: 13px;
+  padding-bottom: 14px;
 }
 
 @media (max-width: 1024px) {

@@ -6,6 +6,10 @@ import AppRoutes from './App';
 import axios from 'axios';
 
 
+import { loadConfig } from './services/transaction';
+
+loadConfig()
+
 // Set the global base URL for all Axios requests
 axios.defaults.withCredentials = true;
 

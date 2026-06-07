@@ -32,7 +32,6 @@ export async function connectWallet(): Promise<boolean> {
     // Prompt the user to sign the message
     const signer = await provider.getSigner();
     const signature = await signer.signMessage(message);
-    console.log('Signature generated successfully.');
 
     // Send the signature back to the server for verification
     const response = await axios.post('/api/user/auth', {
@@ -52,7 +51,7 @@ export async function disconnectWallet(): Promise<void> {
   try {
     const res = await axios.post('/api/user/logout');
     if (res.status === 200) {
-      console.log('Wallet disconnected successfully on server.');
+      // disconnected successfully
     } else {
       console.warn('Unexpected response during logout:', res);
     }

@@ -25,9 +25,6 @@ impl AuthController {
     ///
     /// # Returns
     /// - HTTP response with the generated nonce.
-    ///
-    /// # Errors
-    /// - Returns 500 if nonce generation or cache storage fails.
     pub async fn request_challenge(
         query: web::Query<ChallengeQuery>,
         nonce_cache: web::Data<CacheType>,
@@ -36,15 +33,16 @@ impl AuthController {
         let nonce = Uuid::new_v4().to_string();
 
         nonce_cache.insert(wallet.clone(), nonce.clone()).await;
-        assert!(
-            nonce_cache.get(&wallet).await.is_some(),
-            "Failed to store nonce in cache"
-        );
+
+        if nonce_cache.get(&wallet).await.is_none() {
+            log::error!("Failed to store nonce in cache for wallet={}", wallet);
+            return HttpResponse::InternalServerError().finish();
+        }
 
         HttpResponse::Ok().json(ChallengeResponse { nonce })
     }
 
-    /// Handles POST /api/user/authenticantion
+    /// Handles POST /api/user/authentication
     /// Verifies the signature of the nonce and issues a session cookie.
     ///
     /// # Arguments
@@ -89,7 +87,7 @@ impl AuthController {
         let session_cookies = Cookie::build("session_token", token.clone())
             .path("/")
             .http_only(true)
-            .same_site(actix_web::cookie::SameSite::Lax)
+            .same_site(actix_web::cookie::SameSite::Strict)
             .max_age(actix_web::cookie::time::Duration::hours(2))
             .finish();
 
@@ -123,8 +121,6 @@ impl AuthController {
                 HttpResponse::Unauthorized().body("Invalid session")
             }
         } else {
-            // INFO : Add logging, track, and monitor missing session cookies to identify potential
-            // issues or attacks.
             HttpResponse::BadRequest().body("No session cookie found")
         }
     }
@@ -146,7 +142,7 @@ impl AuthController {
             }
         };
 
-        info!("Decrypted wallet: {:?}", wallet_addr);
+        info!("Recovered wallet: {:?}", wallet_addr);
         let full_address = format!("0x{:x}", wallet_addr); // Standard hex .
         Ok(full_address.to_lowercase())
     }

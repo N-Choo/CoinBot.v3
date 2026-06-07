@@ -1,5 +1,5 @@
 pub mod config;
-pub mod logger;
+pub mod constants;
 pub mod routes;
 pub mod state;
 

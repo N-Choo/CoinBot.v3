@@ -1,5 +1,6 @@
 FROM lukemathwalker/cargo-chef:latest-rust-latest AS chef
 WORKDIR /app
+RUN apt-get update && apt-get install -y protobuf-compiler && rm -rf /var/lib/apt/lists/*
 
 FROM chef AS planner
 COPY . .
