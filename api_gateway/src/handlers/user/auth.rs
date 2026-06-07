@@ -25,9 +25,6 @@ impl AuthController {
     ///
     /// # Returns
     /// - HTTP response with the generated nonce.
-    ///
-    /// # Panics
-    /// - Panics if nonce cache insert fails (debug builds).
     pub async fn request_challenge(
         query: web::Query<ChallengeQuery>,
         nonce_cache: web::Data<CacheType>,
@@ -36,10 +33,11 @@ impl AuthController {
         let nonce = Uuid::new_v4().to_string();
 
         nonce_cache.insert(wallet.clone(), nonce.clone()).await;
-        assert!(
-            nonce_cache.get(&wallet).await.is_some(),
-            "Failed to store nonce in cache"
-        );
+
+        if nonce_cache.get(&wallet).await.is_none() {
+            log::error!("Failed to store nonce in cache for wallet={}", wallet);
+            return HttpResponse::InternalServerError().finish();
+        }
 
         HttpResponse::Ok().json(ChallengeResponse { nonce })
     }
