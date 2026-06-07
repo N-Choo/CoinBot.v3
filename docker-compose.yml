@@ -17,7 +17,7 @@ services:
       - app-network
 
   deposit-worker-prod:
-    image: ghcr.io/blackh-t/coinbot-worker:latest
+     image: ghcr.io/n-choo/coinbot-worker:latest
     build:
       context: .
       dockerfile: deposit-worker/Dockerfile
@@ -52,7 +52,7 @@ services:
       - app-network
 
   backend:
-    image: ghcr.io/blackh-t/coinbot-backend:latest
+    image: ghcr.io/n-choo/coinbot-backend:latest
     build:
       context: .
       dockerfile: api_gateway/Dockerfile
