@@ -1,4 +1,4 @@
-name: Flear Full-Stack CI
+name: Full-Stack CI
 
 on:
   push:
