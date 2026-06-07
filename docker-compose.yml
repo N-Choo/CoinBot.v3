@@ -17,7 +17,7 @@ services:
       - app-network
 
   deposit-worker-prod:
-     image: ghcr.io/n-choo/coinbot-worker:latest
+    image: ghcr.io/n-choo/coinbot-worker:latest
     build:
       context: .
       dockerfile: deposit-worker/Dockerfile
