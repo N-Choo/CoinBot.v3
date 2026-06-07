@@ -1,5 +1,17 @@
+use std::sync::OnceLock;
+
 use ethers::types::U64;
 use ethers::{providers::Middleware, types::Transaction as EthTx};
+
+type Provider = ethers::providers::Provider<ethers::providers::Http>;
+
+fn provider() -> &'static Provider {
+    static PROVIDER: OnceLock<Provider> = OnceLock::new();
+    PROVIDER.get_or_init(|| {
+        Provider::try_from("https://ethereum-rpc.publicnode.com")
+            .expect("Failed to create Ethereum RPC provider")
+    })
+}
 
 pub struct Rpc;
 
@@ -9,16 +21,11 @@ impl Rpc {
             return Err("Transaction hash is empty".to_string());
         }
 
-        let provider = ethers::providers::Provider::<ethers::providers::Http>::try_from(
-            "https://ethereum-rpc.publicnode.com",
-        )
-        .map_err(|e| format!("Failed to create provider: {}", e))?;
-
         let hash: ethers::types::TxHash = tx_hash
             .parse()
             .map_err(|e| format!("Invalid tx hash format: {}", e))?;
 
-        provider
+        provider()
             .get_transaction(hash)
             .await
             .map_err(|e| format!("RPC error: {}", e))?
@@ -26,16 +33,11 @@ impl Rpc {
     }
 
     pub async fn confirm_onchain_success(tx_hash: &str) -> Result<(), String> {
-        let provider = ethers::providers::Provider::<ethers::providers::Http>::try_from(
-            "https://ethereum-rpc.publicnode.com",
-        )
-        .map_err(|e| format!("Failed to create provider: {}", e))?;
-
         let hash: ethers::types::TxHash = tx_hash
             .parse()
             .map_err(|e| format!("Invalid tx hash format: {}", e))?;
 
-        let receipt = provider
+        let receipt = provider()
             .get_transaction_receipt(hash)
             .await
             .map_err(|e| format!("RPC error fetching receipt: {}", e))?
