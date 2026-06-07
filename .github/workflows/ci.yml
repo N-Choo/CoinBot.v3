@@ -81,8 +81,8 @@ jobs:
       - name: Build & push frontend
         uses: docker/build-push-action@v5
         with:
-          context: .
-          file: react/Dockerfile
+          context: ./react
+          file: ./react/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:latest
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:la
