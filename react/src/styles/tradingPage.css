@@ -528,16 +528,124 @@
 @media (max-width: 900px) {
   .trading-grid {
     grid-template-columns: 1fr;
-    grid-template-rows: auto auto 1fr;
+    grid-template-rows: auto minmax(0, 1fr) auto;
+    height: 100%;
+  }
+
+  .ticker-bar {
+    flex-wrap: wrap;
+    height: auto;
+    padding: 6px 10px;
+    gap: 6px;
+  }
+
+  .ticker-price-area {
+    padding: 0 10px 0 6px;
+  }
+
+  .ticker-big-price {
+    font-size: 14px;
+  }
+
+  .ticker-big-change {
+    font-size: 11px;
+  }
+
+  .ticker-stats {
+    display: none;
   }
 
   .chart-column {
     border-right: none;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .chart-container {
     min-height: 300px;
+  }
+
+  .settings-column {
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
   }
 
   .settings-card {
     overflow-y: visible;
+    padding: 10px 14px;
+  }
+
+  .bot-strategy-panel {
+    gap: 8px;
+  }
+
+  .strategy-header {
+    margin-bottom: 0;
+  }
+
+  .strategy-title {
+    font-size: 12px;
+  }
+
+  .strategy-inputs {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .strategy-inputs .trade-input-group {
+    flex: 1 1 calc(50% - 3px);
+    min-width: 0;
+  }
+
+  .strategy-inputs .trade-input-group label {
+    font-size: 9px;
+  }
+
+  .strategy-inputs .input-wrapper input {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  .strategy-summary {
+    padding: 6px 8px;
+    gap: 4px;
+  }
+
+  .strategy-row {
+    padding: 0;
+  }
+
+  .strategy-key {
+    font-size: 10px;
+  }
+
+  .strategy-val {
+    font-size: 11px;
+  }
+
+  .strategy-start-btn {
+    margin-top: 6px;
+    padding: 8px;
+    font-size: 12px;
+  }
+
+  .strategy-start-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .active-contracts {
+    padding: 6px 10px;
+  }
+
+  .ac-card {
+    width: 140px;
+    padding: 6px 8px;
+  }
+
+  .pair-dropdown {
+    width: calc(100vw - 20px);
+    left: -10px;
   }
 }
 
@@ -547,32 +655,73 @@
   }
 
   .ticker-bar {
-    height: auto;
-    flex-wrap: wrap;
-    padding: 8px 10px;
-    gap: 8px;
+    padding: 4px 8px;
+    gap: 4px;
   }
 
-  .ticker-search {
-    flex: 1;
+  .pair-select-btn {
+    padding: 4px 6px;
+    gap: 4px;
   }
 
-  .ticker-dropdown {
-    width: calc(100vw - 24px);
-    left: -8px;
+  .star-icon {
+    display: none;
   }
 
-  .chart-column {
-    min-height: 220px;
+  .pair-select-text {
+    font-size: 12px;
+  }
+
+  .chevron-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .ticker-price-area {
+    padding: 0 6px;
+    gap: 6px;
+    height: 24px;
+  }
+
+  .ticker-big-price {
+    font-size: 13px;
+  }
+
+  .ticker-big-change {
+    font-size: 10px;
+  }
+
+  .chart-container {
+    min-height: 200px;
   }
 
   .settings-card {
-    padding: 12px;
+    padding: 10px;
+  }
+
+  .strategy-inputs .trade-input-group {
+    flex: 1 1 100%;
+  }
+
+  .ac-card {
+    width: 120px;
   }
 }
 
 @media (max-width: 400px) {
   .trading-page-wrapper {
     padding-top: 48px;
+  }
+
+  .ticker-big-price {
+    font-size: 12px;
+  }
+
+  .pair-select-text {
+    font-size: 11px;
+  }
+
+  .chart-container {
+    min-height: 160px;
   }
 }

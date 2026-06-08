@@ -12,12 +12,12 @@
   grid-template-columns: 1fr 340px;
   width: 100%;
   height: 100%;
+  overflow: hidden;
 }
 
 .dash-main-col {
   display: flex;
   flex-direction: column;
-  gap: 0;
   min-width: 0;
   border-right: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
   overflow-y: auto;
@@ -27,7 +27,6 @@
 .dash-side-col {
   display: flex;
   flex-direction: column;
-  gap: 0;
   height: 100%;
   overflow-y: auto;
   position: sticky;
@@ -41,10 +40,6 @@
   padding: 20px;
   border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
   background: transparent;
-}
-
-.dash-panel:last-child {
-  border-bottom: none;
 }
 
 .dash-panel:last-child {
@@ -985,19 +980,59 @@ tbody tr:hover td {
 
 /* ── Responsive ── */
 @media (max-width: 1024px) {
-  .dash-grid { grid-template-columns: 1fr; }
-  .dash-main-col { border-right: none; }
-  .dash-side-col { height: auto; }
+  .dash-wrapper {
+    height: auto;
+    min-height: 100vh;
+  }
+
+  .dash-grid {
+    height: auto;
+    overflow: visible;
+    grid-template-columns: 1fr;
+  }
+
+  .dash-main-col {
+    height: auto;
+    overflow: visible;
+    border-right: none;
+  }
+
+  .dash-side-col {
+    position: static;
+    max-height: none;
+    height: auto;
+    overflow: visible;
+    border-top: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  }
+
+  .wallet-actions {
+    flex-direction: row;
+    margin-top: 10px;
+  }
+
+  .activity-section {
+    min-height: 150px;
+  }
+
+  .activity-list {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2px;
+  }
 }
 
 @media (max-width: 768px) {
+  .dash-panel {
+    padding: 12px;
+  }
+
+  .settings-title {
+    margin-bottom: 10px;
+  }
+
   .balance-stats-grid {
-    display: grid;
     grid-template-columns: 1fr 1fr;
-    grid-template-rows: auto auto;
     gap: 0;
-    width: 100%;
-    min-width: 0;
   }
 
   .balance-stats-grid > .dash-panel:first-child {
@@ -1005,73 +1040,303 @@ tbody tr:hover td {
   }
 
   .balance-stats-grid > .dash-panel {
-    padding: 14px 16px;
+    padding: 10px 12px;
   }
 
   .dash-value-lg {
-    font-size: 20px;
+    font-size: 17px;
+    margin: 3px 0 2px;
   }
 
   .balance-change-row {
-    font-size: 11px;
+    font-size: 10px;
+    gap: 3px;
+    flex-wrap: wrap;
+  }
+
+  .balance-card-header .icon-box {
+    width: 24px;
+    height: 24px;
+  }
+
+  .balance-card-header .icon-box svg {
+    width: 12px;
+    height: 12px;
   }
 
   .pnl-value {
-    font-size: 22px;
+    font-size: 18px;
   }
 
   .pnl-header {
     flex-direction: column;
-    gap: 10px;
+    gap: 6px;
   }
 
   .pnl-right-col {
     text-align: left;
     display: flex;
-    gap: 8px;
+    gap: 6px;
     align-items: center;
+    flex-wrap: wrap;
   }
 
   .pnl-chart-area {
-    height: 100px;
+    height: 70px;
+  }
+
+  .historic-stats-grid {
+    padding: 6px 0 0;
+    gap: 6px;
+  }
+
+  .stat-value {
+    font-size: 11px;
   }
 
   .contracts-toolbar {
     flex-direction: column;
     align-items: flex-start;
-    gap: 10px;
+    gap: 6px;
+    margin-bottom: 10px;
   }
 
   .contracts-filters {
     flex-wrap: wrap;
-    gap: 6px;
+    gap: 4px;
   }
 
-  .contracts-actions {
-    width: 100%;
-    justify-content: space-between;
+  .table-wrap {
+    overflow-x: auto;
+    margin: 0 -12px;
+    padding: 0 12px;
+  }
+
+  table {
+    font-size: 10px;
+    min-width: 450px;
+  }
+
+  thead th {
+    padding: 5px 6px;
+    font-size: 9px;
+  }
+
+  tbody td {
+    padding: 5px 6px;
+    font-size: 10px;
+  }
+
+  .contract-pair-cell {
+    gap: 5px;
+  }
+
+  .contract-pair-logo {
+    width: 16px;
+    height: 16px;
+  }
+
+  .contract-pair-full {
+    font-size: 10px;
+  }
+
+  .contract-status {
+    font-size: 10px;
+    gap: 3px;
+  }
+
+  .status-bullet {
+    width: 4px;
+    height: 4px;
+  }
+
+  .contract-pnl {
+    font-size: 10px;
+  }
+
+  .contract-roe {
+    font-size: 10px;
+  }
+
+  .wallet-actions {
+    gap: 6px;
+    margin-top: 8px;
+  }
+
+  .wallet-btn {
+    padding: 7px 10px;
+    font-size: 10px;
+    gap: 4px;
+  }
+
+  .wallet-btn svg {
+    width: 12px;
+    height: 12px;
+  }
+
+  .activity-section {
+    min-height: 100px;
+  }
+
+  .activity-title {
+    font-size: 12px;
+  }
+
+  .activity-subtitle {
+    margin-bottom: 8px;
+  }
+
+  .tx-row {
+    gap: 6px;
+    padding: 6px 6px;
+  }
+
+  .tx-icon {
+    width: 22px;
+    height: 22px;
+  }
+
+  .tx-icon svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  .tx-type {
+    font-size: 11px;
+  }
+
+  .tx-hash {
+    font-size: 9px;
+  }
+
+  .tx-amount {
+    font-size: 10px;
+  }
+
+  .tx-time {
+    font-size: 9px;
+  }
+
+  .modal-panel {
+    max-width: calc(100vw - 32px);
+    padding: 16px;
+  }
+
+  .modal-title {
+    font-size: 14px;
+  }
+
+  .modal-desc {
+    font-size: 10px;
+    margin-bottom: 12px;
+  }
+
+  .modal-input {
+    padding: 8px 40px 8px 10px;
+    font-size: 13px;
+  }
+
+  .modal-cancel-btn,
+  .modal-confirm-btn {
+    padding: 8px 12px;
+    font-size: 10px;
   }
 }
 
 @media (max-width: 640px) {
-  .dash-panel { padding: 14px; }
-  .dash-value-lg { font-size: 18px; }
-  .static-card-wrapper {
-    flex: 0 0 100%;
-  }
-}
-
-@media (max-width: 400px) {
-  .historic-stats-grid {
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
+  .dash-wrapper {
+    height: auto;
+    min-height: 100vh;
   }
 
-  .pnl-range-tabs {
-    flex-wrap: wrap;
+  .dash-panel {
+    padding: 12px;
+  }
+
+  .dash-value-lg {
+    font-size: 16px;
+  }
+
+  .balance-stats-grid > .dash-panel {
+    padding: 10px 12px;
+  }
+
+  .pnl-chart-area {
+    height: 60px;
+  }
+
+  .pnl-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+
+  .pnl-tab {
+    font-size: 9px;
+    padding: 2px 6px;
   }
 
   .settings-title h3 {
     font-size: 12px;
+  }
+
+  .filter-btn {
+    font-size: 9px;
+    padding: 3px 8px;
+  }
+
+  .contracts-empty {
+    padding: 20px;
+    font-size: 11px;
+  }
+}
+
+@media (max-width: 480px) {
+  .balance-stats-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .balance-stats-grid > .dash-panel {
+    border-right: none;
+    border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  }
+
+  .balance-stats-grid > .dash-panel:last-child {
+    border-bottom: none;
+  }
+
+  .activity-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 400px) {
+  .dash-wrapper {
+    padding-top: 48px;
+  }
+
+  .dash-panel {
+    padding: 10px;
+  }
+
+  .dash-value-lg {
+    font-size: 15px;
+  }
+
+  .historic-stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 4px;
+  }
+
+  .pnl-range-tabs {
+    flex-wrap: wrap;
+    gap: 2px;
+  }
+
+  .settings-title h3 {
+    font-size: 11px;
+  }
+
+  .wallet-actions {
+    flex-direction: column;
   }
 }

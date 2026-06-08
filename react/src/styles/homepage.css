@@ -460,28 +460,82 @@
 
 /* ── Responsive ── */
 @media (max-width: 860px) {
-  .hero { padding: 80px 20px 40px; }
-  .hero-inner { grid-template-columns: 1fr; gap: 32px; max-width: 560px; }
+  .hero { padding: 80px 20px 40px; min-height: auto; }
+  .hero::before { width: 300px; height: 300px; top: -100px; left: -100px; }
+  .hero::after { opacity: 0.05; }
+  .hero-inner { grid-template-columns: 1fr; gap: 28px; max-width: 560px; }
   .hero-body { align-items: center; text-align: center; }
-  .hero h1 { font-size: 32px; }
-  .hero-sub { font-size: 14px; max-width: 440px; }
+  .hero h1 { font-size: 34px; letter-spacing: -0.5px; line-height: 1.1; }
+  .hero-sub { font-size: 14px; max-width: 400px; line-height: 1.6; }
   .hero-actions { justify-content: center; }
-  .stats-bar { gap: 24px; flex-wrap: wrap; }
+  .btn-p { padding: 12px 28px; font-size: 14px; }
+  .stats-bar { gap: 20px; flex-wrap: wrap; justify-content: center; padding: 24px 20px; }
+  .stat-value { font-size: 20px; }
+  .activity-feed { padding: 24px 20px; }
+  .feed-track { gap: 16px; }
+  .feed-item { padding: 6px 12px; font-size: 11px; gap: 6px; }
+  .features { padding: 40px 20px; }
   .section-title { font-size: 22px; }
-  .feat-grid { grid-template-columns: 1fr; }
-  .hero::after { opacity: 0.08; }
+  .section-sub { font-size: 13px; margin-bottom: 24px; }
+  .feat-grid { grid-template-columns: 1fr; max-width: 480px; margin: 0 auto; }
+  .feat-card { padding: 20px; }
+  .feat-card h3 { font-size: 16px; }
 }
 
 @media (max-width: 640px) {
-  .hero { padding: 72px 16px 32px; }
-  .hero h1 { font-size: 26px; }
-  .hero-actions { flex-direction: column; width: 100%; }
-  .hero-actions .btn-p, .hero-actions .btn-s { width: 100%; text-align: center; }
-  .stats-bar { gap: 16px; }
-  .stat-value { font-size: 18px; }
-  .features { padding: 40px 16px; }
-  .section-title { font-size: 20px; }
-  .feat-card { padding: 16px; }
-  .footer { padding: 16px; }
-  .footer-inner { flex-direction: column; gap: 8px; text-align: center; }
+  .hero { padding: 72px 16px 28px; min-height: auto; }
+  .hero-body { gap: 14px; }
+  .hero h1 { font-size: 28px; letter-spacing: -0.3px; line-height: 1.08; }
+  .hero-sub { font-size: 13px; max-width: 360px; line-height: 1.55; }
+  .hero-actions { flex-direction: column; width: 100%; margin-top: 2px; }
+  .hero-actions .btn-p, .hero-actions .btn-s { width: 100%; text-align: center; justify-content: center; }
+  .btn-p { padding: 12px 20px; font-size: 14px; }
+  .btn-s { padding: 12px 20px; font-size: 13px; }
+  .stats-bar { gap: 12px; padding: 20px 16px; }
+  .stat-value { font-size: 17px; }
+  .stat-label { font-size: 10px; }
+  .activity-feed { padding: 20px 16px; }
+  .feed-header { font-size: 11px; margin-bottom: 12px; }
+  .feed-scroll { mask-image: none; -webkit-mask-image: none; }
+  .features { padding: 32px 16px; }
+  .section-title { font-size: 18px; }
+  .section-sub { font-size: 12px; }
+  .feat-card { padding: 14px; }
+  .feat-card h3 { font-size: 15px; }
+  .feat-card p { font-size: 12px; }
+  .footer { padding: 14px 16px; }
+  .footer-inner { flex-direction: column; gap: 6px; text-align: center; }
+  .footer p { font-size: 11px; }
+}
+
+@media (max-width: 480px) {
+  .hero { padding: 64px 12px 24px; }
+  .hero-body { gap: 12px; }
+  .hero h1 { font-size: 24px; letter-spacing: -0.2px; }
+  .hero-badge { font-size: 10px; padding: 4px 12px; }
+  .hero-sub { font-size: 12px; max-width: 320px; line-height: 1.5; }
+  .stats-bar { gap: 8px; padding: 16px 12px; }
+  .stat-value { font-size: 15px; }
+  .stat-label { font-size: 9px; }
+  .activity-feed { padding: 16px 12px; }
+  .features { padding: 24px 12px; }
+  .section-title { font-size: 16px; }
+  .feat-card { padding: 12px; }
+}
+
+@media (max-width: 400px) {
+  .hero { padding: 56px 10px 20px; }
+  .hero-body { gap: 10px; }
+  .hero h1 { font-size: 20px; }
+  .hero-sub { font-size: 11px; max-width: 280px; line-height: 1.45; }
+  .hero-badge { font-size: 9px; padding: 3px 10px; gap: 4px; }
+  .hero-actions { gap: 8px; margin-top: 0; }
+  .btn-p { padding: 10px 16px; font-size: 13px; }
+  .btn-s { padding: 10px 16px; font-size: 12px; }
+  .stats-bar { flex-direction: column; align-items: center; gap: 12px; }
+  .stat-item { flex-direction: row; gap: 8px; width: 100%; justify-content: space-between; }
+  .stat-value { font-size: 14px; }
+  .stat-label { font-size: 10px; }
+  .feat-grid { gap: 10px; }
+  .footer { padding: 12px; }
 }
