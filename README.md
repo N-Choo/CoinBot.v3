@@ -35,6 +35,7 @@ Deposit Worker (background)
 - **Frontend:** React 19 + TypeScript + Vite
 - **Database:** PostgreSQL
 - **Infrastructure:** Docker Compose, gRPC, GitHub Actions
+- **Live:** [CoinBot-V3](https://raspberrypi.ibex-mooneye.ts.net:8443/)
 
 ## Quick start
 
@@ -45,14 +46,14 @@ make ci               # full pipeline (fmt → clippy → test → build)
 
 ## API
 
-| Method | Endpoint | Description |
-|--------|----------|-------------|
-| GET    | /api/user/auth | Request signing challenge (nonce) |
-| POST   | /api/user/auth | Submit signed message → session cookie |
-| GET    | /api/config | Platform wallet address, supported tokens |
-| GET    | /api/transactions | List user deposits |
-| POST   | /api/transactions/deposit | Submit deposit tx hash |
-| POST   | /api/user/verify | Check session validity |
+| Method | Endpoint                  | Description                               |
+| ------ | ------------------------- | ----------------------------------------- |
+| GET    | /api/user/auth            | Request signing challenge (nonce)         |
+| POST   | /api/user/auth            | Submit signed message → session cookie    |
+| GET    | /api/config               | Platform wallet address, supported tokens |
+| GET    | /api/transactions         | List user deposits                        |
+| POST   | /api/transactions/deposit | Submit deposit tx hash                    |
+| POST   | /api/user/verify          | Check session validity                    |
 
 ## Project structure
 
