@@ -12,6 +12,15 @@ export default defineConfig({
         target: 'http://backend-dev:8080',
         changeOrigin: true,
       },
+      '/kucoin-api': {
+        target: 'https://api.kucoin.com',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.path = proxyReq.path.replace('/kucoin-api', '')
+          })
+        },
+      },
     }
   },
   test: {

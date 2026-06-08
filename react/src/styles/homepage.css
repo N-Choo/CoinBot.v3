@@ -1,21 +1,21 @@
 :root {
-  --bg-deep: #f5f7fa;
-  --bg-card: rgba(255,255,255,0.8);
-  --border-subtle: rgba(0,0,0,0.06);
-  --text-dim: rgba(0,0,0,0.35);
-  --text-muted: rgba(0,0,0,0.55);
-  --text-main: rgba(0,0,0,0.85);
-  --accent: #00b894;
-  --accent-glow: rgba(0,184,148,0.12);
-  --red: #ef4444;
-  --green: #00b894;
+  --bg-deep: #f8fafb;
+  --bg-card: #ffffff;
+  --border-subtle: rgba(0,0,0,0.08);
+  --text-dim: rgba(0,0,0,0.5);
+  --text-muted: #64748b;
+  --text-main: #0f172a;
+  --accent: #059669;
+  --accent-glow: rgba(5,150,105,0.1);
+  --red: #dc2626;
+  --green: #059669;
 }
 
 [data-theme='dark'] {
   --bg-deep: #07070d;
   --bg-card: rgba(255,255,255,0.03);
   --border-subtle: rgba(255,255,255,0.06);
-  --text-dim: rgba(255,255,255,0.35);
+  --text-dim: rgba(255,255,255,0.5);
   --text-muted: rgba(255,255,255,0.55);
   --text-main: rgba(255,255,255,0.9);
   --accent: #00d4aa;
@@ -447,6 +447,8 @@
 
 .footer p { margin: 0; }
 
+
+
 /* ── Animations ── */
 @keyframes pulse {
   0%, 100% { transform: scale(1); opacity: 0.6; }
@@ -469,8 +471,8 @@
   .hero-sub { font-size: 14px; max-width: 400px; line-height: 1.6; }
   .hero-actions { justify-content: center; }
   .btn-p { padding: 12px 28px; font-size: 14px; }
-  .stats-bar { gap: 20px; flex-wrap: wrap; justify-content: center; padding: 24px 20px; }
-  .stat-value { font-size: 20px; }
+  .stats-bar { gap: 16px; padding: 24px 20px; overflow-x: auto; }
+  .stat-value { font-size: 18px; }
   .activity-feed { padding: 24px 20px; }
   .feed-track { gap: 16px; }
   .feed-item { padding: 6px 12px; font-size: 11px; gap: 6px; }
@@ -491,9 +493,9 @@
   .hero-actions .btn-p, .hero-actions .btn-s { width: 100%; text-align: center; justify-content: center; }
   .btn-p { padding: 12px 20px; font-size: 14px; }
   .btn-s { padding: 12px 20px; font-size: 13px; }
-  .stats-bar { gap: 12px; padding: 20px 16px; }
-  .stat-value { font-size: 17px; }
-  .stat-label { font-size: 10px; }
+  .stats-bar { gap: 12px; padding: 18px 16px; }
+  .stat-value { font-size: 15px; }
+  .stat-label { font-size: 9px; }
   .activity-feed { padding: 20px 16px; }
   .feed-header { font-size: 11px; margin-bottom: 12px; }
   .feed-scroll { mask-image: none; -webkit-mask-image: none; }
@@ -514,9 +516,9 @@
   .hero h1 { font-size: 24px; letter-spacing: -0.2px; }
   .hero-badge { font-size: 10px; padding: 4px 12px; }
   .hero-sub { font-size: 12px; max-width: 320px; line-height: 1.5; }
-  .stats-bar { gap: 8px; padding: 16px 12px; }
-  .stat-value { font-size: 15px; }
-  .stat-label { font-size: 9px; }
+  .stats-bar { gap: 6px; padding: 14px 12px; }
+  .stat-value { font-size: 13px; }
+  .stat-label { font-size: 8px; }
   .activity-feed { padding: 16px 12px; }
   .features { padding: 24px 12px; }
   .section-title { font-size: 16px; }
@@ -532,10 +534,15 @@
   .hero-actions { gap: 8px; margin-top: 0; }
   .btn-p { padding: 10px 16px; font-size: 13px; }
   .btn-s { padding: 10px 16px; font-size: 12px; }
-  .stats-bar { flex-direction: column; align-items: center; gap: 12px; }
-  .stat-item { flex-direction: row; gap: 8px; width: 100%; justify-content: space-between; }
-  .stat-value { font-size: 14px; }
-  .stat-label { font-size: 10px; }
+  .stats-bar { gap: 4px; padding: 10px 8px; }
+  .stat-value { font-size: 11px; }
+  .stat-label { font-size: 7px; }
   .feat-grid { gap: 10px; }
   .footer { padding: 12px; }
+}
+
+@media (max-width: 375px) {
+  .stats-bar { gap: 3px; padding: 8px 6px; }
+  .stat-value { font-size: 10px; }
+  .stat-label { font-size: 6px; }
 }

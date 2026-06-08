@@ -1,12 +1,19 @@
+import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import LiveTicker from './LiveTicker'
+import WalletAlert from '../ui/WalletAlert'
 
 export default function HeroSection() {
   const navigate = useNavigate()
   const { isAuthenticated, login } = useAuth()
+  const [showWalletAlert, setShowWalletAlert] = useState(false)
 
   const handleStart = async () => {
+    if (!window.ethereum && !isAuthenticated) {
+      setShowWalletAlert(true)
+      return
+    }
     if (isAuthenticated || await login()) {
       navigate('/trading')
     }
@@ -44,6 +51,8 @@ export default function HeroSection() {
 
           <LiveTicker />
       </div>
+
+      {showWalletAlert && <WalletAlert onClose={() => setShowWalletAlert(false)} />}
     </section>
   )
 }

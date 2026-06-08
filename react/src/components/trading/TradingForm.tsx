@@ -14,8 +14,13 @@ const settingsConfig = [
 ]
 
 export default function TradingForm({ selectedPair, botSettings, onSettingChange }: TradingFormProps) {
-  const estProfit = (parseFloat(botSettings.Amount) * parseFloat(botSettings.TakeProfit) / 100).toFixed(2)
-  const estLoss = (parseFloat(botSettings.Amount) * parseFloat(botSettings.StopLoss) / 100).toFixed(2)
+  const calcPnl = (amount: string, pct: string) => {
+    const a = parseFloat(amount)
+    const p = parseFloat(pct)
+    return (isNaN(a) || isNaN(p)) ? '0.00' : (a * p / 100).toFixed(2)
+  }
+  const estProfit = calcPnl(botSettings.Amount, botSettings.TakeProfit)
+  const estLoss = calcPnl(botSettings.Amount, botSettings.StopLoss)
 
   const handleStart = () => {
     const payload = { pair: selectedPair, parameters: botSettings }

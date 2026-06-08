@@ -2,14 +2,21 @@
 import axios from 'axios'
 import { ethers } from 'ethers'
 
-let RECIPIENT_ADDRESS = "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c"
+let cachedAddress: string | null = null
+
+async function getRecipientAddress(): Promise<string> {
+  if (cachedAddress) return cachedAddress
+  const res = await axios.get('/api/config')
+  cachedAddress = res.data.platform_wallet
+  if (!cachedAddress) throw new Error('No platform wallet configured on server')
+  return cachedAddress
+}
 
 export async function loadConfig(): Promise<void> {
   try {
-    const res = await axios.get('/api/config')
-    RECIPIENT_ADDRESS = res.data.platform_wallet
+    await getRecipientAddress()
   } catch {
-    // use default
+    // will try again on first sendCoin call
   }
 }
 
@@ -75,10 +82,12 @@ export async function sendCoin(amount: string, coin: CoinSymbol): Promise<boolea
     if (balance < amountParsed) {
       throw new Error(`Insufficient ETH balance: you have ${ethers.formatEther(balance)} ETH`)
     }
-    const tx = await signer.sendTransaction({ to: RECIPIENT_ADDRESS, value: amountParsed })
+    const addr = await getRecipientAddress()
+    const tx = await signer.sendTransaction({ to: addr, value: amountParsed })
     await tx.wait()
     await axios.post('/api/transactions/deposit', { tx_hash: tx.hash })
   } else {
+    const addr = await getRecipientAddress()
     const contract = new ethers.Contract(cfg.address!, ERC20_ABI, provider)
     const balance = await contract.balanceOf(sender)
     if (balance < amountParsed) {
@@ -86,7 +95,7 @@ export async function sendCoin(amount: string, coin: CoinSymbol): Promise<boolea
       throw new Error(`Insufficient ${cfg.name} balance: you have ${formatted} ${cfg.label}`)
     }
     const signerContract = contract.connect(signer) as ethers.Contract
-    const tx = await signerContract.transfer(RECIPIENT_ADDRESS, amountParsed)
+    const tx = await signerContract.transfer(addr, amountParsed)
     await tx.wait()
     await axios.post(`/api/transactions/deposit`, { tx_hash: tx.hash })
   }

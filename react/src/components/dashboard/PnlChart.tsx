@@ -55,13 +55,17 @@ export default function PnlChart() {
   }, [])
 
   useEffect(() => {
+    const timeouts: ReturnType<typeof setTimeout>[] = []
     const interval = setInterval(() => {
       const change = (Math.random() * 40 - 20)
       setTicker(prev => +(prev + change).toFixed(2))
       setFlash(change >= 0 ? 'flash-up' : 'flash-down')
-      setTimeout(() => setFlash(''), 400)
+      timeouts.push(setTimeout(() => setFlash(''), 400))
     }, 3000)
-    return () => clearInterval(interval)
+    return () => {
+      clearInterval(interval)
+      timeouts.forEach(clearTimeout)
+    }
   }, [])
 
   const data = useMemo(() => {

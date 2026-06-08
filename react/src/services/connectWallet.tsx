@@ -43,6 +43,7 @@ export async function connectWallet(): Promise<boolean> {
 
   } catch (error) {
     console.error('Wallet connection or signature failed:', error);
+    if (error instanceof Error && error.message === 'NO_WALLET') throw error;
     return false;
   }
 }

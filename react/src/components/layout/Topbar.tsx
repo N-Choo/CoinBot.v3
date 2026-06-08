@@ -3,14 +3,24 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import { useAuth } from '../../hooks/useAuth'
 import '../../styles/topbar.css'
+import WalletAlert from '../ui/WalletAlert'
 
 export default function Topbar() {
   const navigate = useNavigate()
   const [theme, toggleTheme] = useTheme()
   const { isAuthenticated, login, logout } = useAuth()
   const [menuOpen, setMenuOpen] = useState(false)
+  const [showWalletAlert, setShowWalletAlert] = useState(false)
 
   const close = () => setMenuOpen(false)
+
+  const handleConnect = async () => {
+    if (!window.ethereum && !isAuthenticated) {
+      setShowWalletAlert(true)
+      return
+    }
+    await login()
+  }
 
   const navItems = [
     { name: 'Trading', action: () => { navigate('/trading'); close() } },
@@ -19,6 +29,7 @@ export default function Topbar() {
   ]
 
   return (
+    <>
     <header className="modern-header">
       <div className="glass-container">
         <div className="brand-cluster" onClick={() => navigate('/')}>
@@ -33,7 +44,7 @@ export default function Topbar() {
               </button>
             ))
           ) : (
-            <button className="connect-action-btn" onClick={login}>CONNECT</button>
+            <button className="connect-action-btn" onClick={handleConnect}>CONNECT</button>
           )}
           <button className="theme-toggle-btn nav-link nav-link-clickable" onClick={toggleTheme}>
             {theme === 'light' ? '\u{1F319} Dark' : '\u{2600}\u{FE0F} Light'}
@@ -60,10 +71,12 @@ export default function Topbar() {
               </button>
             ))
           ) : (
-            <button className="connect-action-btn mobile-connect-btn" onClick={login}>CONNECT WALLET</button>
+            <button className="connect-action-btn mobile-connect-btn" onClick={handleConnect}>CONNECT WALLET</button>
           )}
         </div>
       </div>
     </header>
+      {showWalletAlert && <WalletAlert onClose={() => setShowWalletAlert(false)} />}
+    </>
   )
 }

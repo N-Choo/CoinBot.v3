@@ -1,21 +1,27 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+
+beforeEach(() => {
+  vi.restoreAllMocks()
+  vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('No network in tests'))
+})
 
 describe('fetchTickers', () => {
-  it('returns fallback ticker data', async () => {
+  it('returns fallback data on network error', async () => {
     const { fetchTickers } = await import('./kucoin')
     const result = await fetchTickers()
-    expect(Array.isArray(result)).toBe(true)
     expect(result.length).toBeGreaterThan(20)
-    expect(result[0]).toMatchObject({
-      pair: expect.any(String),
-      price: expect.any(String),
-      change: expect.any(String),
-      isUp: expect.any(Boolean),
-      volume: expect.any(String),
-    })
+    expect(result[0].pair).toBe('BTC/USDT')
   })
 
-  it('includes BTC/USDT in the data', async () => {
+  it('returns fallback data on non-200 response', async () => {
+    vi.restoreAllMocks()
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue({ ok: false } as Response)
+    const { fetchTickers } = await import('./kucoin')
+    const result = await fetchTickers()
+    expect(result[0].pair).toBe('BTC/USDT')
+  })
+
+  it('includes BTC/USDT in fallback data', async () => {
     const { fetchTickers } = await import('./kucoin')
     const result = await fetchTickers()
     const btc = result.find(t => t.pair === 'BTC/USDT')

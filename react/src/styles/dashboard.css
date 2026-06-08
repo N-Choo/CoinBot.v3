@@ -854,23 +854,6 @@ tbody tr:hover td {
   color: #000;
 }
 
-/* ── Modal ── */
-.modal-overlay {
-  position: fixed;
-  inset: 0;
-  background: rgba(0, 0, 0, 0.6);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 9999;
-  animation: modalFadeIn 0.15s ease;
-}
-
-@keyframes modalFadeIn {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-
 /* ── Transaction Detail Modal ── */
 .tx-detail-modal {
   background: var(--bg-panel, #0b0e11);

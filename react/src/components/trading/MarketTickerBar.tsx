@@ -33,7 +33,8 @@ export default function MarketTickerBar({ pairs, selectedPair, onSelectPair }: M
     ? pairs.filter(p => p.pair.toLowerCase().includes(query.toLowerCase()))
     : pairs
 
-  const active = pairs.find(p => p.pair === selectedPair)!
+  const active = pairs.find(p => p.pair === selectedPair) || pairs[0]
+  if (!active) return null
 
   return (
     <div className="ticker-bar">

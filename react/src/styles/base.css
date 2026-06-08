@@ -498,6 +498,147 @@ th {
   color: var(--color-down-text);
 }
 /* ═══════════════════════════════════════════
+   PAGE LOADER
+   ═══════════════════════════════════════════ */
+
+.page-loader {
+  width: 28px;
+  height: 28px;
+  border: 3px solid var(--border-subtle, rgba(255,255,255,0.06));
+  border-top-color: var(--accent, #00d4aa);
+  border-radius: 50%;
+  animation: spinLoader 0.6s linear infinite;
+}
+
+@keyframes spinLoader {
+  to { transform: rotate(360deg); }
+}
+
+/* ═══════════════════════════════════════════
+   PAGE TRANSITION
+   ═══════════════════════════════════════════ */
+
+@keyframes pageIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══════════════════════════════════════════
+   WALLET ALERT MODAL
+   ═══════════════════════════════════════════ */
+
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  animation: modalFadeIn 0.15s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.wallet-alert {
+  background: var(--bg-panel, #0b0e11);
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  border-radius: 12px;
+  padding: 32px;
+  max-width: 400px;
+  width: calc(100vw - 32px);
+  text-align: center;
+  animation: walletAlertIn 0.2s ease;
+}
+
+@keyframes walletAlertIn {
+  from { opacity: 0; transform: scale(0.95); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.wallet-alert-icon {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: rgba(255, 183, 0, 0.1);
+  color: #ffb700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto 16px;
+}
+
+.wallet-alert-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0 0 8px;
+  color: var(--text-main);
+}
+
+.wallet-alert-desc {
+  font-size: 13px;
+  color: var(--text-muted);
+  line-height: 1.6;
+  margin: 0 0 24px;
+}
+
+.wallet-alert-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.wallet-alert-btn {
+  display: block;
+  padding: 12px 24px;
+  background: linear-gradient(135deg, var(--accent, #00d4aa) 0%, #00b894 100%);
+  color: #000;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.15s;
+}
+
+.wallet-alert-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px var(--accent-glow, rgba(0,212,170,0.15));
+}
+
+.wallet-alert-link {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-decoration: none;
+  transition: color 0.15s;
+}
+
+.wallet-alert-link:hover {
+  color: var(--accent);
+}
+
+.wallet-alert-cancel {
+  padding: 10px;
+  background: transparent;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  color: var(--text-dim);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.wallet-alert-cancel:hover {
+  color: var(--text-main);
+  border-color: var(--text-muted);
+}
+
+/* ═══════════════════════════════════════════
    SKELETON LOADERS
    ═══════════════════════════════════════════ */
 
