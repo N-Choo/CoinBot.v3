@@ -1,7 +1,8 @@
 import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom'; // 1. Import BrowserRouter
-import './styles/main.css'; // Your global styles
+import './styles/tokens.css'
+import './styles/base.css'
 import AppRoutes from './App';
 import axios from 'axios';
 

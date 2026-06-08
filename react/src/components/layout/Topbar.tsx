@@ -1,8 +1,8 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useTheme } from '../hooks/useTheme'
-import { useAuth } from '../hooks/useAuth'
-import '../styles/topbar.css'
+import { useTheme } from '../../hooks/useTheme'
+import { useAuth } from '../../hooks/useAuth'
+import '../../styles/topbar.css'
 
 export default function Topbar() {
   const navigate = useNavigate()

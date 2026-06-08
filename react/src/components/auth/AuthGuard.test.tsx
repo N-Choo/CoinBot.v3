@@ -1,13 +1,13 @@
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi, beforeEach } from 'vitest'
 import { MemoryRouter } from 'react-router-dom'
-import AuthGuard from './auth_guard'
+import AuthGuard from './AuthGuard'
 
-vi.mock('../hooks/useAuth', () => ({
+vi.mock('../../hooks/useAuth', () => ({
   useAuth: vi.fn(),
 }))
 
-import { useAuth } from '../hooks/useAuth'
+import { useAuth } from '../../hooks/useAuth'
 
 describe('AuthGuard', () => {
   beforeEach(() => { vi.clearAllMocks() })

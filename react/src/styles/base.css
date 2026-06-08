@@ -67,20 +67,6 @@ input, select {
 
 input:focus, select:focus {
   border-color: var(--color-primary);
-  box-shadow: 0 0 8px var(--primary-glow);
-}
-
-/* ── Cyber background grid ── */
-[data-theme='dark'] body::before {
-  content: '';
-  position: fixed;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(255, 255, 255, 0.015) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.015) 1px, transparent 1px);
-  background-size: 60px 60px;
-  pointer-events: none;
-  z-index: 0;
 }
 
 /* ── Glitch text ── */
@@ -510,4 +496,13 @@ th {
 .badge-danger {
   background: var(--bg-danger, var(--color-down-bg));
   color: var(--color-down-text);
+}
+/* ═══════════════════════════════════════════
+   APP-LEVEL — Toaster, layout
+   ═══════════════════════════════════════════ */
+
+.auth-loading {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
 }

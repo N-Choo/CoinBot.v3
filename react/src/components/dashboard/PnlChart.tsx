@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 
 const ALL_DATA = [
   { date: 'Apr 04', value: 1200 }, { date: 'Apr 07', value: 980 },
@@ -44,6 +44,18 @@ function buildPath(data: { value: number }[]) {
 
 export default function PnlChart() {
   const [range, setRange] = useState('14D')
+  const [ticker, setTicker] = useState(0)
+  const [flash, setFlash] = useState('')
+
+  useEffect(() => {
+    const interval = setInterval(() => {
+      const change = (Math.random() * 40 - 20)
+      setTicker(prev => +(prev + change).toFixed(2))
+      setFlash(change >= 0 ? 'flash-up' : 'flash-down')
+      setTimeout(() => setFlash(''), 400)
+    }, 3000)
+    return () => clearInterval(interval)
+  }, [])
 
   const data = useMemo(() => {
     const r = RANGES.find(r => r.label === range)
@@ -64,7 +76,16 @@ export default function PnlChart() {
       <div className="pnl-header">
         <div>
           <div className="dash-title-sm">PnL Performance</div>
-          <div className="pnl-value" style={{ color }}>${last.toLocaleString()}</div>
+          <div className="pnl-value" style={{ color }}>
+            <span className={`pnl-ticker ${flash}`}>
+              ${last.toLocaleString()}
+              {ticker !== 0 && (
+                <span className="ticker-arrow">
+                  {ticker > 0 ? `+${ticker}` : ticker}
+                </span>
+              )}
+            </span>
+          </div>
         </div>
         <div className="pnl-right-col">
           <div className="pnl-badge" style={{ background: up ? 'var(--color-up-bg)' : 'var(--color-down-bg)', color: up ? 'var(--color-up-text)' : 'var(--color-down-text)' }}>

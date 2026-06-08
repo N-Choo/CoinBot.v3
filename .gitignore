@@ -4,3 +4,4 @@ docs/*
 .opencode/
 target/
 .superpowers/
+graphify-out/

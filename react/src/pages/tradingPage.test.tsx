@@ -7,63 +7,37 @@ describe('TradingPage', () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
-      expect(screen.getByText('BTC/USDT')).toBeTruthy()
+      expect(screen.getAllByText('BTC/USDT').length).toBeGreaterThanOrEqual(1)
     })
   })
 
-  it('renders the Trading Parameters settings', async () => {
+  it('renders the bot strategy panel', async () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
-      expect(screen.getByText('Trading Parameters')).toBeTruthy()
+      expect(screen.getByText('Bot Strategy')).toBeTruthy()
+      expect(screen.getByText('Start Bot')).toBeTruthy()
+      expect(screen.getByText('Allocation')).toBeTruthy()
     })
   })
 
-  it('renders mock market list with trading pairs', async () => {
+  it('shows price for selected pair in ticker', async () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
-      expect(screen.getByText('SOL')).toBeTruthy()
-      expect(screen.getByText('DOGE')).toBeTruthy()
-      expect(screen.getByText('+2.4%')).toBeTruthy()
+      expect(screen.getByText('$64,230.50')).toBeTruthy()
     })
   })
 
-  it('shows price for selected pair in header', async () => {
+  it('opens pair dropdown and searches for a coin', async () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
+    const pairBtn = screen.getByRole('button', { name: /BTC\/USDT/i })
+    fireEvent.click(pairBtn)
+    const input = screen.getByPlaceholderText('Search coins...')
+    fireEvent.change(input, { target: { value: 'SOL' } })
     await waitFor(() => {
-      const prices = screen.getAllByText('64,230.50')
-      expect(prices.length).toBeGreaterThan(0)
-    })
-  })
-
-  it('selects a different pair from market list', async () => {
-    const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
-    await waitFor(() => {
-      expect(screen.getByText('SOL')).toBeTruthy()
-    })
-    fireEvent.click(screen.getByText('SOL'))
-    await waitFor(() => {
-      const headings = screen.getAllByText('SOL/USDT')
-      expect(headings.length).toBeGreaterThan(0)
-    })
-  })
-
-  it('renders the search input', async () => {
-    const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
-    await waitFor(() => {
-      expect(screen.getByPlaceholderText('Search markets...')).toBeTruthy()
-    })
-  })
-
-  it('renders the START TRADING button', async () => {
-    const { default: Trading } = await import('./tradingPage')
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
-    await waitFor(() => {
-      expect(screen.getByText('START TRADING')).toBeTruthy()
+      expect(screen.getByText('SOL/USDT')).toBeTruthy()
     })
   })
 })

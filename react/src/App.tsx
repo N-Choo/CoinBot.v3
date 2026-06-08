@@ -1,11 +1,10 @@
 import { Route, Routes } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
-import Topbar from './components/topbar'
-import AuthGuard from './components/auth_guard'
+import Topbar from './components/layout/Topbar'
+import AuthGuard from './components/auth/AuthGuard'
 import Landing from './pages/homePage'
 import Trading from './pages/tradingPage'
 import Dashboard from './pages/dashboard'
-import './App.css'
 
 export const PATHS = {
   HOME: '/',

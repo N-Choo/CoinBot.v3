@@ -10,7 +10,7 @@ export const useTheme = (): [Theme, () => void] => {
     if (theme === 'dark' || (!localStorage.getItem('theme') && prefersDark)) {
       document.documentElement.setAttribute('data-theme', 'dark');
     } else {
-      document.documentElement.removeAttribute('data-theme');
+      document.documentElement.setAttribute('data-theme', 'light');
     }
     localStorage.setItem('theme', theme);
   }, [theme]);

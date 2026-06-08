@@ -1,9 +1,9 @@
 import { useState } from 'react'
 import '../styles/tradingPage.css'
 import TradingChart from '../components/trading/TradingChart'
-import TradingHeader from '../components/trading/TradingHeader'
-import TradingSettings from '../components/trading/TradingSettings'
-import MarketList from '../components/trading/MarketList'
+import TradingForm from '../components/trading/TradingForm'
+import MarketTickerBar from '../components/trading/MarketTickerBar'
+import ActiveContracts from '../components/trading/ActiveContracts'
 import type { BotSettings } from '../components/trading/types'
 
 const tradingPairs = [
@@ -32,35 +32,25 @@ const Trading = () => {
     }))
   }
 
-  const handleStartTrading = () => {
-    const payload = {
-      pair: selectedPair,
-      parameters: botSettings
-    }
-
-    alert(`Starting bot on ${payload.pair}\n\nParameters:\n${JSON.stringify(payload.parameters, null, 2)}`)
-  }
-
   return (
     <div className="trading-page-wrapper">
       <div className="trading-grid">
+        <div className="ticker-column">
+          <MarketTickerBar pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
+        </div>
 
-        <div className="main-column">
-
-          <div className="chart-container" style={{ minHeight: '450px' }}>
+        <div className="chart-column">
+          <div className="chart-container">
             <TradingChart symbol={selectedPair} />
           </div>
+          <ActiveContracts />
+        </div>
 
-          <div className="panel top-controls-panel">
-            <TradingHeader selectedPair={selectedPair} onStartTrading={handleStartTrading} />
-            <TradingSettings botSettings={botSettings} onSettingChange={handleSettingChange} />
+        <div className="settings-column">
+          <div className="settings-card">
+            <TradingForm selectedPair={selectedPair} botSettings={botSettings} onSettingChange={handleSettingChange} />
           </div>
         </div>
-
-        <div className="side-column">
-          <MarketList pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
-        </div>
-
       </div>
     </div>
   )

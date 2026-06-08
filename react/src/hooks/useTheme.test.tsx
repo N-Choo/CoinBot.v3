@@ -74,13 +74,13 @@ describe('useTheme', () => {
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
   })
 
-  test('removes data-theme attribute on light theme', () => {
+  test('sets data-theme attribute on light theme', () => {
     store.theme = 'dark'
     const { result } = renderHook(() => useTheme())
     expect(document.documentElement.getAttribute('data-theme')).toBe('dark')
 
     act(() => { result.current[1]() })
 
-    expect(document.documentElement.hasAttribute('data-theme')).toBe(false)
+    expect(document.documentElement.getAttribute('data-theme')).toBe('light')
   })
 })
