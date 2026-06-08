@@ -11,4 +11,6 @@ export interface TradingPair {
   change: string
   isUp: boolean
   volume: string
+  high?: string
+  low?: string
 }

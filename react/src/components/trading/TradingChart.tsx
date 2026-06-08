@@ -28,7 +28,7 @@ const TradingChart = memo<TradingChartProps>(({ symbol }) => {
     script.type = 'text/javascript'
     script.async = true
 
-    const formattedSymbol = `BINANCE:${symbol.replace('/', '')}`
+    const formattedSymbol = `KUCOIN:${symbol.replace('/', '')}`
 
     script.innerHTML = JSON.stringify({
       autosize: true,

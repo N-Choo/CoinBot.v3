@@ -1,12 +1,13 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import '../styles/tradingPage.css'
 import TradingChart from '../components/trading/TradingChart'
 import TradingForm from '../components/trading/TradingForm'
 import MarketTickerBar from '../components/trading/MarketTickerBar'
 import ActiveContracts from '../components/trading/ActiveContracts'
-import type { BotSettings } from '../components/trading/types'
+import type { BotSettings, TradingPair } from '../components/trading/types'
+import { fetchTickers } from '../services/kucoin'
 
-const tradingPairs = [
+const FALLBACK_PAIRS: TradingPair[] = [
   { pair: 'BTC/USDT', price: '64,230.50', change: '+2.4%', isUp: true, volume: '1.2B' },
   { pair: 'ETH/USDT', price: '3,420.10', change: '+1.8%', isUp: true, volume: '800M' },
   { pair: 'SOL/USDT', price: '142.75', change: '-4.2%', isUp: false, volume: '450M' },
@@ -16,7 +17,14 @@ const tradingPairs = [
 ]
 
 const Trading = () => {
+  const [tradingPairs, setTradingPairs] = useState<TradingPair[]>(FALLBACK_PAIRS)
   const [selectedPair, setSelectedPair] = useState('BTC/USDT')
+
+  useEffect(() => {
+    fetchTickers().then(setTradingPairs)
+    const interval = setInterval(() => fetchTickers().then(setTradingPairs), 30000)
+    return () => clearInterval(interval)
+  }, [])
 
   const [botSettings, setBotSettings] = useState<BotSettings>({
     Amount: '100',

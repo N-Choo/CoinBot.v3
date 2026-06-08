@@ -5,6 +5,8 @@ export interface TickerData {
   isUp: boolean
   volume: string
   raw: string
+  high?: string
+  low?: string
 }
 
 const FALLBACK: TickerData[] = [
@@ -48,8 +50,6 @@ const FALLBACK: TickerData[] = [
   { pair: 'RUNE/USDT', price: '5.45', change: '+4.60%', isUp: true, volume: '78K', raw: 'RUNE-USDT' },
 ]
 
-const KUCOIN_API = 'https://api.kucoin.com/api/v1/market/allTickers'
-
 function formatPrice(n: string): string {
   const v = parseFloat(n)
   if (isNaN(v)) return '0.00'
@@ -72,20 +72,21 @@ function formatVolume(v: string): string {
 
 export async function fetchTickers(): Promise<TickerData[]> {
   try {
-    const res = await fetch(KUCOIN_API)
+    const res = await fetch('/kucoin-api/api/v1/market/allTickers')
     if (!res.ok) return FALLBACK
     const json = await res.json()
     const tickers = json.data?.ticker || []
     if (!tickers.length) return FALLBACK
     return tickers
       .filter((t: { symbol: string }) => t.symbol.endsWith('-USDT'))
-      .slice(0, 50)
-      .map((t: { symbol: string; last: string; changeRate: string; vol: string }) => ({
+      .map((t: { symbol: string; last: string; changeRate: string; high: string; low: string; vol: string }) => ({
         pair: t.symbol.replace('-', '/'),
         price: formatPrice(t.last),
         change: formatChange(t.changeRate),
         isUp: parseFloat(t.changeRate) >= 0,
         volume: formatVolume(t.vol),
+        high: formatPrice(t.high),
+        low: formatPrice(t.low),
         raw: t.symbol,
       }))
   } catch {

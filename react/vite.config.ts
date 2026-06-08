@@ -11,7 +11,7 @@ export default defineConfig({
       '/api': {
         target: 'http://backend-dev:8080',
         changeOrigin: true,
-      }
+      },
     }
   },
   test: {

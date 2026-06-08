@@ -9,12 +9,17 @@ export const useAuth = () => {
 
   useEffect(() => {
     let cancelled = false
-    const verify = async () => {
+    const verify = async (retries = 2) => {
       try {
         const res = await axios.post('/api/user/verify', {}, { timeout: 3000 })
         if (!cancelled) setIsAuthenticated(res.status === 200)
-      } catch {
-        if (!cancelled) setIsAuthenticated(false)
+      } catch (err: unknown) {
+        if (cancelled) return
+        if (axios.isAxiosError(err) && err.response?.status === 429 && retries > 0) {
+          await new Promise(r => setTimeout(r, 2000))
+          return verify(retries - 1)
+        }
+        setIsAuthenticated(false)
       } finally {
         if (!cancelled) setIsLoading(false)
       }

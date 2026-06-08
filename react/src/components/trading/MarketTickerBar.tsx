@@ -7,15 +7,6 @@ interface MarketTickerBarProps {
   onSelectPair: (pair: string) => void
 }
 
-const MOCK_STATS: Record<string, { high: string; low: string; volBase: string; volQuote: string; vol: string }> = {
-  'BTC/USDT':  { high: '64,271.9', low: '61,185.4', volBase: '3.20K', volQuote: '205.8M', vol: '1.2B' },
-  'ETH/USDT':  { high: '3,480.2',  low: '3,350.8',  volBase: '18.5K', volQuote: '63.4M',  vol: '800M' },
-  'SOL/USDT':  { high: '148.90',   low: '138.20',   volBase: '125.4K', volQuote: '17.8M', vol: '450M' },
-  'AVAX/USDT': { high: '36.80',    low: '34.20',    volBase: '45.2K', volQuote: '1.6M',   vol: '120M' },
-  'LINK/USDT': { high: '19.45',    low: '17.80',    volBase: '28.7K', volQuote: '542K',   vol: '300M' },
-  'DOGE/USDT': { high: '0.148',    low: '0.139',    volBase: '850.5K', volQuote: '122.8K', vol: '95M' },
-}
-
 export default function MarketTickerBar({ pairs, selectedPair, onSelectPair }: MarketTickerBarProps) {
   const [query, setQuery] = useState('')
   const [showDropdown, setShowDropdown] = useState(false)
@@ -43,8 +34,6 @@ export default function MarketTickerBar({ pairs, selectedPair, onSelectPair }: M
     : pairs
 
   const active = pairs.find(p => p.pair === selectedPair)!
-  const stats = MOCK_STATS[selectedPair] || MOCK_STATS['BTC/USDT']
-  const baseAsset = selectedPair.split('/')[0]
 
   return (
     <div className="ticker-bar">
@@ -115,19 +104,15 @@ export default function MarketTickerBar({ pairs, selectedPair, onSelectPair }: M
       <div className="ticker-stats">
         <div className="ticker-stat">
           <span className="ts-label">24h High</span>
-          <span className="ts-value">${stats.high}</span>
+          <span className="ts-value">${active.high || '—'}</span>
         </div>
         <div className="ticker-stat">
           <span className="ts-label">24h Low</span>
-          <span className="ts-value">${stats.low}</span>
+          <span className="ts-value">${active.low || '—'}</span>
         </div>
         <div className="ticker-stat">
-          <span className="ts-label">Vol ({baseAsset})</span>
-          <span className="ts-value">{stats.volBase}</span>
-        </div>
-        <div className="ticker-stat">
-          <span className="ts-label">Vol (USDT)</span>
-          <span className="ts-value">{stats.volQuote}</span>
+          <span className="ts-label">24h Vol</span>
+          <span className="ts-value">{active.volume || '—'}</span>
         </div>
       </div>
     </div>
