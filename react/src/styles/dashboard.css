@@ -5,6 +5,7 @@
   box-sizing: border-box;
   display: flex;
   background: var(--bg-deep, #07070d);
+  animation: pageIn 0.25s ease;
 }
 
 .dash-grid {
@@ -40,6 +41,12 @@
   padding: 20px;
   border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
   background: transparent;
+  transition: transform 0.15s, box-shadow 0.15s;
+}
+
+.dash-panel:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 16px rgba(0,0,0,0.12);
 }
 
 .dash-panel:last-child {
@@ -204,8 +211,12 @@ tbody tr:last-child td {
   border-bottom: none;
 }
 
+tbody tr {
+  transition: background 0.12s;
+}
+
 tbody tr:hover td {
-  background: rgba(255,255,255,0.015);
+  background: rgba(255,255,255,0.025);
 }
 
 /* ── Contract Table Cells ── */
@@ -847,11 +858,130 @@ tbody tr:hover td {
 .modal-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(0, 0, 0, 0.5);
+  background: rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 9999;
+  animation: modalFadeIn 0.15s ease;
+}
+
+@keyframes modalFadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+/* ── Transaction Detail Modal ── */
+.tx-detail-modal {
+  background: var(--bg-panel, #0b0e11);
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  border-radius: 10px;
+  width: 440px;
+  max-width: calc(100vw - 32px);
+  overflow: hidden;
+  animation: txDetailIn 0.2s ease;
+}
+
+@keyframes txDetailIn {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.tx-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+}
+
+.tx-detail-label {
+  font-size: 11px;
+  color: var(--text-dim, rgba(255,255,255,0.55));
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-bottom: 4px;
+}
+
+.tx-detail-amount {
+  font-size: 20px;
+  font-weight: 700;
+  color: var(--text-main, rgba(255,255,255,0.9));
+}
+
+.tx-detail-status {
+  font-size: 11px;
+  font-weight: 700;
+  font-family: var(--font-mono, monospace);
+  padding: 4px 10px;
+  border-radius: 4px;
+}
+
+.tx-detail-status.confirmed {
+  background: rgba(0, 212, 170, 0.1);
+  color: var(--green, #00d4aa);
+}
+
+.tx-detail-status.pending {
+  background: rgba(255, 183, 0, 0.1);
+  color: #ffb700;
+}
+
+.tx-detail-body {
+  padding: 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tx-detail-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+}
+
+.tx-detail-key {
+  font-size: 12px;
+  color: var(--text-dim, rgba(255,255,255,0.55));
+  flex-shrink: 0;
+}
+
+.tx-detail-value {
+  font-size: 12px;
+  color: var(--text-main, rgba(255,255,255,0.9));
+  text-align: right;
+  font-weight: 500;
+}
+
+.tx-detail-value.mono {
+  font-family: var(--font-mono, monospace);
+}
+
+.tx-detail-value.break {
+  word-break: break-all;
+  max-width: 260px;
+}
+
+.tx-detail-close {
+  display: block;
+  width: calc(100% - 48px);
+  margin: 0 24px 20px;
+  padding: 10px;
+  border: 1px solid var(--border-subtle, rgba(255,255,255,0.06));
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-main, rgba(255,255,255,0.9));
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.tx-detail-close:hover {
+  background: rgba(255,255,255,0.03);
+  border-color: var(--border-strong, rgba(255,255,255,0.1));
 }
 
 .modal-panel {
@@ -1220,6 +1350,31 @@ tbody tr:hover td {
   .modal-panel {
     max-width: calc(100vw - 32px);
     padding: 16px;
+  }
+
+  .tx-detail-modal {
+    width: calc(100vw - 32px);
+  }
+
+  .tx-detail-header {
+    padding: 16px;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+
+  .tx-detail-amount {
+    font-size: 17px;
+  }
+
+  .tx-detail-body {
+    padding: 12px 16px;
+    gap: 8px;
+  }
+
+  .tx-detail-close {
+    width: calc(100% - 32px);
+    margin: 0 16px 16px;
   }
 
   .modal-title {

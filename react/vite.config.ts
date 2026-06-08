@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: true, // Listen on all addresses (0.0.0.0)
-    allowedHosts: ["fedora.ibex-mooneye.ts.net"],
+    allowedHosts: true,
     proxy: {
       '/api': {
         target: 'http://backend-dev:8080',

@@ -125,39 +125,37 @@ export default function SidebarActions() {
 
       {detail && (
         <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel" style={{ minWidth: 440, padding: 0 }}>
-            <div style={{ padding: '20px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', borderBottom: 'var(--border-hud)' }}>
+          <div onClick={e => e.stopPropagation()} className="tx-detail-modal">
+            <div className="tx-detail-header">
               <div>
-                <div className="section-label" style={{ marginBottom: 2 }}>Deposit</div>
-                <div style={{ fontSize: 20, fontWeight: 700 }}>{detail.ticker} — {formatAmount(detail.amount, detail.ticker)}</div>
+                <div className="tx-detail-label">Deposit</div>
+                <div className="tx-detail-amount">{detail.ticker} — {formatAmount(detail.amount, detail.ticker)}</div>
               </div>
-              <span className={`badge ${detail.status === 'confirmed' ? 'badge-success' : 'badge-danger'}`}>
+              <span className={`tx-detail-status ${detail.status === 'confirmed' ? 'confirmed' : 'pending'}`}>
                 {detail.status === 'confirmed' ? '✓ Confirmed' : '◷ Pending'}
               </span>
             </div>
 
-            <div className="modal-info-box" style={{ margin: '16px 20px' }}>
-              <div className="modal-info-row">
-                <span>Transaction Hash</span>
-                <span className="modal-info-value" style={{ fontSize: 11, wordBreak: 'break-all', maxWidth: 260, textAlign: 'right' }}>{detail.tx_hash}</span>
+            <div className="tx-detail-body">
+              <div className="tx-detail-row">
+                <span className="tx-detail-key">Transaction Hash</span>
+                <span className="tx-detail-value mono break">{detail.tx_hash}</span>
               </div>
-              <div className="modal-info-row">
-                <span>Ticket ID</span>
-                <span className="modal-info-value" style={{ fontSize: 11 }}>{detail.id}</span>
+              <div className="tx-detail-row">
+                <span className="tx-detail-key">Ticket ID</span>
+                <span className="tx-detail-value">{detail.id}</span>
               </div>
-              <div className="modal-info-row">
-                <span>Created</span>
-                <span className="modal-info-value">{new Date(detail.created_at).toLocaleString()}</span>
+              <div className="tx-detail-row">
+                <span className="tx-detail-key">Created</span>
+                <span className="tx-detail-value">{new Date(detail.created_at).toLocaleString()}</span>
               </div>
-              <div className="modal-info-row">
-                <span>Raw Amount</span>
-                <span className="modal-info-value" style={{ fontFamily: 'var(--font-mono)' }}>{detail.amount}</span>
+              <div className="tx-detail-row">
+                <span className="tx-detail-key">Raw Amount</span>
+                <span className="tx-detail-value mono">{detail.amount}</span>
               </div>
             </div>
 
-            <div className="modal-actions" style={{ padding: '0 20px 20px' }}>
-              <button onClick={() => setDetail(null)} className="modal-cancel-btn">CLOSE</button>
-            </div>
+            <button onClick={() => setDetail(null)} className="tx-detail-close">Close</button>
           </div>
         </div>
       )}
