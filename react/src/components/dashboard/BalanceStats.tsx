@@ -1,9 +1,36 @@
+import { useState, useEffect } from 'react'
+import Skeleton from '../ui/Skeleton'
+
+const stats = [
+  { label: 'Total Balance', value: '$124,582.40', change: '+3.24%', isUp: true },
+  { label: 'Free Balance', value: '$48,230.15', change: '+1.87%', isUp: true },
+  { label: 'Locked Balance', value: '$76,352.25', change: '-0.52%', isUp: false },
+]
+
 export default function BalanceStats() {
-  const stats = [
-    { label: 'Total Balance', value: '$124,582.40', change: '+3.24%', isUp: true },
-    { label: 'Free Balance', value: '$48,230.15', change: '+1.87%', isUp: true },
-    { label: 'Locked Balance', value: '$76,352.25', change: '-0.52%', isUp: false },
-  ]
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 600)
+    return () => clearTimeout(t)
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="balance-stats-grid">
+        {[1, 2, 3].map(i => (
+          <div key={i} className="dash-panel">
+            <div className="balance-card-header">
+              <Skeleton variant="text-sm" width="60%" />
+              <Skeleton variant="circle" width="28px" height="28px" />
+            </div>
+            <Skeleton variant="text-lg" width="70%" className="dash-value-lg" />
+            <Skeleton variant="text-sm" width="40%" />
+          </div>
+        ))}
+      </div>
+    )
+  }
 
   return (
     <div className="balance-stats-grid">

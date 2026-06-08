@@ -1,3 +1,6 @@
+import { useState, useEffect } from 'react'
+import Skeleton from '../ui/Skeleton'
+
 interface Contract {
   id: number
   pair: string
@@ -19,14 +22,33 @@ const statusColors: Record<string, string> = {
 }
 
 export default function ActiveContracts() {
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 400)
+    return () => clearTimeout(t)
+  }, [])
+
   return (
     <div className="active-contracts">
       <div className="ac-header">
         <span className="ac-title">Active Contracts</span>
-        <span className="ac-count">{MOCK.length} running</span>
+        {loading ? (
+          <Skeleton variant="text-sm" width="60px" />
+        ) : (
+          <span className="ac-count">{MOCK.length} running</span>
+        )}
       </div>
 
-      {MOCK.length === 0 ? (
+      {loading ? (
+        <div className="ac-scroll">
+          {[1, 2, 3].map(i => (
+            <div key={i} className="ac-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
+              <Skeleton variant="card" width="140px" height="56px" />
+            </div>
+          ))}
+        </div>
+      ) : MOCK.length === 0 ? (
         <div className="ac-empty">No active contracts</div>
       ) : (
         <div className="ac-scroll">

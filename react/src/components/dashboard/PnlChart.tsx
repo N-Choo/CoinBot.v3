@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect } from 'react'
+import Skeleton from '../ui/Skeleton'
 
 const ALL_DATA = [
   { date: 'Apr 04', value: 1200 }, { date: 'Apr 07', value: 980 },
@@ -43,9 +44,15 @@ function buildPath(data: { value: number }[]) {
 }
 
 export default function PnlChart() {
+  const [loading, setLoading] = useState(true)
   const [range, setRange] = useState('14D')
   const [ticker, setTicker] = useState(0)
   const [flash, setFlash] = useState('')
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 800)
+    return () => clearTimeout(t)
+  }, [])
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -70,6 +77,30 @@ export default function PnlChart() {
   const pct = (((last - first) / first) * 100).toFixed(1)
   const up = last >= first
   const color = up ? 'var(--color-primary)' : 'var(--color-danger)'
+
+  if (loading) {
+    return (
+      <div className="dash-panel">
+        <div className="pnl-header">
+          <div style={{ flex: 1 }}>
+            <Skeleton variant="text-sm" width="100px" />
+            <Skeleton variant="text-lg" width="140px" />
+          </div>
+          <Skeleton variant="text-sm" width="120px" />
+        </div>
+        <Skeleton variant="chart" />
+        <div className="historic-stats-grid">
+          {[1, 2, 3].map(i => (
+            <div key={i}>
+              <Skeleton variant="text-sm" width="60%" />
+              <Skeleton variant="text" width="80%" />
+              <Skeleton variant="text-sm" width="50%" />
+            </div>
+          ))}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="dash-panel">

@@ -1,4 +1,5 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import Skeleton from '../ui/Skeleton'
 
 const logoUrl = (symbol: string) =>
   `https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@master/128/color/${symbol.toLowerCase()}.png`
@@ -11,7 +12,13 @@ const contracts = [
 ]
 
 export default function TradingContracts() {
+  const [loading, setLoading] = useState(true)
   const [filter, setFilter] = useState('All')
+
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 500)
+    return () => clearTimeout(t)
+  }, [])
 
   const filtered = contracts.filter(c => filter === 'All' || c.status === filter)
 
@@ -35,57 +42,84 @@ export default function TradingContracts() {
         </div>
       </div>
 
-      <div className="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Pair</th>
-              <th>Status</th>
-              <th className="text-right">Size</th>
-              <th className="text-right">P&L</th>
-              <th className="text-right">ROE</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filtered.length === 0 ? (
-              <tr><td colSpan={5} className="contracts-empty">No contracts found</td></tr>
-            ) : (
-              filtered.map(c => (
-                <tr key={c.id}>
-                  <td>
-                    <div className="contract-pair-cell">
-                      <img
-                        className="contract-pair-logo"
-                        src={logoUrl(c.pair.split('/')[0])}
-                        alt={c.pair.split('/')[0]}
-                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                      />
-                      <span className="contract-pair-full">{c.pair}</span>
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`contract-status ${c.status === 'Active' ? 'active' : 'inactive'}`}>
-                      <span className="status-bullet" />
-                      {c.status}
-                    </span>
-                  </td>
-                  <td className="text-right">${c.total.toLocaleString()}</td>
-                  <td className="text-right">
-                    <span className={`contract-pnl ${c.pnl > 0 ? 'up' : c.pnl < 0 ? 'down' : ''}`}>
-                      {c.pnl > 0 ? '+' : ''}${c.pnl.toLocaleString()}
-                    </span>
-                  </td>
-                  <td className="text-right">
-                    <span className={`contract-roe ${c.roe > 0 ? 'up' : c.roe < 0 ? 'down' : ''}`}>
-                      {c.roe > 0 ? '+' : ''}{c.roe}%
-                    </span>
-                  </td>
+      {loading ? (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>Status</th>
+                <th className="text-right">Size</th>
+                <th className="text-right">P&L</th>
+                <th className="text-right">ROE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1, 2, 3, 4].map(i => (
+                <tr key={i}>
+                  <td><Skeleton variant="text" width="100px" /></td>
+                  <td><Skeleton variant="text-sm" width="60px" /></td>
+                  <td><Skeleton variant="text" width="70px" /></td>
+                  <td><Skeleton variant="text" width="70px" /></td>
+                  <td><Skeleton variant="text" width="50px" /></td>
                 </tr>
-              ))
-            )}
-          </tbody>
-        </table>
-      </div>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      ) : (
+        <div className="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Pair</th>
+                <th>Status</th>
+                <th className="text-right">Size</th>
+                <th className="text-right">P&L</th>
+                <th className="text-right">ROE</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filtered.length === 0 ? (
+                <tr><td colSpan={5} className="contracts-empty">No contracts found</td></tr>
+              ) : (
+                filtered.map(c => (
+                  <tr key={c.id}>
+                    <td>
+                      <div className="contract-pair-cell">
+                        <img
+                          className="contract-pair-logo"
+                          src={logoUrl(c.pair.split('/')[0])}
+                          alt={c.pair.split('/')[0]}
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                        <span className="contract-pair-full">{c.pair}</span>
+                      </div>
+                    </td>
+                    <td>
+                      <span className={`contract-status ${c.status === 'Active' ? 'active' : 'inactive'}`}>
+                        <span className="status-bullet" />
+                        {c.status}
+                      </span>
+                    </td>
+                    <td className="text-right">${c.total.toLocaleString()}</td>
+                    <td className="text-right">
+                      <span className={`contract-pnl ${c.pnl > 0 ? 'up' : c.pnl < 0 ? 'down' : ''}`}>
+                        {c.pnl > 0 ? '+' : ''}${c.pnl.toLocaleString()}
+                      </span>
+                    </td>
+                    <td className="text-right">
+                      <span className={`contract-roe ${c.roe > 0 ? 'up' : c.roe < 0 ? 'down' : ''}`}>
+                        {c.roe > 0 ? '+' : ''}{c.roe}%
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   )
 }

@@ -498,6 +498,54 @@ th {
   color: var(--color-down-text);
 }
 /* ═══════════════════════════════════════════
+   SKELETON LOADERS
+   ═══════════════════════════════════════════ */
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.skeleton {
+  background: linear-gradient(90deg, var(--border-subtle, rgba(255,255,255,0.04)) 25%, var(--border-subtle, rgba(255,255,255,0.08)) 50%, var(--border-subtle, rgba(255,255,255,0.04)) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.5s ease-in-out infinite;
+  border-radius: 4px;
+}
+
+.skeleton-text {
+  height: 12px;
+  width: 100%;
+  margin-bottom: 6px;
+}
+
+.skeleton-text-sm {
+  height: 10px;
+  width: 60%;
+}
+
+.skeleton-text-lg {
+  height: 22px;
+  width: 80%;
+}
+
+.skeleton-circle {
+  border-radius: 50%;
+}
+
+.skeleton-chart {
+  height: 120px;
+  width: 100%;
+  border-radius: 4px;
+}
+
+.skeleton-card {
+  height: 100px;
+  width: 100%;
+  border-radius: 4px;
+}
+
+/* ═══════════════════════════════════════════
    APP-LEVEL — Toaster, layout
    ═══════════════════════════════════════════ */
 
