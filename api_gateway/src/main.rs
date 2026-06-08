@@ -18,8 +18,8 @@ async fn main() -> anyhow::Result<()> {
     let config_data = web::Data::new(config.clone());
 
     let governor = GovernorConfigBuilder::default()
-        .seconds_per_request(10)
-        .burst_size(60)
+        .milliseconds_per_request(20)
+        .burst_size(100)
         .finish()
         .unwrap();
 
