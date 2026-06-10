@@ -1,27 +1,32 @@
 import { useState, useEffect } from 'react'
-import { sendCoin, getBalance, getActivity, withdraw, COINS, type CoinConfig } from '../../services/transaction'
-import type { CoinSymbol, ActivityItem } from '../../services/transaction'
+import axios from 'axios'
+import { getActivity, withdraw } from '../../services/transaction'
+import type { ActivityItem } from '../../services/transaction'
+import DepositModal from './DepositModal'
 
-const DECIMALS: Record<string, number> = { USDT: 6, USDC: 6, ETH: 18 }
-
-function formatAmount(raw: string, ticker: string): string {
-  const dec = DECIMALS[ticker.toUpperCase()] ?? 18
-  const num = Number(raw) / 10 ** dec
+function formatUSDT(raw: string): string {
+  const num = Number(raw) / 1_000_000
   if (num === 0) return '0'
-  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: dec })
+  return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
 }
 
 export default function SidebarActions() {
   const [modal, setModal] = useState<'deposit' | 'withdraw' | null>(null)
-  const [coin, setCoin] = useState<CoinSymbol>('usdt')
   const [amount, setAmount] = useState('')
-  const [balance, setBalance] = useState('')
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [activities, setActivities] = useState<ActivityItem[]>([])
   const [detail, setDetail] = useState<ActivityItem | null>(null)
 
-  const close = () => { setModal(null); setCoin('usdt'); setAmount(''); setError('') }
+  const [platformWallet, setPlatformWallet] = useState('')
+
+  useEffect(() => {
+    axios.get('/api/config').then(res => {
+      setPlatformWallet(res.data.platform_wallet)
+    }).catch(() => {})
+  }, [])
+
+  const close = () => { setModal(null); setAmount(''); setError('') }
 
   useEffect(() => {
     let cancelled = false
@@ -31,20 +36,12 @@ export default function SidebarActions() {
     return () => { cancelled = true }
   }, [])
 
-  useEffect(() => {
-    if (!modal) return
-    getBalance(coin).then(setBalance).catch(() => setBalance('—'))
-  }, [modal, coin])
-
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError('')
     try {
-      if (modal === 'deposit') {
-        await sendCoin(amount, coin)
-        getActivity().then(setActivities).catch(() => {})
-      } else {
+      if (modal === 'withdraw') {
         await withdraw(amount)
       }
       close()
@@ -63,7 +60,7 @@ export default function SidebarActions() {
 
   const user = {
     available: '$48,230.15',
-    wallet: '0x7a3B...f9E2',
+    wallet: platformWallet || 'Loading...',
     dailyLimit: '$10,000.00',
   }
 
@@ -114,7 +111,7 @@ export default function SidebarActions() {
               </div>
               <div className="tx-amount-col">
                 <div className={`tx-amount ${t.status === 'confirmed' ? 'tx-amount-in' : 'tx-amount-out'}`}>
-                  {formatAmount(t.amount, t.ticker)}
+                  {formatUSDT(t.amount)}
                 </div>
                 <div className="tx-time">{new Date(t.created_at).toLocaleString()}</div>
               </div>
@@ -129,7 +126,7 @@ export default function SidebarActions() {
             <div className="tx-detail-header">
               <div>
                 <div className="tx-detail-label">Deposit</div>
-                <div className="tx-detail-amount">{detail.ticker} — {formatAmount(detail.amount, detail.ticker)}</div>
+                <div className="tx-detail-amount">USDT — {formatUSDT(detail.amount)}</div>
               </div>
               <span className={`tx-detail-status ${detail.status === 'confirmed' ? 'confirmed' : 'pending'}`}>
                 {detail.status === 'confirmed' ? '✓ Confirmed' : '◷ Pending'}
@@ -161,56 +158,10 @@ export default function SidebarActions() {
       )}
 
       {modal === 'deposit' && (
-        <div className="modal-overlay" onClick={close}>
-          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
-            <h2 className="modal-title">Deposit Funds</h2>
-            <p className="modal-desc">Select a coin and enter the amount to deposit.</p>
-
-            <div className="coin-selector">
-              {(Object.values(COINS) as CoinConfig[]).map(c => (
-                <button
-                  key={c.symbol}
-                  className={`coin-option${coin === c.symbol ? ' coin-option-active' : ''}`}
-                  onClick={() => setCoin(c.symbol)}
-                >
-                  {c.label}
-                </button>
-              ))}
-            </div>
-
-            <div className="modal-info-box">
-              <div className="modal-info-row">
-                <span>Connected Wallet</span>
-                <span className="modal-info-value">{user.wallet}</span>
-              </div>
-              <div className="modal-info-row">
-                <span>Balance</span>
-                <span className="modal-info-value">{balance} {COINS[coin].label}</span>
-              </div>
-            </div>
-
-            <form onSubmit={submit}>
-              <label className="modal-form-label">Amount</label>
-              <div className="modal-input-wrap">
-                <input
-                  autoFocus required type="number" placeholder="0.00"
-                  value={amount} onChange={e => setAmount(e.target.value)}
-                  className="modal-input"
-                />
-                <span className="modal-currency-suffix">{COINS[coin].label}</span>
-              </div>
-              {error && <div className="modal-error">{error}</div>}
-              <div className="modal-actions">
-                <button type="button" onClick={close} className="modal-cancel-btn" disabled={loading}>
-                  CANCEL
-                </button>
-                <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
-                  {loading ? 'PROCESSING...' : 'CONFIRM DEPOSIT'}
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
+        <DepositModal
+          onClose={() => { close(); getActivity().then(setActivities).catch(() => {}) }}
+          onDepositComplete={() => getActivity().then(setActivities).catch(() => {})}
+        />
       )}
 
       {modal === 'withdraw' && (

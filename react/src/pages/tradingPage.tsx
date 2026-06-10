@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react'
 import '../styles/tradingPage.css'
+import '../styles/dashboard.css'
 import TradingChart from '../components/trading/TradingChart'
 import TradingForm from '../components/trading/TradingForm'
 import MarketTickerBar from '../components/trading/MarketTickerBar'
@@ -28,18 +29,17 @@ const Trading = () => {
     return () => { active = false; clearInterval(interval) }
   }, [])
 
-  const [botSettings, setBotSettings] = useState<BotSettings>({
-    Ticker: selectedPair,
+  const [editable, setEditable] = useState({
     Amount: '100',
     TakeProfit: '50.0',
     StopLoss: '35.0'
   })
 
+  const botSettings: BotSettings = { Ticker: selectedPair, ...editable }
+
   const handleSettingChange = (key: keyof BotSettings, value: string) => {
-    setBotSettings((prev) => ({
-      ...prev,
-      [key]: value
-    }))
+    if (key === 'Ticker') return
+    setEditable((prev) => ({ ...prev, [key]: value }))
   }
 
   return (

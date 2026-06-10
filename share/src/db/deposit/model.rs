@@ -28,12 +28,6 @@ impl Deposit {
         tx: &EthTx,
         ticker: &str,
     ) -> Result<Self, sqlx::Error> {
-        let amount = if ticker == "ETH" {
-            tx.value.to_string()
-        } else {
-            Erc20::decode_amount(&tx.input)
-        };
-
         sqlx::query_as::<_, Self>(
             r#"INSERT INTO deposits (user_uid, tx_hash, from_address, to_address, ticker, amount)
                VALUES ($1, $2, $3, $4, $5, $6)
@@ -44,7 +38,7 @@ impl Deposit {
         .bind(format!("0x{:x}", tx.from))
         .bind(format!("0x{:x}", tx.to.unwrap_or_default()))
         .bind(ticker)
-        .bind(amount)
+        .bind(Erc20::decode_amount(&tx.input))
         .fetch_one(pool)
         .await
     }

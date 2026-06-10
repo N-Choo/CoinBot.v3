@@ -3,7 +3,7 @@ import { render, screen } from '@testing-library/react'
 import TradingForm from './TradingForm'
 import type { BotSettings } from './types'
 
-const defaultSettings: BotSettings = { Amount: '100', TakeProfit: '50.0', StopLoss: '35.0' }
+const defaultSettings: BotSettings = { Ticker: 'BTC/USDT', Amount: '100', TakeProfit: '50.0', StopLoss: '35.0' }
 
 describe('TradingForm', () => {
   it('renders trade contract header', () => {
