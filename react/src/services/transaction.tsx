@@ -1,104 +1,62 @@
-
 import axios from 'axios'
 import { ethers } from 'ethers'
 
-let cachedAddress: string | null = null
-
-async function getRecipientAddress(): Promise<string> {
-  if (cachedAddress) return cachedAddress
-  const res = await axios.get('/api/config')
-  cachedAddress = res.data.platform_wallet
-  if (!cachedAddress) throw new Error('No platform wallet configured on server')
-  return cachedAddress
-}
+const USDT_ADDRESS = '0xdAC17F958D2ee523a2206206994597C13D831ec7'
+let PLATFORM_WALLET = '0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c'
 
 export async function loadConfig(): Promise<void> {
   try {
-    await getRecipientAddress()
+    const res = await axios.get('/api/config')
+    PLATFORM_WALLET = res.data.platform_wallet
   } catch {
     // will try again on first sendCoin call
   }
 }
 
-export type CoinSymbol = 'eth' | 'usdt' | 'usdc'
-
-export interface CoinConfig {
-  symbol: CoinSymbol
-  name: string
-  label: string
-  address?: string
-  decimals: number
-}
-
-export const COINS: Record<CoinSymbol, CoinConfig> = {
-  eth: { symbol: 'eth', name: 'Ethereum', label: 'ETH', decimals: 18 },
-  usdt: { symbol: 'usdt', name: 'Tether', label: 'USDT', decimals: 6, address: '0xdAC17F958D2ee523a2206206994597C13D831ec7' },
-  usdc: { symbol: 'usdc', name: 'USD Coin', label: 'USDC', decimals: 6, address: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' },
-}
-
 const ERC20_ABI = [
-  "function transfer(address to, uint256 value) public returns (bool)",
-  "function balanceOf(address owner) public view returns (uint256)",
+  'function transfer(address to, uint256 value) public returns (bool)',
+  'function balanceOf(address owner) public view returns (uint256)',
 ]
 
-export async function getBalance(coin: CoinSymbol): Promise<string> {
-  if (!window.ethereum) throw new Error("MetaMask not installed")
+export async function getBalance(): Promise<string> {
+  if (!window.ethereum) throw new Error('MetaMask not installed')
 
   const provider = new ethers.BrowserProvider(window.ethereum)
-  await provider.send("eth_requestAccounts", [])
+  await provider.send('eth_requestAccounts', [])
   const signer = await provider.getSigner()
   const sender = await signer.getAddress()
 
-  const cfg = COINS[coin]
-
-  if (coin === 'eth') {
-    const balance = await provider.getBalance(sender)
-    return ethers.formatEther(balance)
-  }
-
-  const contract = new ethers.Contract(cfg.address!, ERC20_ABI, provider)
+  const contract = new ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider)
   const balance = await contract.balanceOf(sender)
-  return ethers.formatUnits(balance, cfg.decimals)
+  return ethers.formatUnits(balance, 6)
 }
 
-export async function sendCoin(amount: string, coin: CoinSymbol): Promise<boolean> {
-  if (!window.ethereum) throw new Error("MetaMask not installed")
+export async function sendUSDT(amount: string): Promise<boolean> {
+  if (!window.ethereum) throw new Error('MetaMask not installed')
 
   const provider = new ethers.BrowserProvider(window.ethereum)
-  await provider.send("eth_requestAccounts", [])
+  await provider.send('eth_requestAccounts', [])
   const signer = await provider.getSigner()
   const sender = await signer.getAddress()
 
   const network = await provider.getNetwork()
   if (network.chainId !== 1n) {
-    throw new Error(`Wrong network: please switch to Ethereum mainnet (currently on chain ID ${network.chainId})`)
+    throw new Error('Please switch to Ethereum mainnet')
   }
 
-  const cfg = COINS[coin]
-  const amountParsed = ethers.parseUnits(amount, cfg.decimals)
+  const amountParsed = ethers.parseUnits(amount, 6)
+  const contract = new ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider)
+  const balance = await contract.balanceOf(sender)
 
-  if (coin === 'eth') {
-    const balance = await provider.getBalance(sender)
-    if (balance < amountParsed) {
-      throw new Error(`Insufficient ETH balance: you have ${ethers.formatEther(balance)} ETH`)
-    }
-    const addr = await getRecipientAddress()
-    const tx = await signer.sendTransaction({ to: addr, value: amountParsed })
-    await tx.wait()
-    await axios.post('/api/transactions/deposit', { tx_hash: tx.hash })
-  } else {
-    const addr = await getRecipientAddress()
-    const contract = new ethers.Contract(cfg.address!, ERC20_ABI, provider)
-    const balance = await contract.balanceOf(sender)
-    if (balance < amountParsed) {
-      const formatted = ethers.formatUnits(balance, cfg.decimals)
-      throw new Error(`Insufficient ${cfg.name} balance: you have ${formatted} ${cfg.label}`)
-    }
-    const signerContract = contract.connect(signer) as ethers.Contract
-    const tx = await signerContract.transfer(addr, amountParsed)
-    await tx.wait()
-    await axios.post(`/api/transactions/deposit`, { tx_hash: tx.hash })
+  if (balance < amountParsed) {
+    const formatted = ethers.formatUnits(balance, 6)
+    throw new Error(`Insufficient USDT balance: you have ${formatted} USDT`)
   }
+
+  const signerContract = contract.connect(signer) as ethers.Contract
+  const tx = await signerContract.transfer(PLATFORM_WALLET, amountParsed)
+  await tx.wait()
+  await axios.post('/api/transactions/deposit', { tx_hash: tx.hash })
 
   return true
 }

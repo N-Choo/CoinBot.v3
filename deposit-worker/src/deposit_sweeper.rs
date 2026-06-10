@@ -81,12 +81,7 @@ async fn check_and_finalize(
         return Ok(false);
     }
 
-    // Transfer to Spot
     {
-        let currency = record
-            .currency
-            .as_deref()
-            .ok_or_else(|| "missing currency".to_string())?;
         let raw_amount = record
             .amount
             .as_deref()
@@ -96,7 +91,7 @@ async fn check_and_finalize(
             .map_err(|_| format!("invalid amount: {}", raw_amount))?;
 
         let request = TransferRequest::new(
-            currency,
+            "USDT",
             amount,
             AccountType::Main,
             AccountType::Trade,
