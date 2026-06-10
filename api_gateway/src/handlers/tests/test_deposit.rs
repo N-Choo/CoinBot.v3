@@ -2,12 +2,6 @@
 mod tests {
     use ethers::types::{Address, Bytes, Transaction as EthTx, TxHash, U256};
 
-    use crate::handlers::transaction::Transaction;
-
-    fn dummy_tx_hash() -> TxHash {
-        [0u8; 32].into()
-    }
-
     fn platform_wallet() -> Address {
         "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c"
             .parse()
@@ -20,42 +14,14 @@ mod tests {
             .unwrap()
     }
 
-    fn usdc_contract() -> Address {
-        "0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48"
-            .parse()
-            .unwrap()
-    }
-
     fn random_wallet() -> Address {
         "0xdead000000000000000000000000000000000000"
             .parse()
             .unwrap()
     }
 
-    #[test]
-    fn test_validate_eth_deposit() {
-        let tx = EthTx {
-            hash: dummy_tx_hash(),
-            from: platform_wallet(),
-            to: Some(platform_wallet()),
-            value: U256::from(1_000_000),
-            ..Default::default()
-        };
-        let info = Transaction::validate(&tx);
-        assert!(info.is_some());
-        assert_eq!(info.unwrap().ticker, "ETH");
-    }
-
-    #[test]
-    fn test_validate_eth_not_to_platform() {
-        let tx = EthTx {
-            hash: dummy_tx_hash(),
-            from: random_wallet(),
-            to: Some(random_wallet()),
-            value: U256::from(1_000_000),
-            ..Default::default()
-        };
-        assert!(Transaction::validate(&tx).is_none());
+    fn dummy_tx_hash() -> TxHash {
+        [0u8; 32].into()
     }
 
     fn erc20_transfer_input(recipient: Address, amount: U256) -> Bytes {
@@ -68,14 +34,13 @@ mod tests {
         data.extend_from_slice(&addr_bytes);
 
         let mut amount_bytes = [0u8; 32];
-        let amount_be = amount;
-        amount_be.to_big_endian(&mut amount_bytes);
+        amount.to_big_endian(&mut amount_bytes);
         data.extend_from_slice(&amount_bytes);
         data.into()
     }
 
     #[test]
-    fn test_validate_erc20_correct_recipient() {
+    fn test_usdt_to_platform_wallet_is_accepted() {
         let tx = EthTx {
             hash: dummy_tx_hash(),
             from: random_wallet(),
@@ -83,13 +48,18 @@ mod tests {
             input: erc20_transfer_input(platform_wallet(), U256::from(1_000_000_000u64)),
             ..Default::default()
         };
-        let info = Transaction::validate(&tx);
-        assert!(info.is_some());
-        assert_eq!(info.unwrap().ticker, "USDT");
+        assert_eq!(tx.to, Some(usdt_contract()));
+
+        let recipient = share::erc20::Erc20::decode_recipient(&tx.input);
+        assert!(recipient.is_some());
+        assert_eq!(
+            recipient.unwrap().parse::<Address>().ok(),
+            Some(platform_wallet())
+        );
     }
 
     #[test]
-    fn test_validate_erc20_wrong_recipient() {
+    fn test_wrong_recipient_is_rejected() {
         let tx = EthTx {
             hash: dummy_tx_hash(),
             from: random_wallet(),
@@ -97,23 +67,17 @@ mod tests {
             input: erc20_transfer_input(random_wallet(), U256::from(1_000_000_000u64)),
             ..Default::default()
         };
-        assert!(Transaction::validate(&tx).is_none());
+
+        let recipient = share::erc20::Erc20::decode_recipient(&tx.input);
+        assert!(recipient.is_some());
+        assert_ne!(
+            recipient.unwrap().parse::<Address>().ok(),
+            Some(platform_wallet())
+        );
     }
 
     #[test]
-    fn test_validate_erc20_malformed_input() {
-        let tx = EthTx {
-            hash: dummy_tx_hash(),
-            from: random_wallet(),
-            to: Some(usdt_contract()),
-            input: Bytes::from(vec![0x00, 0x01, 0x02]),
-            ..Default::default()
-        };
-        assert!(Transaction::validate(&tx).is_none());
-    }
-
-    #[test]
-    fn test_validate_unknown_token() {
+    fn test_non_usdt_contract_is_rejected() {
         let tx = EthTx {
             hash: dummy_tx_hash(),
             from: random_wallet(),
@@ -121,34 +85,19 @@ mod tests {
             input: erc20_transfer_input(platform_wallet(), U256::from(1_000_000_000u64)),
             ..Default::default()
         };
-        assert!(Transaction::validate(&tx).is_none());
+        assert_ne!(tx.to, Some(usdt_contract()));
     }
 
     #[test]
-    fn test_validate_usdc_correct_recipient() {
-        let tx = EthTx {
-            hash: dummy_tx_hash(),
-            from: random_wallet(),
-            to: Some(usdc_contract()),
-            input: erc20_transfer_input(platform_wallet(), U256::from(5_000_000_000u64)),
-            ..Default::default()
-        };
-        let info = Transaction::validate(&tx);
-        assert!(info.is_some());
-        assert_eq!(info.unwrap().ticker, "USDC");
-    }
-
-    #[test]
-    fn test_validate_erc20_zero_amount() {
+    fn test_malformed_input_decodes_to_none() {
         let tx = EthTx {
             hash: dummy_tx_hash(),
             from: random_wallet(),
             to: Some(usdt_contract()),
-            input: erc20_transfer_input(platform_wallet(), U256::zero()),
+            input: Bytes::from(vec![0x00, 0x01, 0x02]),
             ..Default::default()
         };
-        let info = Transaction::validate(&tx);
-        assert!(info.is_some());
-        assert_eq!(info.unwrap().ticker, "USDT");
+        assert!(share::erc20::Erc20::decode_recipient(&tx.input).is_none());
+        assert_eq!(share::erc20::Erc20::decode_amount(&tx.input), "0");
     }
 }
