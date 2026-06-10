@@ -1,7 +1,12 @@
 import { render, screen } from '@testing-library/react'
 import { describe, test, expect, vi, beforeAll } from 'vitest'
 import { BrowserRouter } from 'react-router-dom'
+import { AuthProvider } from '../hooks/useAuth'
 import CoinBot from './homePage'
+
+function Wrapper({ children }: { children: React.ReactNode }) {
+  return <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider>{children}</AuthProvider></BrowserRouter>
+}
 
 beforeAll(() => {
   const origRAF = globalThis.requestAnimationFrame
@@ -21,13 +26,13 @@ beforeAll(() => {
 
 describe('CoinBot (homePage)', () => {
   test('renders hero section with title', () => {
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
+    render(<Wrapper><CoinBot /></Wrapper>)
     expect(screen.getByText('Your wealth.')).toBeInTheDocument()
     expect(screen.getByText('Automated.')).toBeInTheDocument()
   })
 
   test('renders stats section', () => {
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
+    render(<Wrapper><CoinBot /></Wrapper>)
     expect(screen.getByText('Trading Volume')).toBeInTheDocument()
     expect(screen.getByText('Uptime')).toBeInTheDocument()
     expect(screen.getByText('Active Users')).toBeInTheDocument()
@@ -35,20 +40,20 @@ describe('CoinBot (homePage)', () => {
   })
 
   test('renders feature cards', () => {
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
+    render(<Wrapper><CoinBot /></Wrapper>)
     expect(screen.getByText('Buy Low, Sell High')).toBeInTheDocument()
     expect(screen.getByText('Auto-Stake')).toBeInTheDocument()
     expect(screen.getByText('Zero Effort')).toBeInTheDocument()
   })
 
   test('renders CTA buttons', () => {
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
+    render(<Wrapper><CoinBot /></Wrapper>)
     expect(screen.getByText('Start Trading')).toBeInTheDocument()
     expect(screen.getByText('GitHub')).toBeInTheDocument()
   })
 
   test('renders footer', () => {
-    render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><CoinBot /></BrowserRouter>)
+    render(<Wrapper><CoinBot /></Wrapper>)
     expect(screen.getByText('CoinBot')).toBeInTheDocument()
   })
 })

@@ -1,9 +1,20 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { connectWallet, disconnectWallet } from '../services/connectWallet'
-import { useState, useEffect, useCallback } from 'react'
+import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from 'react'
 import toast from 'react-hot-toast'
 import axios from 'axios'
 
-export const useAuth = () => {
+interface AuthState {
+  isLoading: boolean
+  isAuthenticated: boolean
+  login: () => Promise<boolean>
+  logout: () => Promise<void>
+}
+
+const AuthContext = createContext<AuthState | null>(null)
+
+export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true)
   const [isAuthenticated, setIsAuthenticated] = useState(false)
 
@@ -58,5 +69,15 @@ export const useAuth = () => {
     toast.success('Disconnected')
   }, [])
 
-  return { isLoading, isAuthenticated, login, logout }
+  return (
+    <AuthContext.Provider value={{ isLoading, isAuthenticated, login, logout }}>
+      {children}
+    </AuthContext.Provider>
+  )
+}
+
+export function useAuth(): AuthState {
+  const ctx = useContext(AuthContext)
+  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
+  return ctx
 }
