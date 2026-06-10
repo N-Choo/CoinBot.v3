@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod tests {
     use crate::{
-        handlers::user::auth::{AuthController, CacheType},
+        handlers::user::auth::{AuthController, NonceCache, SessionCache},
         models::auth::VerifySignaturRequest,
     };
 
@@ -15,11 +15,10 @@ mod tests {
         core::rand::{SeedableRng, rngs::StdRng},
         signers::{LocalWallet, Signer},
     };
-    use moka::future::Cache;
 
-    fn setup_caches() -> (CacheType, CacheType) {
-        let nonce_cache = Cache::new(100);
-        let session_cache = Cache::new(100);
+    fn setup_caches() -> (NonceCache, SessionCache) {
+        let nonce_cache = NonceCache::new(moka::future::Cache::new(100));
+        let session_cache = SessionCache::new(moka::future::Cache::new(100));
         (nonce_cache, session_cache)
     }
 
@@ -51,7 +50,6 @@ mod tests {
         )
         .await;
 
-        // Convert Responder to HttpResponse
         let req = test::TestRequest::default().to_http_request();
         let http_resp = resp.respond_to(&req);
         assert_eq!(http_resp.status(), StatusCode::OK);
@@ -66,7 +64,6 @@ mod tests {
         let cookie = Cookie::parse(cookie_header).unwrap();
         let token = cookie.value();
 
-        // Verify session was actually created in cache
         let cached_wallet = session_cache.get(token).await;
         assert_eq!(cached_wallet.unwrap(), wallet_address);
     }
@@ -79,12 +76,10 @@ mod tests {
 
         let (nonce_cache, session_cache) = setup_caches();
 
-        // Put the CORRECT nonce in the cache
         nonce_cache
             .insert(wallet_address.clone(), "correct_nonce".to_string())
             .await;
 
-        // This allows get_wallet to succeed, so we can reach the 400 check
         let wrong_nonce = "evil_nonce";
         let signature = wallet.sign_message(wrong_nonce).await.unwrap();
 
@@ -132,7 +127,6 @@ mod tests {
     async fn test_logout() {
         let (_, session_cache) = setup_caches();
 
-        // Simulate a logged-in user by inserting a session token
         let token = "test_token";
         let wallet_address = "0x1234567890abcdef".to_string();
         session_cache
@@ -148,7 +142,6 @@ mod tests {
         let http_resp = resp.respond_to(&req);
         assert_eq!(http_resp.status(), StatusCode::OK);
 
-        // Verify the session token was invalidated
         let cached_wallet = session_cache.get(token).await;
         assert!(cached_wallet.is_none());
     }
@@ -157,7 +150,6 @@ mod tests {
     async fn test_verify_session_ok() {
         let (_, session_cache) = setup_caches();
 
-        // Simulate a logged-in user by inserting a session token
         let token = "test_token";
         let wallet_address = "0x1234567890abcdef".to_string();
         session_cache
@@ -175,7 +167,6 @@ mod tests {
         let http_resp = resp.respond_to(&req);
         assert_eq!(http_resp.status(), StatusCode::OK);
 
-        // Verify the session token is still valid
         let cached_wallet = session_cache.get(token).await;
         assert_eq!(cached_wallet.unwrap(), wallet_address);
     }
@@ -195,7 +186,6 @@ mod tests {
         let http_resp = resp.respond_to(&req);
         assert_eq!(http_resp.status(), StatusCode::UNAUTHORIZED);
 
-        // Verify the session token is not valid
         let cached_wallet = session_cache.get("invalid_token").await;
         assert!(cached_wallet.is_none());
     }
