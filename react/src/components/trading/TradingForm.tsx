@@ -8,7 +8,6 @@ interface TradingFormProps {
 
 const settingsConfig = [
   { key: 'Amount' as const, label: 'Allocation', placeholder: '100', suffix: 'USDT' },
-  { key: 'Expires' as const, label: 'Max Trades/Day', placeholder: '5' },
   { key: 'TakeProfit' as const, label: 'Take Profit', placeholder: '50.0', suffix: '%' },
   { key: 'StopLoss' as const, label: 'Stop Loss', placeholder: '35.0', suffix: '%' },
 ]
@@ -31,7 +30,7 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
     <div className="bot-strategy-panel">
       <div className="strategy-header">
         <span className="status-dot" />
-        <span className="strategy-title">Bot Strategy</span>
+        <span className="strategy-title">Trade Contract</span>
       </div>
 
       <div className="strategy-inputs">
@@ -68,7 +67,7 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
 
       <button className="strategy-start-btn" onClick={handleStart}>
         <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-        Start Bot
+        Sign Contract
       </button>
     </div>
   )

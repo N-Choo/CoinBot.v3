@@ -3,25 +3,24 @@ import { render, screen } from '@testing-library/react'
 import TradingForm from './TradingForm'
 import type { BotSettings } from './types'
 
-const defaultSettings: BotSettings = { Amount: '100', Expires: '5', TakeProfit: '50.0', StopLoss: '35.0' }
+const defaultSettings: BotSettings = { Amount: '100', TakeProfit: '50.0', StopLoss: '35.0' }
 
 describe('TradingForm', () => {
-  it('renders bot strategy header', () => {
+  it('renders trade contract header', () => {
     render(<TradingForm selectedPair="BTC/USDT" botSettings={defaultSettings} onSettingChange={() => {}} />)
-    expect(screen.getByText('Bot Strategy')).toBeInTheDocument()
+    expect(screen.getByText('Trade Contract')).toBeInTheDocument()
   })
 
   it('renders all setting inputs', () => {
     render(<TradingForm selectedPair="BTC/USDT" botSettings={defaultSettings} onSettingChange={() => {}} />)
     expect(screen.getByText('Allocation')).toBeInTheDocument()
-    expect(screen.getByText('Max Trades/Day')).toBeInTheDocument()
     expect(screen.getByText('Take Profit')).toBeInTheDocument()
     expect(screen.getByText('Stop Loss')).toBeInTheDocument()
   })
 
-  it('renders start bot button', () => {
+  it('renders sign contract button', () => {
     render(<TradingForm selectedPair="BTC/USDT" botSettings={defaultSettings} onSettingChange={() => {}} />)
-    expect(screen.getByText('Start Bot')).toBeInTheDocument()
+    expect(screen.getByText('Sign Contract')).toBeInTheDocument()
   })
 
   it('shows estimated profit and loss', () => {
@@ -36,7 +35,7 @@ describe('TradingForm', () => {
   })
 
   it('does not display NaN when inputs are empty', () => {
-    const empty: BotSettings = { Amount: '', Expires: '', TakeProfit: '', StopLoss: '' }
+    const empty: BotSettings = { Amount: '', TakeProfit: '', StopLoss: '' }
     render(<TradingForm selectedPair="BTC/USDT" botSettings={empty} onSettingChange={() => {}} />)
     expect(screen.queryByText('NaN')).not.toBeInTheDocument()
   })

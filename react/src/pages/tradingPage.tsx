@@ -29,8 +29,8 @@ const Trading = () => {
   }, [])
 
   const [botSettings, setBotSettings] = useState<BotSettings>({
+    Ticker: selectedPair,
     Amount: '100',
-    Expires: '5',
     TakeProfit: '50.0',
     StopLoss: '35.0'
   })

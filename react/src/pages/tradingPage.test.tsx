@@ -11,12 +11,12 @@ describe('TradingPage', () => {
     })
   })
 
-  it('renders the bot strategy panel', async () => {
+  it('renders the trade contract panel', async () => {
     const { default: Trading } = await import('./tradingPage')
     render(<BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><Trading /></BrowserRouter>)
     await waitFor(() => {
-      expect(screen.getByText('Bot Strategy')).toBeTruthy()
-      expect(screen.getByText('Start Bot')).toBeTruthy()
+      expect(screen.getByText('Trade Contract')).toBeTruthy()
+      expect(screen.getByText('Sign Contract')).toBeTruthy()
       expect(screen.getByText('Allocation')).toBeTruthy()
     })
   })

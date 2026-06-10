@@ -1,6 +1,6 @@
 export interface BotSettings {
+  Ticker: string
   Amount: string
-  Expires: string
   TakeProfit: string
   StopLoss: string
 }
