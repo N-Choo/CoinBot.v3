@@ -2,17 +2,17 @@ use std::time::Duration;
 
 use anyhow::{Context, Result};
 use kucoin::client::rest::{Credentials, KuCoinClient};
-use moka::future::Cache;
 use sqlx::PgPool;
 use tonic::transport::Channel;
 
 use crate::config::AppConfig;
+use crate::handlers::user::auth::{NonceCache, SessionCache};
 
 #[derive(Clone)]
 pub struct AppState {
     pub db_pool: PgPool,
-    pub nonce_cache: Cache<String, String>,
-    pub session_cache: Cache<String, String>,
+    pub nonce_cache: NonceCache,
+    pub session_cache: SessionCache,
     pub kc_client: KuCoinClient,
     pub grpc_deposit: Channel,
 }
@@ -28,15 +28,19 @@ impl AppState {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run database migrations: {e}"))?;
 
-        let nonce_cache = Cache::builder()
-            .max_capacity(250)
-            .time_to_live(Duration::from_secs(60 * 5))
-            .build();
+        let nonce_cache = NonceCache::new(
+            moka::future::Cache::builder()
+                .max_capacity(250)
+                .time_to_live(Duration::from_secs(60 * 5))
+                .build(),
+        );
 
-        let session_cache = Cache::builder()
-            .max_capacity(250)
-            .time_to_live(Duration::from_secs(60 * 60))
-            .build();
+        let session_cache = SessionCache::new(
+            moka::future::Cache::builder()
+                .max_capacity(250)
+                .time_to_live(Duration::from_secs(60 * 60))
+                .build(),
+        );
 
         let master_key =
             Credentials::new(&config.api_key, &config.api_secret, &config.api_passphrase);
