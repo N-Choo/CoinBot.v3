@@ -1,7 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import type { BotSettings } from './types'
 import { signContract } from '../../services/contract'
+import { getBalance } from '../../services/transaction'
+import { useAuth } from '../../hooks/useAuth'
 import DepositModal from '../dashboard/DepositModal'
 
 interface TradingFormProps {
@@ -17,7 +19,14 @@ const settingsConfig = [
 ]
 
 export default function TradingForm({ selectedPair, botSettings, onSettingChange }: TradingFormProps) {
+  const { isAuthenticated } = useAuth()
+  const [balance, setBalance] = useState(0)
   const [showDeposit, setShowDeposit] = useState(false)
+
+  useEffect(() => {
+    if (!isAuthenticated) return
+    getBalance().then(v => setBalance(parseFloat(v))).catch(() => {})
+  }, [isAuthenticated])
 
   const calcPnl = (amount: string, pct: string) => {
     const a = parseFloat(amount)
@@ -69,6 +78,27 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
               </div>
             </div>
           ))}
+        </div>
+
+        <div className="px-4 py-3 border-t border-border-light">
+          <div className="flex items-center justify-between mb-1.5">
+            <span className="text-[10px] text-text-muted font-semibold uppercase tracking-[0.3px]">Available</span>
+            <span className={`text-[10px] font-mono font-bold ${isAuthenticated ? 'text-text-main' : 'text-text-muted'}`}>
+              {isAuthenticated ? `${balance.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT` : '—'}
+            </span>
+          </div>
+          <div className="w-full h-1.5 rounded-full bg-bg-input overflow-hidden">
+            <div className="h-full rounded-full transition-all duration-300"
+              style={{
+                width: `${Math.min((parseFloat(botSettings.Amount) || 0) / (balance || 1) * 100, 100)}%`,
+                background: (parseFloat(botSettings.Amount) || 0) > balance
+                  ? 'var(--color-down, #ef4444)'
+                  : 'var(--color-accent, #ff5722)'
+              }} />
+          </div>
+          {(parseFloat(botSettings.Amount) || 0) > balance && isAuthenticated && (
+            <span className="text-[9px] text-down mt-1 block">Exceeds available balance</span>
+          )}
         </div>
 
         <div className="px-4 py-2 border-t border-border-light space-y-1.5">

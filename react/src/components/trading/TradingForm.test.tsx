@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { render, screen } from '@testing-library/react'
 import TradingForm from './TradingForm'
 import type { BotSettings } from './types'
+
+vi.mock('../../hooks/useAuth', () => ({
+  useAuth: () => ({ isAuthenticated: false, login: vi.fn(), logout: vi.fn() }),
+}))
 
 const defaultSettings: BotSettings = { Ticker: 'BTC/USDT', Amount: '100', TakeProfit: '50.0', StopLoss: '35.0' }
 
