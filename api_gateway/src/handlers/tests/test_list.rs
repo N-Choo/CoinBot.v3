@@ -1,16 +1,19 @@
 #[cfg(test)]
 mod tests {
     use actix_web::{App, http::StatusCode, test, web};
-    use moka::future::Cache;
     use sqlx::PgPool;
 
     use tonic::transport::Channel;
 
-    use crate::handlers::user::auth::CacheType;
+    use crate::handlers::user::auth::{NonceCache, SessionCache};
     use crate::routes::api_routes;
 
-    fn setup_cache() -> CacheType {
-        Cache::new(100)
+    fn setup_session_cache() -> SessionCache {
+        SessionCache::new(moka::future::Cache::new(100))
+    }
+
+    fn setup_nonce_cache() -> NonceCache {
+        NonceCache::new(moka::future::Cache::new(100))
     }
 
     fn dummy_pool() -> PgPool {
@@ -28,7 +31,8 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(dummy_pool()))
-                .app_data(web::Data::new(setup_cache()))
+                .app_data(web::Data::new(setup_session_cache()))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .configure(api_routes),
         )
         .await;
@@ -44,7 +48,7 @@ mod tests {
     async fn test_list_no_user_returns_empty() {
         let Some(pool) = real_pool() else { return };
 
-        let session_cache = setup_cache();
+        let session_cache = setup_session_cache();
         let wallet = "0x0000000000000000000000000000000000000000";
         session_cache
             .insert("test_token".into(), wallet.into())
@@ -54,6 +58,7 @@ mod tests {
             App::new()
                 .app_data(web::Data::new(pool))
                 .app_data(web::Data::new(session_cache))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .configure(api_routes),
         )
         .await;
@@ -78,7 +83,8 @@ mod tests {
         let app = test::init_service(
             App::new()
                 .app_data(web::Data::new(dummy_pool()))
-                .app_data(web::Data::new(setup_cache()))
+                .app_data(web::Data::new(setup_session_cache()))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .app_data(web::Data::new(channel))
                 .configure(api_routes),
         )
@@ -86,7 +92,7 @@ mod tests {
 
         let req = test::TestRequest::post()
             .uri("/api/transactions/deposit")
-            .set_json(serde_json::json!({"tx_hash": "0x1234"}))
+            .set_json(serde_json::json!({"tx_hash": "0x1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef"}))
             .to_request();
         let resp = test::call_service(&app, req).await;
         assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
@@ -96,7 +102,8 @@ mod tests {
     async fn test_auth_challenge_invalid_wallet() {
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(setup_cache()))
+                .app_data(web::Data::new(setup_session_cache()))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .configure(api_routes),
         )
         .await;
@@ -112,7 +119,8 @@ mod tests {
     async fn test_auth_verify_no_session() {
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(setup_cache()))
+                .app_data(web::Data::new(setup_session_cache()))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .configure(api_routes),
         )
         .await;
@@ -128,7 +136,8 @@ mod tests {
     async fn test_logout_no_session() {
         let app = test::init_service(
             App::new()
-                .app_data(web::Data::new(setup_cache()))
+                .app_data(web::Data::new(setup_session_cache()))
+                .app_data(web::Data::new(setup_nonce_cache()))
                 .configure(api_routes),
         )
         .await;

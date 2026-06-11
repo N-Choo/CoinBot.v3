@@ -68,6 +68,27 @@ impl User {
         .await
     }
 
+    pub async fn check_funds(pool: &PgPool, uid: Uuid, amount: &str) -> Result<(), String> {
+        let has: String = sqlx::query_scalar("SELECT balance FROM users WHERE uid = $1")
+            .bind(uid)
+            .fetch_one(pool)
+            .await
+            .map_err(|e| format!("DB error: {}", e))?;
+
+        let balance: f64 = has
+            .parse()
+            .map_err(|_| format!("Corrupt balance value: {}", has))?;
+        let required: f64 = amount
+            .parse()
+            .map_err(|_| format!("Invalid amount: {}", amount))?;
+
+        if balance >= required {
+            Ok(())
+        } else {
+            Err("Insufficient funds".into())
+        }
+    }
+
     pub async fn unlock_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,

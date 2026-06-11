@@ -41,16 +41,16 @@ function AnimatedStat({ value, label }: { value: string; label: string }) {
   }, [visible, num])
 
   return (
-    <div className="stat-item" ref={ref}>
-      <span className="stat-value" aria-live="polite">{visible ? display : '0'}{suffix}</span>
-      <span className="stat-label">{label}</span>
+    <div className="flex flex-col items-center gap-1 shrink-0" ref={ref}>
+      <span className="text-[24px] sm:text-[18px] lg:text-[24px] font-extrabold font-mono text-text-main" aria-live="polite">{visible ? display : '0'}{suffix}</span>
+      <span className="text-[11px] sm:text-[9px] lg:text-[11px] text-text-muted uppercase tracking-[0.5px] font-medium">{label}</span>
     </div>
   )
 }
 
 export default function StatsBar() {
   return (
-    <div className="stats-bar">
+    <div className="flex justify-center gap-8 sm:gap-4 lg:gap-12 px-6 py-8 border-y border-border-light bg-bg-panel overflow-x-auto">
       {STATS.map(s => <AnimatedStat key={s.label} value={s.value} label={s.label} />)}
     </div>
   )

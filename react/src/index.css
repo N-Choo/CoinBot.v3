@@ -1,0 +1,44 @@
+@import "tailwindcss";
+
+@theme {
+  --color-bg-dark: var(--bg-dark);
+  --color-bg-panel: var(--bg-panel);
+  --color-bg-glass: var(--bg-glass);
+  --color-bg-hud: var(--bg-hud);
+  --color-bg-input: var(--bg-input);
+  --color-bg-hover: var(--bg-hover);
+  --color-bg-active: var(--bg-active);
+  --color-bg-success: var(--color-up-bg);
+  --color-bg-danger: var(--color-down-bg);
+
+  --color-neon-teal: var(--neon-teal);
+  --color-neon-blue: var(--neon-blue);
+  --color-primary: var(--color-primary);
+  --color-primary-dark: var(--color-primary-dark);
+  --color-accent: var(--color-accent);
+  --color-danger: var(--color-danger);
+  --color-up: var(--color-up);
+  --color-down: var(--color-down);
+  --color-up-text: var(--color-up-text);
+  --color-down-text: var(--color-down-text);
+
+  --color-text-main: var(--text-main);
+  --color-text-muted: var(--text-muted);
+  --color-text-muted-2: var(--text-muted-2);
+  --color-text-inverse: var(--text-inverse);
+  --color-text-btn: var(--text-btn);
+
+  --color-border: var(--border-color);
+  --color-border-light: var(--border-light);
+  --color-border-strong: var(--border-strong);
+
+  --font-main: var(--font-main);
+  --font-display: var(--font-display);
+  --font-mono: var(--font-mono);
+
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --radius-xl: var(--radius-xl);
+  --radius-card: var(--radius-card);
+}

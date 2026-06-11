@@ -1,6 +1,7 @@
 use sqlx::PgPool;
 use uuid::Uuid;
 
+pub mod contracts;
 pub mod deposit;
 pub mod user;
 

@@ -17,14 +17,11 @@ export default function BalanceStats() {
 
   if (loading) {
     return (
-      <div className="balance-stats-grid">
+      <div className="flex w-full min-w-0">
         {[1, 2, 3].map(i => (
-          <div key={i} className="dash-panel">
-            <div className="balance-card-header">
-              <Skeleton variant="text-sm" width="60%" />
-              <Skeleton variant="circle" width="28px" height="28px" />
-            </div>
-            <Skeleton variant="text-lg" width="70%" className="dash-value-lg" />
+          <div key={i} className="flex-1 min-w-0 p-3 sm:p-5 sm:border-r border-border-light last:border-r-0">
+            <Skeleton variant="text-sm" width="60%" />
+            <Skeleton variant="text-lg" width="70%" />
             <Skeleton variant="text-sm" width="40%" />
           </div>
         ))}
@@ -33,14 +30,14 @@ export default function BalanceStats() {
   }
 
   return (
-    <div className="balance-stats-grid">
+    <div className="flex w-full min-w-0">
       {stats.map((stat, idx) => (
-        <div key={idx} className="dash-panel" tabIndex={0}>
-          <div className="balance-card-header">
-            <div className="balance-card-header-left">
-              <span className="dash-title-sm">{stat.label}</span>
+        <div key={idx} className="flex-1 min-w-0 p-3 sm:p-5 sm:border-r border-border-light last:border-r-0 border-b sm:border-b-0" tabIndex={0}>
+          <div className="flex justify-between items-center">
+            <div className="flex flex-col">
+              <span className="text-[10px] text-text-muted font-semibold uppercase tracking-[0.3px]">{stat.label}</span>
             </div>
-            <div className="icon-box">
+            <div className="w-8 h-8 rounded flex items-center justify-center border border-border-light shrink-0">
               {idx === 0 && (
                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                   <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
@@ -58,11 +55,11 @@ export default function BalanceStats() {
               )}
             </div>
           </div>
-          <div className="dash-value-lg">{stat.value}</div>
-          <div className="balance-change-row">
-            <span className={`change-dot ${stat.isUp ? 'change-dot-up' : 'change-dot-down'}`} />
-            <span className={stat.isUp ? 'price-up-bg' : 'price-down-bg'}>{stat.change}</span>
-            <span className="balance-change-label">24h</span>
+          <div className="text-lg sm:text-[22px] font-extrabold font-mono text-text-main leading-tight my-1 sm:my-1.5 truncate">{stat.value}</div>
+          <div className="flex items-center gap-1.5 text-xs font-semibold">
+            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stat.isUp ? 'bg-up' : 'bg-down'}`} />
+            <span className={`${stat.isUp ? 'text-up-text' : 'text-down-text'}`}>{stat.change}</span>
+            <span className="text-text-muted font-medium text-[10px]">24h</span>
           </div>
         </div>
       ))}

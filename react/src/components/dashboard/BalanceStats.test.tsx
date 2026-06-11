@@ -17,12 +17,12 @@ describe('BalanceStats', () => {
     expect(await screen.findByText('$76,352.25')).toBeInTheDocument()
   })
 
-  test('shows positive changes with price-up-bg class', async () => {
+  test('shows positive changes with correct color classes', async () => {
     render(<BalanceStats />)
     const changes = await screen.findAllByText(/[+-]\d+\.\d+%/)
     expect(changes).toHaveLength(3)
-    expect(changes[0]).toHaveClass('price-up-bg')
-    expect(changes[1]).toHaveClass('price-up-bg')
-    expect(changes[2]).toHaveClass('price-down-bg')
+    expect(changes[0]).toHaveClass('text-up-text')
+    expect(changes[1]).toHaveClass('text-up-text')
+    expect(changes[2]).toHaveClass('text-down-text')
   })
 })

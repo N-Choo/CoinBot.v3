@@ -3,6 +3,7 @@ import ReactDOM from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom'; // 1. Import BrowserRouter
 import './styles/tokens.css'
 import './styles/base.css'
+import './index.css'
 import AppRoutes from './App';
 import axios from 'axios';
 

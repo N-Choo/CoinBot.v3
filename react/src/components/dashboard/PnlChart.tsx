@@ -80,57 +80,44 @@ export default function PnlChart() {
   const first = data[0].value
   const pct = (((last - first) / first) * 100).toFixed(1)
   const up = last >= first
-  const color = up ? 'var(--color-primary)' : 'var(--color-danger)'
 
   if (loading) {
     return (
-      <div className="dash-panel">
-        <div className="pnl-header">
-          <div style={{ flex: 1 }}>
-            <Skeleton variant="text-sm" width="100px" />
-            <Skeleton variant="text-lg" width="140px" />
-          </div>
-          <Skeleton variant="text-sm" width="120px" />
-        </div>
+      <div className="p-3 sm:p-5">
+        <Skeleton variant="text-sm" width="100px" />
+        <Skeleton variant="text-lg" width="160px" />
         <Skeleton variant="chart" />
-        <div className="historic-stats-grid">
-          {[1, 2, 3].map(i => (
-            <div key={i}>
-              <Skeleton variant="text-sm" width="60%" />
-              <Skeleton variant="text" width="80%" />
-              <Skeleton variant="text-sm" width="50%" />
-            </div>
-          ))}
-        </div>
       </div>
     )
   }
 
   return (
-    <div className="dash-panel">
-      <div className="pnl-header">
+    <div className="p-3 sm:p-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2 mb-1">
         <div>
-          <div className="dash-title-sm">PnL Performance</div>
-          <div className="pnl-value" style={{ color }}>
-            <span className={`pnl-ticker ${flash}`}>
+          <div className="text-[10px] text-text-muted font-semibold uppercase tracking-[0.3px]">PnL Performance</div>
+          <div className="text-xl sm:text-[26px] font-extrabold font-mono leading-tight"
+            style={{ color: up ? 'var(--color-up)' : 'var(--color-down)' }}>
+            <span className={`inline-flex items-center gap-1 transition-colors duration-300 ${flash}`}>
               ${last.toLocaleString()}
               {ticker !== 0 && (
-                <span className="ticker-arrow">
+                <span className="inline-block text-xs" style={{ animation: 'ticker-pop 0.3s ease' }}>
                   {ticker > 0 ? `+${ticker}` : ticker}
                 </span>
               )}
             </span>
           </div>
         </div>
-        <div className="pnl-right-col">
-          <div className="pnl-badge" style={{ background: up ? 'var(--color-up-bg)' : 'var(--color-down-bg)', color: up ? 'var(--color-up-text)' : 'var(--color-down-text)' }}>
+        <div className="flex sm:text-right items-center sm:items-end gap-2 sm:flex-col">
+          <span className="text-[11px] font-bold font-mono px-2 py-0.5 rounded"
+            style={{ background: up ? 'var(--color-up-bg)' : 'var(--color-down-bg)', color: up ? 'var(--color-up-text)' : 'var(--color-down-text)' }}>
             {up ? '\u25B2' : '\u25BC'} {Math.abs(Number(pct))}%
-          </div>
-          <div className="pnl-range-tabs pnl-range-wrap">
+          </span>
+          <div className="flex gap-0.5 border border-border-light rounded p-0.5">
             {RANGES.map(r => (
               <button
                 key={r.label}
-                className={`pnl-tab ${range === r.label ? 'pnl-tab-active' : ''}`}
+                className={`bg-transparent border-none text-text-muted text-[10px] font-semibold px-2 py-0.5 rounded cursor-pointer transition-all ${range === r.label ? 'bg-neon-teal text-black' : ''}`}
                 onClick={() => setRange(r.label)}
               >
                 {r.label}
@@ -140,27 +127,34 @@ export default function PnlChart() {
         </div>
       </div>
 
-      <div className="chart-wrapper pnl-chart-area">
-        <svg viewBox="0 0 100 100" preserveAspectRatio="none">
-          <path d={path.line} fill="none" stroke={color} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
+      <div className="relative w-full my-2 cursor-default overflow-visible h-[100px] sm:h-[180px]">
+        <svg viewBox="0 0 100 100" preserveAspectRatio="none" className="block w-full h-full overflow-visible">
+          <defs>
+            <linearGradient id="chartFill" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stopColor={up ? 'var(--color-up)' : 'var(--color-down)'} stopOpacity="0.15" />
+              <stop offset="100%" stopColor={up ? 'var(--color-up)' : 'var(--color-down)'} stopOpacity="0" />
+            </linearGradient>
+          </defs>
+          <path d={path.area} fill="url(#chartFill)" />
+          <path d={path.line} fill="none" stroke={up ? 'var(--color-up)' : 'var(--color-down)'} strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" vectorEffect="non-scaling-stroke" />
         </svg>
       </div>
 
-      <div className="historic-stats-grid">
+      <div className="grid grid-cols-3 gap-3 pt-3 mt-1 border-t border-border-light">
         <div>
-          <div className="stat-label">Daily PnL</div>
-          <div className="stat-value price-up">+$420</div>
-          <div className="data-label">vs yesterday</div>
+          <div className="text-[10px] text-text-muted font-medium mb-0.5">Daily PnL</div>
+          <div className="text-xs sm:text-[13px] font-bold font-mono text-up-text">+$420</div>
+          <div className="text-[10px] text-text-muted font-medium">vs yesterday</div>
         </div>
         <div>
-          <div className="stat-label">Weekly PnL</div>
-          <div className="stat-value price-up">+$2,840</div>
-          <div className="data-label">vs last week</div>
+          <div className="text-[10px] text-text-muted font-medium mb-0.5">Weekly PnL</div>
+          <div className="text-xs sm:text-[13px] font-bold font-mono text-up-text">+$2,840</div>
+          <div className="text-[10px] text-text-muted font-medium">vs last week</div>
         </div>
         <div>
-          <div className="stat-label">Monthly PnL</div>
-          <div className="stat-value price-up">+$11,200</div>
-          <div className="data-label">vs last month</div>
+          <div className="text-[10px] text-text-muted font-medium mb-0.5">Monthly PnL</div>
+          <div className="text-xs sm:text-[13px] font-bold font-mono text-up-text">+$11,200</div>
+          <div className="text-[10px] text-text-muted font-medium">vs last month</div>
         </div>
       </div>
     </div>

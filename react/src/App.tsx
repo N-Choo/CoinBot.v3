@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
+import { AuthProvider } from './hooks/useAuth'
 import Topbar from './components/layout/Topbar'
 import AuthGuard from './components/auth/AuthGuard'
 import Landing from './pages/homePage'
@@ -24,7 +25,7 @@ export const PATHS = {
 
 export default function AppRoutes() {
   return (
-    <>
+    <AuthProvider>
       <Toaster
         position="top-center"
         toastOptions={{
@@ -46,6 +47,6 @@ export default function AppRoutes() {
           <Route path={PATHS.DASHBOARD} element={<AuthGuard><Dashboard /></AuthGuard>} />
         </Routes>
       </Suspense>
-    </>
+    </AuthProvider>
   )
 }

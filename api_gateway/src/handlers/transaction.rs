@@ -12,7 +12,7 @@ use tonic::transport::Channel;
 
 use crate::{
     constants::{PLATFORM_WALLET, USDT_CONTRACT},
-    handlers::user::auth::CacheType,
+    handlers::{authenticate, user::auth::SessionCache},
     models::transaction::DepositPayloadRequest,
 };
 
@@ -21,10 +21,10 @@ pub struct Transaction {}
 impl Transaction {
     pub async fn list(
         header: actix_web::HttpRequest,
-        session_cache: web::Data<CacheType>,
+        session_cache: web::Data<SessionCache>,
         pool: web::Data<PgPool>,
     ) -> impl Responder {
-        let wallet = match Self::authenticate(&header, &session_cache).await {
+        let wallet = match authenticate(&header, &session_cache).await {
             Some(w) => w,
             None => return HttpResponse::Unauthorized().finish(),
         };
@@ -54,11 +54,11 @@ impl Transaction {
     pub async fn deposit(
         header: actix_web::HttpRequest,
         payload: web::Json<DepositPayloadRequest>,
-        session_cache: web::Data<CacheType>,
+        session_cache: web::Data<SessionCache>,
         pool: web::Data<PgPool>,
         grpc_deposit: web::Data<Channel>,
     ) -> impl Responder {
-        let wallet = match Self::authenticate(&header, &session_cache).await {
+        let wallet = match authenticate(&header, &session_cache).await {
             Some(w) => w,
             None => return HttpResponse::Unauthorized().finish(),
         };
@@ -136,10 +136,5 @@ impl Transaction {
             "timestamp": resp.timestamp,
             "accepted": resp.accepted,
         }))
-    }
-
-    async fn authenticate(header: &actix_web::HttpRequest, cache: &CacheType) -> Option<String> {
-        let cookie = header.cookie("session_token")?;
-        cache.get(cookie.value()).await
     }
 }

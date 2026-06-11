@@ -11,23 +11,48 @@ use crate::models::{
     err::AppError,
 };
 
-pub type CacheType = Cache<String, String>;
+#[derive(Clone)]
+pub struct SessionCache(Cache<String, String>);
+
+#[derive(Clone)]
+pub struct NonceCache(Cache<String, String>);
+
+impl SessionCache {
+    pub fn new(cache: Cache<String, String>) -> Self {
+        Self(cache)
+    }
+    pub async fn get(&self, k: &str) -> Option<String> {
+        self.0.get(k).await
+    }
+    pub async fn insert(&self, k: String, v: String) {
+        self.0.insert(k, v).await
+    }
+    pub async fn invalidate(&self, k: &str) {
+        self.0.invalidate(k).await
+    }
+}
+
+impl NonceCache {
+    pub fn new(cache: Cache<String, String>) -> Self {
+        Self(cache)
+    }
+    pub async fn get(&self, k: &str) -> Option<String> {
+        self.0.get(k).await
+    }
+    pub async fn insert(&self, k: String, v: String) {
+        self.0.insert(k, v).await
+    }
+    pub async fn invalidate(&self, k: &str) {
+        self.0.invalidate(k).await
+    }
+}
+
 pub struct AuthController;
 
-/// ETH signature-based, Prove ownership of wallet by signing a given nonce.
 impl AuthController {
-    /// Handles GET /api/user/auth
-    /// Generate and return a nonce for the given wallet address.
-    ///
-    /// # Arguments
-    /// - `query` - Query parameters containing the wallet address.
-    /// - `nonce_cache` - Shared cache for storing nonces.
-    ///
-    /// # Returns
-    /// - HTTP response with the generated nonce.
     pub async fn request_challenge(
         query: web::Query<ChallengeQuery>,
-        nonce_cache: web::Data<CacheType>,
+        nonce_cache: web::Data<NonceCache>,
     ) -> impl Responder {
         let wallet = query.wallet_address.to_lowercase();
         let nonce = Uuid::new_v4().to_string();
@@ -42,31 +67,18 @@ impl AuthController {
         HttpResponse::Ok().json(ChallengeResponse { nonce })
     }
 
-    /// Handles POST /api/user/authentication
-    /// Verifies the signature of the nonce and issues a session cookie.
-    ///
-    /// # Arguments
-    /// - `payload` - JSON body containing the signed nonce and signature.
-    /// - `nonce_cache` - Shared cache for retrieving and invalidating nonces.
-    /// - `session_cache` - Shared cache for storing active sessions.
-    ///
-    /// # Returns
-    /// - HTTP response with a session token if authentication is successful.
-    /// - HTTP 401 if signature verification fails.
-    /// - HTTP 400 if nonce is missing or does not match (possible replay attack).
     pub async fn login(
         payload: web::Json<VerifySignaturRequest>,
-        nonce_cache: web::Data<CacheType>,
-        session_cache: web::Data<CacheType>,
+        nonce_cache: web::Data<NonceCache>,
+        session_cache: web::Data<SessionCache>,
     ) -> impl Responder {
-        let wallet = match Self::get_wallet(payload.signature.clone(), payload.msg.clone()) {
+        let wallet = match Self::get_wallet(&payload.signature, &payload.msg) {
             Ok(w) => w,
             Err(_) => return HttpResponse::Unauthorized().body("Invalid signature"),
         };
 
         if let Some(nonce) = nonce_cache.get(&wallet).await {
             if nonce != payload.msg {
-                // Nonce mismatch - possible replay attack or user error
                 nonce_cache.invalidate(&wallet).await;
                 return HttpResponse::BadRequest().finish();
             }
@@ -96,7 +108,7 @@ impl AuthController {
 
     pub async fn logout(
         header: actix_web::HttpRequest,
-        session_cache: web::Data<CacheType>,
+        session_cache: web::Data<SessionCache>,
     ) -> impl Responder {
         let session_cookie = header.cookie("session_token");
         if let Some(cookie) = session_cookie {
@@ -110,7 +122,7 @@ impl AuthController {
 
     pub async fn verify_session(
         header: actix_web::HttpRequest,
-        session_cache: web::Data<CacheType>,
+        session_cache: web::Data<SessionCache>,
     ) -> impl Responder {
         let session_cookie = header.cookie("session_token");
         if let Some(cookie) = session_cookie {
@@ -125,15 +137,12 @@ impl AuthController {
         }
     }
 
-    /// Helper function to recover wallet address from signature and message.
-    pub fn get_wallet(s: String, msg: String) -> Result<String, AppError> {
-        // Validate Signature Format
-        let signature = match Signature::from_str(&s) {
+    pub fn get_wallet(s: &str, msg: &str) -> Result<String, AppError> {
+        let signature = match Signature::from_str(s) {
             Ok(sig) => sig,
             Err(_) => return Err(AppError::Input("Invalid signature format".to_string())),
         };
 
-        // Recover Wallet Address
         let wallet_addr = match signature.recover(msg) {
             Ok(addr) => addr,
             Err(e) => {
@@ -143,7 +152,7 @@ impl AuthController {
         };
 
         info!("Recovered wallet: {:?}", wallet_addr);
-        let full_address = format!("0x{:x}", wallet_addr); // Standard hex .
+        let full_address = format!("0x{:x}", wallet_addr);
         Ok(full_address.to_lowercase())
     }
 }
