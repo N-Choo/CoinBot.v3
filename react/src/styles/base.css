@@ -505,7 +505,7 @@ th {
   width: 28px;
   height: 28px;
   border: 3px solid var(--border-subtle, rgba(255,255,255,0.06));
-  border-top-color: var(--accent, #00d4aa);
+  border-top-color: var(--accent, #ff5722);
   border-radius: 50%;
   animation: spinLoader 0.6s linear infinite;
 }
@@ -594,7 +594,7 @@ th {
 .wallet-alert-btn {
   display: block;
   padding: 12px 24px;
-  background: linear-gradient(135deg, var(--accent, #00d4aa) 0%, #00b894 100%);
+  background: linear-gradient(135deg, var(--accent, #ff5722) 0%, #e64a19 100%);
   color: #000;
   border: none;
   border-radius: 8px;
@@ -607,7 +607,7 @@ th {
 
 .wallet-alert-btn:hover {
   transform: translateY(-1px);
-  box-shadow: 0 4px 16px var(--accent-glow, rgba(0,212,170,0.15));
+  box-shadow: 0 4px 16px var(--accent-glow, rgba(255,87,34,0.15));
 }
 
 .wallet-alert-link {
@@ -695,3 +695,39 @@ th {
   text-align: center;
   color: var(--text-muted);
 }
+
+/* ═══════════════════════════════════════════
+   ANIMATIONS — Hero glow, scroll feed, hamburger
+   ═══════════════════════════════════════════ */
+
+@keyframes heroGlow {
+  0% { opacity: 0.4; transform: scale(1); }
+  100% { opacity: 1; transform: scale(1.2); }
+}
+
+@keyframes scrollFeed {
+  0% { transform: translateX(0); }
+  100% { transform: translateX(-50%); }
+}
+
+.feed-track {
+  animation: scrollFeed 30s linear infinite;
+}
+
+.feed-track:hover {
+  animation-play-state: paused;
+}
+
+.hamburger-line {
+  display: block;
+  width: 100%;
+  height: 2px;
+  background: var(--color-text-main, rgba(255,255,255,0.9));
+  border-radius: 2px;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-origin: center;
+}
+
+.is-active .hamburger-line:nth-child(1) { transform: translateY(11px) rotate(45deg); }
+.is-active .hamburger-line:nth-child(2) { opacity: 0; transform: scaleX(0); }
+.is-active .hamburger-line:nth-child(3) { transform: translateY(-11px) rotate(-45deg); }

@@ -35,7 +35,7 @@ describe('TradingForm', () => {
   })
 
   it('does not display NaN when inputs are empty', () => {
-    const empty: BotSettings = { Amount: '', TakeProfit: '', StopLoss: '' }
+    const empty: BotSettings = { Ticker: 'BTC/USDT', Amount: '', TakeProfit: '', StopLoss: '' }
     render(<TradingForm selectedPair="BTC/USDT" botSettings={empty} onSettingChange={() => {}} />)
     expect(screen.queryByText('NaN')).not.toBeInTheDocument()
   })

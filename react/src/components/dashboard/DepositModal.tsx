@@ -43,38 +43,38 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
   }
 
   return (
-    <div className="modal-overlay" onClick={onClose}>
-      <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
-        <h2 className="modal-title">Deposit USDT</h2>
-        <p className="modal-desc">Send USDT to your platform wallet.</p>
+    <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={onClose}>
+      <div onClick={e => e.stopPropagation()} className="w-full max-w-[420px] p-6 bg-bg-panel border border-border-light rounded-lg">
+        <h2 className="m-0 mb-1.5 text-base text-text-main font-bold">Deposit USDT</h2>
+        <p className="text-[11px] text-text-muted mb-4">Send USDT to your platform wallet.</p>
 
-        <div className="modal-info-box">
-          <div className="modal-info-row">
+        <div className="bg-[rgba(255,255,255,0.02)] border border-border-light p-3 rounded mb-4 flex flex-col gap-1.5 text-[11px] text-text-muted">
+          <div className="flex justify-between">
             <span>Platform Wallet</span>
-            <span className="modal-info-value" style={{ fontSize: 11 }}>{platformWallet || 'Loading...'}</span>
+            <span className="text-text-main font-mono text-[11px]" style={{ fontSize: 11 }}>{platformWallet || 'Loading...'}</span>
           </div>
-          <div className="modal-info-row">
+          <div className="flex justify-between">
             <span>Your Balance</span>
-            <span className="modal-info-value">{balance} USDT</span>
+            <span className="text-text-main font-semibold">{balance} USDT</span>
           </div>
         </div>
 
         <form onSubmit={submit}>
-          <label className="modal-form-label">Amount (USDT)</label>
-          <div className="modal-input-wrap">
+          <label className="block text-[10px] text-text-muted mb-1.5 font-semibold uppercase tracking-[0.3px]">Amount (USDT)</label>
+          <div className="relative mb-4">
             <input
               autoFocus required type="number" placeholder="0.00"
               value={amount} onChange={e => setAmount(e.target.value)}
-              className="modal-input"
+              className="w-full bg-[rgba(255,255,255,0.03)] border border-border-light rounded px-3 py-2.5 pr-[50px] text-text-main text-sm outline-none font-mono"
             />
-            <span className="modal-currency-suffix">USDT</span>
+            <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-text-muted">USDT</span>
           </div>
-          {error && <div className="modal-error">{error}</div>}
-          <div className="modal-actions">
-            <button type="button" onClick={onClose} className="modal-cancel-btn" disabled={loading}>
+          {error && <div className="text-down text-[11px] pb-3">{error}</div>}
+          <div className="flex gap-2">
+            <button type="button" onClick={onClose} className="flex-1 py-2.5 px-4 bg-transparent border border-border-light rounded text-text-main text-[11px] font-semibold cursor-pointer" disabled={loading}>
               CANCEL
             </button>
-            <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
+            <button type="submit" className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 px-4 border-none rounded bg-gradient-to-r from-accent to-[#e64a19] text-white text-[11px] font-bold cursor-pointer transition-opacity hover:opacity-90" disabled={loading}>
               {loading ? 'PROCESSING...' : 'DEPOSIT'}
             </button>
           </div>

@@ -23,17 +23,17 @@ export default function TradingContracts() {
   const filtered = contracts.filter(c => filter === 'All' || c.status === filter)
 
   return (
-    <div className="dash-panel">
-      <div className="contracts-toolbar">
-        <div className="settings-title">
-          <div className="status-dot" />
-          <h3>Trading Contracts</h3>
+    <div className="p-3 sm:p-5 border-t border-border-light">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <span className="w-1.5 h-1.5 rounded-full bg-neon-teal shrink-0" />
+          <h3 className="m-0 text-text-main text-sm font-semibold">Trading Contracts</h3>
         </div>
-        <div className="contracts-filters">
+        <div className="flex gap-3 items-center flex-wrap">
           {['All', 'Active', 'Inactive'].map(t => (
             <button
               key={t}
-              className={`filter-btn ${filter === t ? 'active' : ''}`}
+              className={`bg-transparent border px-2.5 py-1 rounded text-[10px] font-semibold cursor-pointer transition-all ${filter === t ? 'border-neon-teal text-neon-teal' : 'border-border-light text-text-muted hover:text-text-main'}`}
               onClick={() => setFilter(t)}
             >
               {t}
@@ -42,84 +42,67 @@ export default function TradingContracts() {
         </div>
       </div>
 
-      {loading ? (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Pair</th>
-                <th>Status</th>
-                <th className="text-right">Size</th>
-                <th className="text-right">P&L</th>
-                <th className="text-right">ROE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[1, 2, 3, 4].map(i => (
+      <div className="overflow-x-auto">
+        <table className="w-full border-collapse font-mono text-xs">
+          <thead>
+            <tr>
+              <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-[0.3px] border-b border-border-light">Pair</th>
+              <th className="text-left px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-[0.3px] border-b border-border-light">Status</th>
+              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-[0.3px] border-b border-border-light">Size</th>
+              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-[0.3px] border-b border-border-light">P&L</th>
+              <th className="text-right px-3 py-2 text-[10px] font-semibold text-text-muted uppercase tracking-[0.3px] border-b border-border-light">ROE</th>
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              [1, 2, 3, 4].map(i => (
                 <tr key={i}>
-                  <td><Skeleton variant="text" width="100px" /></td>
-                  <td><Skeleton variant="text-sm" width="60px" /></td>
-                  <td><Skeleton variant="text" width="70px" /></td>
-                  <td><Skeleton variant="text" width="70px" /></td>
-                  <td><Skeleton variant="text" width="50px" /></td>
+                  <td className="px-3 py-2.5"><Skeleton variant="text" width="100px" /></td>
+                  <td className="px-3 py-2.5"><Skeleton variant="text-sm" width="60px" /></td>
+                  <td className="px-3 py-2.5 text-right"><Skeleton variant="text" width="70px" /></td>
+                  <td className="px-3 py-2.5 text-right"><Skeleton variant="text" width="70px" /></td>
+                  <td className="px-3 py-2.5 text-right"><Skeleton variant="text" width="50px" /></td>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Pair</th>
-                <th>Status</th>
-                <th className="text-right">Size</th>
-                <th className="text-right">P&L</th>
-                <th className="text-right">ROE</th>
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.length === 0 ? (
-                <tr><td colSpan={5} className="contracts-empty">No contracts found</td></tr>
-              ) : (
-                filtered.map(c => (
-                  <tr key={c.id}>
-                    <td>
-                      <div className="contract-pair-cell">
-                        <img
-                          className="contract-pair-logo"
-                          src={logoUrl(c.pair.split('/')[0])}
-                          alt={c.pair.split('/')[0]}
-                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
-                        />
-                        <span className="contract-pair-full">{c.pair}</span>
-                      </div>
-                    </td>
-                    <td>
-                      <span className={`contract-status ${c.status === 'Active' ? 'active' : 'inactive'}`}>
-                        <span className="status-bullet" />
-                        {c.status}
-                      </span>
-                    </td>
-                    <td className="text-right">${c.total.toLocaleString()}</td>
-                    <td className="text-right">
-                      <span className={`contract-pnl ${c.pnl > 0 ? 'up' : c.pnl < 0 ? 'down' : ''}`}>
-                        {c.pnl > 0 ? '+' : ''}${c.pnl.toLocaleString()}
-                      </span>
-                    </td>
-                    <td className="text-right">
-                      <span className={`contract-roe ${c.roe > 0 ? 'up' : c.roe < 0 ? 'down' : ''}`}>
-                        {c.roe > 0 ? '+' : ''}{c.roe}%
-                      </span>
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+              ))
+            ) : filtered.length === 0 ? (
+              <tr><td colSpan={5} className="text-center py-8 text-text-muted text-xs">No contracts found</td></tr>
+            ) : (
+              filtered.map(c => (
+                <tr key={c.id} className="transition-colors hover:bg-[rgba(255,255,255,0.025)]">
+                  <td className="px-3 py-2.5 border-b border-border-light">
+                    <div className="flex items-center gap-2">
+                      <img
+                        className="w-5 h-5 rounded-full shrink-0 object-cover"
+                        src={logoUrl(c.pair.split('/')[0])}
+                        alt={c.pair.split('/')[0]}
+                        onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                      />
+                      <span className="text-xs font-semibold text-text-main">{c.pair}</span>
+                    </div>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-border-light">
+                    <span className={`inline-flex items-center gap-1.5 text-[11px] font-semibold ${c.status === 'Active' ? 'text-up' : 'text-text-muted'}`}>
+                      <span className={`w-1.5 h-1.5 rounded-full ${c.status === 'Active' ? 'bg-up' : 'bg-text-muted'}`} />
+                      {c.status}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-border-light text-right text-text-main">${c.total.toLocaleString()}</td>
+                  <td className="px-3 py-2.5 border-b border-border-light text-right">
+                    <span className={`text-xs font-semibold ${c.pnl > 0 ? 'text-up-text' : c.pnl < 0 ? 'text-down-text' : ''}`}>
+                      {c.pnl > 0 ? '+' : ''}${c.pnl.toLocaleString()}
+                    </span>
+                  </td>
+                  <td className="px-3 py-2.5 border-b border-border-light text-right">
+                    <span className={`text-xs font-semibold ${c.roe > 0 ? 'text-up-text' : c.roe < 0 ? 'text-down-text' : ''}`}>
+                      {c.roe > 0 ? '+' : ''}{c.roe}%
+                    </span>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

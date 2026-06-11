@@ -65,14 +65,14 @@ export default function SidebarActions() {
   }
 
   return (
-    <div className="dash-side-col">
-      <div className="dash-panel">
-        <div className="settings-title">
-          <div className="status-dot" />
-          <h3>Wallet Actions</h3>
+    <div className="flex flex-col h-full overflow-y-auto lg:sticky lg:top-14 self-start lg:max-h-[calc(100vh-56px)] border-t lg:border-t-0 border-border-light">
+      <div className="p-3 sm:p-5 border-b border-border-light">
+        <div className="flex items-center gap-2 mb-4">
+          <span className="w-1.5 h-1.5 rounded-full bg-neon-teal shrink-0" />
+          <h3 className="m-0 text-text-main text-sm font-semibold">Wallet Actions</h3>
         </div>
-        <div className="wallet-actions">
-          <button className="wallet-btn wallet-btn-deposit"
+        <div className="flex lg:flex-col gap-2 mt-4">
+          <button className="flex-1 lg:w-full flex items-center justify-center gap-1.5 px-3 py-2.5 lg:py-2.5 rounded text-xs font-bold font-mono tracking-wide cursor-pointer transition-colors border border-neon-teal text-neon-teal hover:bg-neon-teal hover:text-black"
             onClick={() => setModal('deposit')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="5" x2="12" y2="19" />
@@ -80,7 +80,7 @@ export default function SidebarActions() {
             </svg>
             DEPOSIT FUNDS
           </button>
-          <button className="wallet-btn wallet-btn-withdraw"
+          <button className="flex-1 lg:w-full flex items-center justify-center gap-1.5 px-3 py-2.5 lg:py-2.5 rounded text-xs font-bold font-mono tracking-wide cursor-pointer transition-colors border border-border-light text-text-muted hover:border-danger hover:text-danger"
             onClick={() => setModal('withdraw')}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
               <line x1="12" y1="19" x2="12" y2="5" />
@@ -89,31 +89,32 @@ export default function SidebarActions() {
             WITHDRAW ASSETS
           </button>
         </div>
-        <div className="wallet-available">
-          Available: <strong>{user.available}</strong>
+        <div className="mt-3 text-xs text-text-muted text-center">
+          Available: <strong className="text-text-main font-semibold">{user.available}</strong>
         </div>
       </div>
 
-      <div className="dash-panel dash-scroll activity-section">
-        <h3 className="activity-title">Recent Activity</h3>
-        <div className="dash-title-sm activity-subtitle">Transaction History</div>
-        <div className="activity-list">
+      <div className="flex-1 overflow-y-auto min-h-[200px] p-3 sm:p-5">
+        <h3 className="m-0 mb-0.5 text-sm font-semibold text-text-main">Recent Activity</h3>
+        <div className="text-xs text-text-muted mb-3">Transaction History</div>
+        <div className="flex flex-col gap-0.5">
           {activities.map(t => (
-            <div key={t.id} className="tx-row" onClick={() => setDetail(t)} style={{ cursor: 'pointer' }}>
-              <div className="tx-icon tx-icon-in">
+            <div key={t.id} className="grid grid-cols-[auto_1fr_auto] items-center gap-2.5 px-2 py-2.5 rounded font-mono cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.02)]"
+              onClick={() => setDetail(t)}>
+              <div className="w-7 h-7 rounded-full flex items-center justify-center shrink-0" style={{ background: 'rgba(255,87,34,0.1)', color: '#ff5722' }}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
                   <line x1="12" y1="5" x2="12" y2="19" /><polyline points="19 12 12 19 5 12" />
                 </svg>
               </div>
-              <div className="tx-body">
-                <div className="tx-type">Deposit {t.ticker}</div>
-                <div className="tx-hash">{t.tx_hash.slice(0, 10)}...</div>
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-text-main">Deposit {t.ticker}</div>
+                <div className="text-[10px] text-text-muted">{t.tx_hash.slice(0, 10)}...</div>
               </div>
-              <div className="tx-amount-col">
-                <div className={`tx-amount ${t.status === 'confirmed' ? 'tx-amount-in' : 'tx-amount-out'}`}>
+              <div className="text-right">
+                <div className={`text-[11px] font-semibold ${t.status === 'confirmed' ? 'text-up' : 'text-text-main'}`}>
                   {formatUSDT(t.amount)}
                 </div>
-                <div className="tx-time">{new Date(t.created_at).toLocaleString()}</div>
+                <div className="text-[10px] text-text-muted">{new Date(t.created_at).toLocaleString()}</div>
               </div>
             </div>
           ))}
@@ -121,38 +122,42 @@ export default function SidebarActions() {
       </div>
 
       {detail && (
-        <div className="modal-overlay" onClick={() => setDetail(null)}>
-          <div onClick={e => e.stopPropagation()} className="tx-detail-modal">
-            <div className="tx-detail-header">
+        <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={() => setDetail(null)}>
+          <div onClick={e => e.stopPropagation()} className="bg-bg-panel border border-border-light rounded-xl w-[440px] max-w-[calc(100vw-32px)] overflow-hidden">
+            <div className="flex items-center justify-between px-6 py-5 border-b border-border-light">
               <div>
-                <div className="tx-detail-label">Deposit</div>
-                <div className="tx-detail-amount">USDT — {formatUSDT(detail.amount)}</div>
+                <div className="text-[11px] text-text-muted font-semibold uppercase tracking-[0.3px] mb-1">Deposit</div>
+                <div className="text-xl font-bold text-text-main">USDT — {formatUSDT(detail.amount)}</div>
               </div>
-              <span className={`tx-detail-status ${detail.status === 'confirmed' ? 'confirmed' : 'pending'}`}>
+              <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded ${detail.status === 'confirmed' ? 'text-up' : 'text-[#ffb700]'}`}
+                style={{ background: detail.status === 'confirmed' ? 'rgba(255,87,34,0.1)' : 'rgba(255,183,0,0.1)' }}>
                 {detail.status === 'confirmed' ? '✓ Confirmed' : '◷ Pending'}
               </span>
             </div>
 
-            <div className="tx-detail-body">
-              <div className="tx-detail-row">
-                <span className="tx-detail-key">Transaction Hash</span>
-                <span className="tx-detail-value mono break">{detail.tx_hash}</span>
+            <div className="px-6 py-4 flex flex-col gap-2.5">
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-xs text-text-muted shrink-0">Transaction Hash</span>
+                <span className="text-xs text-text-main text-right font-medium font-mono break-all max-w-[260px]">{detail.tx_hash}</span>
               </div>
-              <div className="tx-detail-row">
-                <span className="tx-detail-key">Ticket ID</span>
-                <span className="tx-detail-value">{detail.id}</span>
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-xs text-text-muted shrink-0">Ticket ID</span>
+                <span className="text-xs text-text-main text-right font-medium">{detail.id}</span>
               </div>
-              <div className="tx-detail-row">
-                <span className="tx-detail-key">Created</span>
-                <span className="tx-detail-value">{new Date(detail.created_at).toLocaleString()}</span>
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-xs text-text-muted shrink-0">Created</span>
+                <span className="text-xs text-text-main text-right font-medium">{new Date(detail.created_at).toLocaleString()}</span>
               </div>
-              <div className="tx-detail-row">
-                <span className="tx-detail-key">Raw Amount</span>
-                <span className="tx-detail-value mono">{detail.amount}</span>
+              <div className="flex justify-between items-start gap-3">
+                <span className="text-xs text-text-muted shrink-0">Raw Amount</span>
+                <span className="text-xs text-text-main text-right font-medium font-mono">{detail.amount}</span>
               </div>
             </div>
 
-            <button onClick={() => setDetail(null)} className="tx-detail-close">Close</button>
+            <button onClick={() => setDetail(null)}
+              className="block w-[calc(100%-48px)] mx-6 mb-5 py-2.5 border border-border-light rounded-lg bg-transparent text-text-main text-xs font-semibold cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.03)] hover:border-border-strong">
+              Close
+            </button>
           </div>
         </div>
       )}
@@ -165,38 +170,42 @@ export default function SidebarActions() {
       )}
 
       {modal === 'withdraw' && (
-        <div className="modal-overlay" onClick={close}>
-          <div onClick={e => e.stopPropagation()} className="dash-panel modal-panel">
-            <h2 className="modal-title">Withdraw Assets</h2>
-            <p className="modal-desc">Transfer funds to your external wallet.</p>
+        <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={close}>
+          <div onClick={e => e.stopPropagation()} className="w-full max-w-[420px] p-6 bg-bg-panel border border-border-light rounded-lg">
+            <h2 className="m-0 mb-1.5 text-base text-text-main font-bold">Withdraw Assets</h2>
+            <p className="text-[11px] text-text-muted mb-4">Transfer funds to your external wallet.</p>
 
-            <div className="modal-info-box">
-              <div className="modal-info-row">
+            <div className="bg-[rgba(255,255,255,0.02)] border border-border-light p-3 rounded mb-4 flex flex-col gap-1.5 text-[11px] text-text-muted">
+              <div className="flex justify-between">
                 <span>Available Balance</span>
-                <span className="modal-info-value">{user.available}</span>
+                <span className="text-neon-teal">{user.available}</span>
               </div>
-              <div className="modal-info-row">
+              <div className="flex justify-between">
                 <span>24h Limit Remaining</span>
                 <span>{user.dailyLimit}</span>
               </div>
             </div>
 
             <form onSubmit={submit}>
-              <label className="modal-form-label">Amount in USD</label>
-              <div className="modal-input-wrap">
+              <label className="block text-[10px] text-text-muted mb-1.5 font-semibold uppercase tracking-[0.3px]">Amount in USD</label>
+              <div className="relative mb-4">
                 <input
                   autoFocus required type="number" placeholder="0.00"
                   value={amount} onChange={e => setAmount(e.target.value)}
-                  className="modal-input"
+                  className="w-full bg-[rgba(255,255,255,0.03)] border border-border-light rounded px-3 py-2.5 pr-[50px] text-text-main text-sm outline-none font-mono"
                 />
-                <span className="modal-currency-suffix">USD</span>
+                <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[11px] text-text-muted">USD</span>
               </div>
-              {error && <div className="modal-error">{error}</div>}
-              <div className="modal-actions">
-                <button type="button" onClick={close} className="modal-cancel-btn" disabled={loading}>
+              {error && <div className="text-[#ff3b3b] text-[11px] pb-3">{error}</div>}
+              <div className="flex gap-2">
+                <button type="button" onClick={close}
+                  className="flex-1 py-2.5 px-4 bg-transparent border border-border-light rounded text-text-main text-[11px] font-semibold cursor-pointer"
+                  disabled={loading}>
                   CANCEL
                 </button>
-                <button type="submit" className="start-bot-btn modal-confirm-btn" disabled={loading}>
+                <button type="submit"
+                  className="flex-[2] flex items-center justify-center gap-1.5 py-2.5 px-4 border-none rounded bg-gradient-to-r from-neon-teal to-primary-dark text-black text-[11px] font-bold cursor-pointer transition-opacity hover:opacity-90"
+                  disabled={loading}>
                   {loading ? 'PROCESSING...' : 'CONFIRM WITHDRAWAL'}
                 </button>
               </div>

@@ -16,9 +16,9 @@ const MOCK: Contract[] = [
 ]
 
 const statusColors: Record<string, string> = {
-  Active: 'var(--color-up)',
-  Paused: 'var(--text-muted)',
-  Inactive: 'var(--color-down)',
+  Active: 'text-up',
+  Paused: 'text-text-muted',
+  Inactive: 'text-down',
 }
 
 export default function ActiveContracts() {
@@ -30,39 +30,35 @@ export default function ActiveContracts() {
   }, [])
 
   return (
-    <div className="active-contracts">
-      <div className="ac-header">
-        <span className="ac-title">Active Contracts</span>
+    <div className="flex flex-col bg-bg-panel border-t border-border-light">
+      <div className="flex items-center justify-between px-3 sm:px-4 py-2.5">
+        <span className="text-[13px] font-semibold text-text-main">Active Contracts</span>
         {loading ? (
           <Skeleton variant="text-sm" width="60px" />
         ) : (
-          <span className="ac-count">{MOCK.length} running</span>
+          <span className="text-[11px] text-text-muted">{MOCK.length} running</span>
         )}
       </div>
 
       {loading ? (
-        <div className="ac-scroll">
+        <div className="flex gap-2 px-3 sm:px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
           {[1, 2, 3].map(i => (
-            <div key={i} className="ac-card" style={{ border: 'none', background: 'transparent', padding: 0 }}>
-              <Skeleton variant="card" width="140px" height="56px" />
-            </div>
+            <Skeleton key={i} variant="card" width="140px" height="56px" />
           ))}
         </div>
       ) : MOCK.length === 0 ? (
-        <div className="ac-empty">No active contracts</div>
+        <div className="px-4 pb-4 text-xs text-text-muted text-center">No active contracts</div>
       ) : (
-        <div className="ac-scroll">
+        <div className="flex gap-2 px-3 sm:px-4 pb-3 overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
           {MOCK.map(c => (
-            <div key={c.id} className="ac-card">
-              <div className="ac-card-top">
-                <span className="ac-pair">{c.pair.split('/')[0]}</span>
-                <span className="ac-status" style={{ color: statusColors[c.status] }}>
-                  ● {c.status}
-                </span>
+            <div key={c.id} className="flex flex-col shrink-0 gap-0.5 bg-bg-input rounded-lg px-3 py-2 min-w-[150px]">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-text-main">{c.pair.split('/')[0]}</span>
+                <span className={`text-[10px] font-semibold ${statusColors[c.status]}`}>● {c.status}</span>
               </div>
-              <div className="ac-card-bottom">
-                <span className="ac-value">${c.value.toLocaleString()}</span>
-                <span className={`ac-pnl ${c.pnl >= 0 ? 'up' : 'down'}`}>
+              <div className="flex items-center justify-between">
+                <span className="text-[12px] font-mono font-bold text-text-main">${c.value.toLocaleString()}</span>
+                <span className={`text-[11px] font-mono font-bold ${c.pnl >= 0 ? 'text-up' : 'text-down'}`}>
                   {c.pnl >= 0 ? '+' : ''}${c.pnl.toFixed(2)}
                 </span>
               </div>

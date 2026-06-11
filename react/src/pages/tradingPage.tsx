@@ -1,6 +1,4 @@
 import { useState, useEffect } from 'react'
-import '../styles/tradingPage.css'
-import '../styles/dashboard.css'
 import TradingChart from '../components/trading/TradingChart'
 import TradingForm from '../components/trading/TradingForm'
 import MarketTickerBar from '../components/trading/MarketTickerBar'
@@ -43,21 +41,17 @@ const Trading = () => {
   }
 
   return (
-    <div className="trading-page-wrapper">
-      <div className="trading-grid">
-        <div className="ticker-column">
-          <MarketTickerBar pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
-        </div>
-
-        <div className="chart-column">
-          <div className="chart-container">
-            <TradingChart symbol={selectedPair} />
+    <div className="min-h-screen pt-14 flex bg-bg-dark">
+      <div className="flex flex-col w-full">
+        <MarketTickerBar pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0 border-t border-border-light">
+          <div className="flex-1 flex flex-col min-w-0 lg:border-r border-border-light">
+            <div className="flex-1 min-h-[400px] lg:min-h-[500px]">
+              <TradingChart symbol={selectedPair} />
+            </div>
+            <ActiveContracts />
           </div>
-          <ActiveContracts />
-        </div>
-
-        <div className="settings-column">
-          <div className="settings-card">
+          <div className="lg:w-[320px] shrink-0 border-t lg:border-t-0 border-border-light">
             <TradingForm selectedPair={selectedPair} botSettings={botSettings} onSettingChange={handleSettingChange} />
           </div>
         </div>

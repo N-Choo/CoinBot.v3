@@ -45,48 +45,53 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
 
   return (
     <>
-      <div className="bot-strategy-panel">
-        <div className="strategy-header">
-          <span className="status-dot" />
-          <span className="strategy-title">Trade Contract</span>
+      <div className="flex flex-col bg-bg-panel h-full max-h-[calc(100vh-180px)] sm:max-h-none">
+        <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-border-light">
+          <span className="w-2 h-2 rounded-full bg-[#00d46a] shrink-0" />
+          <span className="text-[13px] font-semibold text-text-main">Trade Contract</span>
         </div>
 
-        <div className="strategy-inputs">
+        <div className="p-4 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
           {settingsConfig.map(setting => (
-            <div key={setting.key} className="trade-input-group">
-              <label>{setting.label}</label>
-              <div className="input-wrapper">
+            <div key={setting.key} className="flex flex-col gap-1">
+              <label className="text-[11px] font-semibold uppercase tracking-[0.5px] text-text-muted">{setting.label}</label>
+              <div className="relative flex items-center">
                 <input
                   type="text"
                   placeholder={setting.placeholder}
                   value={botSettings[setting.key]}
                   onChange={e => onSettingChange(setting.key, e.target.value)}
+                  className="w-full bg-bg-input border border-border rounded text-xs text-text-main px-3 py-2 outline-none placeholder:text-text-muted pr-11"
                 />
-                {setting.suffix && <span className="currency-badge">{setting.suffix}</span>}
+                {setting.suffix && (
+                  <span className="absolute right-1.5 text-[10px] font-semibold uppercase tracking-[0.3px] text-text-muted bg-bg-panel px-1.5 py-0.5 rounded">{setting.suffix}</span>
+                )}
               </div>
             </div>
           ))}
         </div>
 
-        <div className="strategy-summary">
-          <div className="strategy-row">
-            <span className="strategy-key">Pair</span>
-            <span className="strategy-val">{selectedPair}</span>
+        <div className="px-4 py-2 border-t border-border-light space-y-1.5">
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-text-muted">Pair</span>
+            <span className="text-[11px] font-semibold text-text-main">{selectedPair}</span>
           </div>
-          <div className="strategy-row">
-            <span className="strategy-key">Est. Profit</span>
-            <span className="strategy-val profit">+{estProfit} USDT</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-text-muted">Est. Profit</span>
+            <span className="text-[11px] font-semibold text-up">+{estProfit} USDT</span>
           </div>
-          <div className="strategy-row">
-            <span className="strategy-key">Est. Loss</span>
-            <span className="strategy-val loss">-{estLoss} USDT</span>
+          <div className="flex items-center justify-between">
+            <span className="text-[11px] text-text-muted">Est. Loss</span>
+            <span className="text-[11px] font-semibold text-down">-{estLoss} USDT</span>
           </div>
         </div>
 
-        <button className="strategy-start-btn" onClick={handleStart}>
-          <svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><polygon points="5 3 19 12 5 21 5 3" /></svg>
-          Sign Contract
-        </button>
+        <div className="p-4 mt-auto">
+          <button className="w-full flex items-center justify-center gap-2 py-2 px-4 border-none rounded bg-accent text-[12px] font-bold text-bg-dark cursor-pointer transition-all hover:brightness-110 active:brightness-95" onClick={handleStart}>
+            <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><polygon points="5 3 19 12 5 21 5 3" /></svg>
+            Sign Contract
+          </button>
+        </div>
       </div>
 
       {showDeposit && (

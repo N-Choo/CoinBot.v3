@@ -25,12 +25,12 @@ export default function LiveTicker() {
   }, [])
 
   return (
-    <div className="live-ticker">
+    <div className="border border-border-light rounded-xl p-2 bg-bg-panel backdrop-blur-xl">
       {tickers.map(t => (
-        <div key={t.raw} className={`ticker-row ${t.isUp ? 'up' : 'down'}`}>
-          <span className="ticker-pair">{t.pair}</span>
-          <span className="ticker-price">${t.price}</span>
-          <span className="ticker-change">{t.change}</span>
+        <div key={t.raw} className={`grid grid-cols-[100px_1fr_80px] items-center gap-3 px-4 py-3.5 rounded-lg transition-colors hover:bg-[rgba(255,255,255,0.03)] ${t.isUp ? 'text-up' : 'text-down'}`}>
+          <span className="text-[14px] font-bold font-mono text-text-main">{t.pair}</span>
+          <span className="text-[16px] font-bold font-mono text-right">${t.price}</span>
+          <span className={`text-[13px] font-semibold font-mono text-right px-2 py-0.5 rounded ${t.isUp ? 'bg-[rgba(0,212,170,0.1)]' : 'bg-[rgba(255,59,59,0.1)]'}`}>{t.change}</span>
         </div>
       ))}
     </div>

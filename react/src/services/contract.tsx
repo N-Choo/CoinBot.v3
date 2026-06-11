@@ -38,7 +38,8 @@ export async function signContract(settings: BotSettings): Promise<SignContractR
     await axios.post('/api/contracts/sign', { nonce, message, signature })
   } catch (err: unknown) {
     if (axios.isAxiosError(err) && err.response) {
-      const msg = err.response.data as string
+      const data = err.response.data
+      const msg = typeof data === 'string' ? data : data?.error ?? JSON.stringify(data)
       if (err.response.status === 400 && msg === 'Insufficient funds') {
         return { success: false, message: msg, insufficientFunds: true }
       }

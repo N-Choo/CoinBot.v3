@@ -9,23 +9,20 @@ describe('ActivityFeed', () => {
     render(<ActivityFeed />)
     const header = screen.getByText('Live Activity')
     expect(header).toBeInTheDocument()
-    expect(document.querySelector('.feed-dot')).toBeInTheDocument()
+    expect(screen.getByTestId('feed-dot')).toBeInTheDocument()
   })
 
   test('renders all duplicated trade items (20 total)', () => {
     render(<ActivityFeed />)
-    const items = document.querySelectorAll('.feed-item')
+    const items = screen.getAllByTestId('feed-item')
     expect(items).toHaveLength(TRADE_COUNT * 2)
   })
 
   test('renders BUY, SELL, and STAKE items with correct classes', () => {
     render(<ActivityFeed />)
-    const buyItems = document.querySelectorAll('.feed-buy')
-    const sellItems = document.querySelectorAll('.feed-sell')
-    const stakeItems = document.querySelectorAll('.feed-stake')
-    expect(buyItems.length).toBeGreaterThan(0)
-    expect(sellItems.length).toBeGreaterThan(0)
-    expect(stakeItems.length).toBeGreaterThan(0)
+    expect(screen.getAllByText('BUY').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('SELL').length).toBeGreaterThan(0)
+    expect(screen.getAllByText('STAKE').length).toBeGreaterThan(0)
   })
 
   test('shows trade type for each item', () => {
@@ -46,15 +43,15 @@ describe('ActivityFeed', () => {
     render(<ActivityFeed />)
     const stakePairs = screen.getAllByText('ETH \u2192 Lido')
     stakePairs.forEach(pair => {
-      const feedItem = pair.closest('.feed-item')
-      const pnl = feedItem?.querySelector('.feed-pnl')
+      const feedItem = pair.closest('[data-testid="feed-item"]')
+      const pnl = feedItem?.querySelector('[data-testid="feed-pnl"]')
       expect(pnl).toBeNull()
     })
   })
 
   test('renders pnl for non-STAKE items without double plus sign', () => {
     render(<ActivityFeed />)
-    const pnlElements = document.querySelectorAll('.feed-pnl')
+    const pnlElements = screen.getAllByTestId('feed-pnl')
     expect(pnlElements.length).toBeGreaterThan(0)
     pnlElements.forEach(el => {
       const text = el.textContent || ''
