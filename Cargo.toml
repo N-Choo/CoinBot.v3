@@ -1,10 +1,10 @@
 [workspace]
 resolver = "2"
 members = [
-    "api_gateway",
+    "process/api_gateway",
     "common",
     "share",
-    "deposit-worker",
+    "process/deposit-worker",
 ]
 
 [workspace.dependencies]

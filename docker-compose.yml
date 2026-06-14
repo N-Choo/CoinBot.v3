@@ -2,7 +2,7 @@ services:
   deposit-worker:
     build:
       context: .
-      dockerfile: deposit-worker/Dockerfile
+      dockerfile: process/deposit-worker/Dockerfile
       target: dev-builder
     command: cargo run -p deposit
     volumes:
@@ -20,7 +20,7 @@ services:
     image: ghcr.io/n-choo/coinbot-worker:latest
     build:
       context: .
-      dockerfile: deposit-worker/Dockerfile
+      dockerfile: process/deposit-worker/Dockerfile
     env_file:
       - .env
     environment:
@@ -33,7 +33,7 @@ services:
   backend-dev:
     build:
       context: .
-      dockerfile: api_gateway/Dockerfile
+      dockerfile: process/api_gateway/Dockerfile
       target: dev-builder
     command: cargo run -p api-gateway
     env_file:
@@ -55,7 +55,7 @@ services:
     image: ghcr.io/n-choo/coinbot-backend:latest
     build:
       context: .
-      dockerfile: api_gateway/Dockerfile
+      dockerfile: process/api_gateway/Dockerfile
     env_file:
       - .env
     ports:

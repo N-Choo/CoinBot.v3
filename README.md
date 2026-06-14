@@ -64,10 +64,10 @@ make ci               # full pipeline (fmt → clippy → test → build)
 ## Project structure
 
 ```
-api_gateway/       HTTP API — auth, routing, deposit validation, contract signing
+process/api_gateway/       HTTP API — auth, routing, deposit validation, contract signing
 common/            Proto-compiled gRPC stubs
 share/             Shared DB models, RPC client, ERC20 decoder, contract model
-deposit-worker/    gRPC server + background KuCoin sweeper
+process/deposit-worker/    gRPC server + background KuCoin sweeper
 market_analyser/   ML-based market signal generator (Python)
 react/             SPA dashboard + trading interface
 proto/             gRPC contract definitions

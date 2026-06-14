@@ -66,7 +66,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: api_gateway/Dockerfile
+          file: process/api_gateway/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-backend:latest
@@ -74,7 +74,7 @@ jobs:
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: deposit-worker/Dockerfile
+          file: process/deposit-worker/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-worker:latest

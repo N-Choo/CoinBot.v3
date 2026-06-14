@@ -18,7 +18,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let database_url = std::env::var("DATABASE_URL")?;
     let pool = sqlx::PgPool::connect(&database_url).await?;
-    sqlx::migrate!("../migrations").run(&pool).await?;
+    sqlx::migrate!("../../migrations").run(&pool).await?;
 
     let api_key = std::env::var("API_KEY").expect("API_KEY");
     let api_secret = std::env::var("API_SECRET").expect("API_SECRET");
