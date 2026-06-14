@@ -23,7 +23,7 @@ impl AppState {
             .await
             .context("Failed to connect to the Database")?;
 
-        sqlx::migrate!("../../migrations")
+        sqlx::migrate!("../migrations")
             .run(&db_pool)
             .await
             .map_err(|e| anyhow::anyhow!("Failed to run database migrations: {e}"))?;

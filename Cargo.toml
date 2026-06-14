@@ -2,8 +2,8 @@
 resolver = "2"
 members = [
     "process/api_gateway",
-    "common",
-    "share",
+    "lib/common",
+    "lib/share",
     "process/deposit-worker",
 ]
 

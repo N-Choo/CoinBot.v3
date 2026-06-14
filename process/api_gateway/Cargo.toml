@@ -4,8 +4,8 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-common = { path = "../../common" }
-share = { path = "../../share" }
+common = { path = "../../lib/common" }
+share = { path = "../../lib/share" }
 actix-web.workspace = true
 anyhow.workspace = true
 uuid.workspace = true
