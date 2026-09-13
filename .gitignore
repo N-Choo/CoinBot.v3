@@ -5,3 +5,4 @@ docs/*
 target/
 .superpowers/
 graphify-out/
+__pycache__/

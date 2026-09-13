@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 ethers.workspace = true
+futures = "0.3"
 log.workspace = true
 redis.workspace = true
 sqlx.workspace = true
@@ -12,6 +13,13 @@ uuid.workspace = true
 chrono.workspace = true
 env_logger.workspace = true
 serde.workspace = true
+thiserror.workspace = true
+serde_json.workspace = true
+tonic = "0.12"
+prost = "0.13"
+
+[build-dependencies]
+tonic-build = "0.12"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["full"] }

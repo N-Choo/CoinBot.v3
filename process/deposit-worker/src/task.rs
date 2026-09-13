@@ -1,7 +1,7 @@
 use tokio::sync::{mpsc, oneshot};
 use tonic::Status;
 
-use common::TicketResponse;
+use share::TicketResponse;
 use share::db::deposit::Deposit;
 use share::rpc::Rpc;
 

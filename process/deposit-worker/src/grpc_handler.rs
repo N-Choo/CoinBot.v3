@@ -2,8 +2,8 @@ use tokio::sync::{mpsc, oneshot};
 use tonic::{Request, Response, Status};
 
 use crate::task::DepositTask;
-use common::deposit_service_server::DepositService;
-use common::{TicketRequest, TicketResponse};
+use share::deposit_service_server::DepositService;
+use share::{TicketRequest, TicketResponse};
 
 pub struct DepositServer {
     pub tx: mpsc::Sender<DepositTask>,

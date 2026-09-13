@@ -1,6 +1,6 @@
 use actix_cors::Cors;
 use actix_web::http;
-use common::{ProcessConfig, ProcessError};
+use share::{ProcessConfig, ProcessError};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {

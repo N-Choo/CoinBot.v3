@@ -5,7 +5,7 @@ use actix_web::{
     web,
 };
 use api_gateway::{config::AppConfig, routes::api_routes};
-use common::ProcessError;
+use share::ProcessError;
 use dotenvy::dotenv;
 use share::logger::init_logger;
 

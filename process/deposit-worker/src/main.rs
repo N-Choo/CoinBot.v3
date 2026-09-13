@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use common::{deposit_service_server::DepositServiceServer, ProcessConfig, ProcessError};
+use share::{deposit_service_server::DepositServiceServer, ProcessConfig, ProcessError};
 use kucoin::client::rest::{Credentials, KuCoinClient};
 use tokio::spawn;
 use tokio::sync::{mpsc, Semaphore};

@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-common = { path = "../../lib/common" }
+dotenvy.workspace = true
+log.workspace = true
+serde = { workspace = true, features = ["derive"] }
+serde_json.workspace = true
 share = { path = "../../lib/share" }
+sqlx.workspace = true
 tokio = { version = "1", features = ["full"] }

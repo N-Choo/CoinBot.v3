@@ -12,7 +12,6 @@ services:
       - .env
     environment:
       - RUST_LOG=debug
-      - GRPC_ADDR=0.0.0.0:50051
     networks:
       - app-network
 
@@ -97,6 +96,51 @@ services:
       - backend
     networks:
       - app-network
+
+  trade-engine:
+    build:
+      context: .
+      dockerfile: process/trade-engine/Dockerfile
+      target: dev-builder
+    command: cargo run -p trade-engine
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=debug
+    depends_on:
+      - redis
+    networks:
+      - app-network
+
+  trade-engine-prod:
+    build:
+      context: .
+      dockerfile: process/trade-engine/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    profiles:
+      - prod
+
+  analyzer:
+    build:
+      context: .
+      dockerfile: analyzer/Dockerfile
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    profiles:
+      - prod
 
   redis:
     image: redis:7-alpine

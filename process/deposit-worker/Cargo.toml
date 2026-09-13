@@ -4,7 +4,6 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-common = { path = "../../lib/common" }
 share = { path = "../../lib/share" }
 tonic = "0.12"
 tonic-health = "0.12"

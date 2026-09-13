@@ -1,15 +1,20 @@
+use futures::StreamExt;
 use redis::{AsyncCommands, Client};
 
 #[derive(Clone)]
 pub struct Cache {
     conn: redis::aio::MultiplexedConnection,
+    url: String,
 }
 
 impl Cache {
     pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {
         let client = Client::open(redis_url)?;
         let conn = client.get_multiplexed_async_connection().await?;
-        Ok(Self { conn })
+        Ok(Self {
+            conn,
+            url: redis_url.to_string(),
+        })
     }
 
     pub async fn get(&self, key: &str) -> Option<String> {
@@ -36,5 +41,26 @@ impl Cache {
         if let Err(e) = conn.publish::<&str, &str, ()>(channel, msg).await {
             log::error!("Redis publish failed: {e}");
         }
+    }
+
+    pub async fn subscribe<F, Fut>(
+        &self,
+        channel: &str,
+        mut handler: F,
+    ) -> Result<(), redis::RedisError>
+    where
+        F: FnMut(String) -> Fut + Send,
+        Fut: std::future::Future<Output = ()> + Send,
+    {
+        let client = Client::open(self.url.clone())?;
+        let mut pubsub = client.get_async_pubsub().await?;
+        pubsub.subscribe(channel).await?;
+
+        let mut stream = pubsub.on_message();
+        while let Some(msg) = stream.next().await {
+            let payload: String = msg.get_payload()?;
+            handler(payload).await;
+        }
+        Ok(())
     }
 }

@@ -1,8 +1,8 @@
 use actix_web::{HttpResponse, Responder, web};
 use sqlx::PgPool;
 
-use common::{TicketRequest, deposit_service_client::DepositServiceClient};
 use ethers::types::Address;
+use share::{TicketRequest, deposit_service_client::DepositServiceClient};
 use share::{
     db::{self, deposit::DepositFilter},
     erc20::Erc20,

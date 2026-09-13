@@ -7,9 +7,11 @@ pub fn init_logger() {
             let style = buf.default_level_style(record.level());
             writeln!(
                 buf,
-                "[{}] [{style}{level:^9}{style:#}] [{:^20}] {}",
+                "[{}] [{style}{level:^9}{style:#}] [{:^20}] [{}:{}] {}",
                 buf.timestamp(),
                 record.target().split("::").last().unwrap_or("SERVER"),
+                record.file().unwrap_or("?"),
+                record.line().unwrap_or(0),
                 record.args(),
                 style = style,
                 level = record.level(),

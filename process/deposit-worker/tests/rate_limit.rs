@@ -1,8 +1,8 @@
 use tokio::sync::{mpsc, oneshot};
 use tonic::Request;
 
-use common::deposit_service_server::DepositService;
-use common::TicketRequest;
+use share::deposit_service_server::DepositService;
+use share::TicketRequest;
 use deposit::grpc_handler::DepositServer;
 use deposit::task::DepositTask;
 
