@@ -4,6 +4,7 @@ use share::models::signals::TradeSignal;
 
 mod app_config;
 mod app_state;
+mod trader;
 
 use app_config::AppConfig;
 use app_state::AppState;
@@ -32,7 +33,12 @@ async fn main() -> Result<(), ProcessError> {
         if let Err(e) = signal_cache
             .subscribe("signals:result", |payload| async move {
                 match serde_json::from_str::<Vec<TradeSignal>>(&payload) {
-                    Ok(signals) => for signal in &signals {},
+                    Ok(signals) => {
+                        for _signal in &signals {
+                            //TODO: open_trade(signal).await;
+                            break;
+                        }
+                    }
                     Err(e) => {
                         log::error!("failed to parse signal: {e}");
                     }

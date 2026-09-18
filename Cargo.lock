@@ -5205,6 +5205,7 @@ name = "trade-engine"
 version = "0.1.0"
 dependencies = [
  "dotenvy",
+ "kucoin",
  "log",
  "serde",
  "serde_json",
