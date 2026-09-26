@@ -6,10 +6,10 @@ help:
 	@echo "CoinBot.v3 Makefile"
 	@echo ""
 	@echo "Getting Started"
-	@echo "  make dev          Start all services (API + worker + DB + Redis + frontend)"
+	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
 	@echo ""
-	@echo "Testing"
-	@echo "  make test         Run all tests (Rust + Python, needs Redis running)"
+	@echo "Testing (needs 'make dev' running first)"
+	@echo "  make test         Run all tests (Rust + Python)"
 	@echo "  make analyzer-test  Python analyzer unit tests only"
 	@echo "  make benchmark-test  Benchmark unit tests only"
 	@echo "  make frontend-test  Frontend tests only"
@@ -55,12 +55,13 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
-	@docker compose up -d redis && \
-		cargo test $(addprefix -p ,$(PACKAGES)); \
+	@docker compose up -d postgres redis && \
+		sleep 2 && \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
 		cd process/analyzer && python3 -m pytest . -v; \
 		pst=$$?; \
-		docker compose stop redis; \
+		docker compose stop redis postgres; \
 		exit $$(( rst + pst ))
 
 analyzer-test:
@@ -91,13 +92,14 @@ clean:
 	docker compose down --rmi all -v
 
 dev:
-	docker compose up backend-dev deposit-worker trade-engine frontend redis
+	docker compose up -d postgres redis && \
+		docker compose up backend deposit-worker trade-engine frontend
 
 prod-build:
 	docker compose build deposit-worker-prod backend frontend-prod
 
 prod:
-	docker compose --profile prod up -d deposit-worker-prod backend frontend-prod trade-engine-prod analyzer redis
+	docker compose --profile prod up -d deposit-worker-prod backend-prod frontend-prod trade-engine-prod analyzer redis postgres
 
 logs:
 	docker compose logs -f
@@ -109,13 +111,14 @@ test-api:
 	./scripts/test-api.sh
 
 trade:
-	@docker compose up -d redis && \
-		(cd process && REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
+	@docker compose up -d postgres redis && \
+		sleep 2 && \
+		(cd process && DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
 		PID=$$!; sleep 2 && \
-		REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
 		sleep 3; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \
-		docker compose stop redis
+		docker compose stop redis postgres
 
 proto:
 	cargo build -p common --timings
