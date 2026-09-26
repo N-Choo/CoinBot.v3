@@ -2,8 +2,8 @@ use share::{ProcessConfig, ProcessError};
 
 #[derive(Debug, Clone)]
 pub struct AppConfig {
-    pub db_url: String, 
-    pub redis_ulr:String,
+    pub db_url: String,
+    pub redis_ulr: String,
 }
 
 impl AppConfig {

@@ -17,12 +17,14 @@ async fn main() -> Result<(), ProcessError> {
 
     let config = AppConfig::from_env()?;
     let app_state = AppState::new(&config).await?;
+    let app_state_copy = app_state.clone();
+
+    let _db = app_state.db_pool;
     let cache = app_state.redis_cache.clone();
 
     // loop signal generator
-    let app_state_copy = app_state.clone();
     tokio::spawn(async move {
-        if let Err(e) = signal_generator(app_state_copy).await {
+        if let Err(e) = signal_generator(&app_state_copy).await {
             log::error!("ignite analyze err: {e}");
         }
     });
@@ -35,8 +37,8 @@ async fn main() -> Result<(), ProcessError> {
                 match serde_json::from_str::<Vec<TradeSignal>>(&payload) {
                     Ok(signals) => {
                         for _signal in &signals {
-                            //TODO: open_trade(signal).await;
-                            break;
+                            todo!();
+                            // consider_action(signal).await;
                         }
                     }
                     Err(e) => {
@@ -57,14 +59,14 @@ async fn main() -> Result<(), ProcessError> {
     Ok(())
 }
 
-async fn signal_generator(app_state: AppState) -> Result<(), ProcessError> {
-    let pool = app_state.db_pool;
-    let cache = app_state.redis_cache;
+async fn signal_generator(app_state: &AppState) -> Result<(), ProcessError> {
+    let pool = &app_state.db_pool;
+    let cache = &app_state.redis_cache;
 
     loop {
         let tickers = ContractFilter::new()
             .with_status(Status::Active)
-            .execute_tickers(&pool)
+            .execute_tickers(pool)
             .await?;
 
         let msg = serde_json::to_string(&tickers)?;

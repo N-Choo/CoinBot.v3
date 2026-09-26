@@ -15,7 +15,7 @@ impl AppState {
     pub async fn new(cfg: &AppConfig) -> Result<Self, ProcessError> {
         let db_pool = PgPool::connect(&cfg.db_url).await?;
         let redis_cache = Cache::new(&cfg.redis_ulr).await?;
-        let kc_client = KuCoinClient::new(credentials);
+        // let kc_client = KuCoinClient::new(credentials);
 
         Ok(Self {
             db_pool,
