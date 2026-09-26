@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api trade analyzer-test
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api trade analyzer-test status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -41,7 +41,13 @@ help:
 	@echo "  make ci           Full pipeline (fmt + clippy + test + lint + build)"
 	@echo ""
 	@echo "Cleanup"
-	@echo "  make clean        Remove all containers, images, and volumes"
+	@echo "  make clean        Remove prod containers, images, and volumes"
+	@echo "  make clean-all    Remove ALL containers, images, and volumes"
+	@echo ""
+	@echo "Seeding"
+	@echo "  make seed         Insert demo data into local DB (3 users, 5 contracts)"
+	@echo "  make seed-reset   Wipe and re-seed demo data"
+	@echo "  make db           Open psql shell to the local DB"
 
 ci: fmt-fix clippy test analyzer-test frontend-lint-fix frontend-test frontend-build
 
@@ -89,7 +95,16 @@ frontend-build: frontend-install
 	cd react && npm run build
 
 clean:
-	docker compose down --rmi all -v
+	docker compose --profile prod stop
+	docker compose --profile prod down --rmi all --volumes --remove-orphans
+
+clean-all:
+	docker compose stop
+	docker compose down --rmi all --volumes --remove-orphans
+	docker volume prune -f
+
+status:
+	@docker compose ps 2>/dev/null
 
 dev:
 	docker compose up -d postgres redis && \
@@ -122,3 +137,13 @@ trade:
 
 proto:
 	cargo build -p common --timings
+
+seed:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -f scripts/seed-demo.sql
+
+seed-reset:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -c "TRUNCATE contracts, users RESTART IDENTITY CASCADE;"
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -f scripts/seed-demo.sql
+
+db:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot

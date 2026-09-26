@@ -85,6 +85,7 @@ services:
       - RUST_LOG=debug
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+      - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
     depends_on:
       - postgres
       - deposit-worker
@@ -127,7 +128,7 @@ services:
     networks:
       - app-network
     environment:
-      - VITE_API_URL=http://localhost:8081
+      - VITE_BACKEND_URL=http://backend:8080
 
   frontend-prod:
     build:
@@ -160,6 +161,7 @@ services:
     depends_on:
       - postgres
       - redis
+      - deposit-worker
     networks:
       - app-network
 
