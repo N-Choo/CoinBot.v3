@@ -1,9 +1,9 @@
 use tokio::sync::{mpsc, oneshot};
 use tonic::Status;
 
-use share::TicketResponse;
 use share::db::deposit::Deposit;
 use share::rpc::Rpc;
+use share::TicketResponse;
 
 pub struct DepositTask {
     pub tx_hash: String,

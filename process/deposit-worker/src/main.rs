@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
-use share::{deposit_service_server::DepositServiceServer, ProcessConfig, ProcessError};
 use kucoin::client::rest::{Credentials, KuCoinClient};
+use share::{deposit_service_server::DepositServiceServer, ProcessConfig, ProcessError};
 use tokio::spawn;
 use tokio::sync::{mpsc, Semaphore};
 use tonic::transport::Server;

@@ -3,40 +3,45 @@ PACKAGES = api-gateway share deposit trade-engine
 .PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api trade analyzer-test
 
 help:
-	@echo "Usage: make <target>"
+	@echo "CoinBot.v3 Makefile"
 	@echo ""
-	@echo "Docker"
-	@echo "  clean        Remove all containers, images, and volumes"
+	@echo "Getting Started"
+	@echo "  make dev          Start all services (API + worker + DB + Redis + frontend)"
+	@echo ""
+	@echo "Testing"
+	@echo "  make test         Run all tests (Rust + Python, needs Redis running)"
+	@echo "  make analyzer-test  Python analyzer unit tests only"
+	@echo "  make benchmark-test  Benchmark unit tests only"
+	@echo "  make frontend-test  Frontend tests only"
+	@echo ""
+	@echo "Trading"
+	@echo "  make trade        Run trade-engine + Python analyzer live (needs DB + Redis)"
+	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
 	@echo ""
 	@echo "Development"
-	@echo "  dev          Start deposit-worker + backend-dev + frontend"
-	@echo "  trade        Run trade-engine + Python analyzer"
-	@echo "  test-api     Run curl tests against the API"
-	@echo "  logs         Follow logs from all services"
-	@echo "  logs-backend Follow backend logs"
+	@echo "  make logs         Follow logs from all services"
+	@echo "  make logs-backend Follow backend logs only"
+	@echo "  make test-api     Run curl tests against the running API"
 	@echo ""
 	@echo "Production"
-	@echo "  prod         Build + start all production services (detached)"
-	@echo "  prod-build   Build production images without running"
+	@echo "  make prod         Build + start all production services (detached)"
+	@echo "  make prod-build   Build production images without running"
 	@echo ""
 	@echo "Rust"
-	@echo "  fmt          Check formatting"
-	@echo "  fmt-fix      Fix formatting"
-	@echo "  clippy       Lint (deny warnings)"
-	@echo "  test         Run Rust unit tests"
-	@echo "  analyzer-test Run Python analyzer unit tests"
-	@echo "  benchmark-test Run benchmark unit tests"
-	@echo "  benchmark      Run RSI signal backtesting (requires KuCoin access)"
-	@echo "  proto        Compile wallet.proto (verify proto only)"
+	@echo "  make fmt          Check Rust formatting"
+	@echo "  make fmt-fix      Fix Rust formatting"
+	@echo "  make clippy       Lint Rust (deny warnings)"
 	@echo ""
 	@echo "Frontend"
-	@echo "  frontend-lint      Lint frontend"
-	@echo "  frontend-lint-fix  Auto-fix frontend lint"
-	@echo "  frontend-test      Run frontend tests"
-	@echo "  frontend-build     Build frontend for production"
+	@echo "  make frontend-lint      Lint frontend"
+	@echo "  make frontend-lint-fix  Auto-fix frontend lint"
+	@echo "  make frontend-build     Build frontend for production"
 	@echo ""
 	@echo "CI"
-	@echo "  ci           Run full CI pipeline (fmt + clippy + test + lint + build)"
+	@echo "  make ci           Full pipeline (fmt + clippy + test + lint + build)"
+	@echo ""
+	@echo "Cleanup"
+	@echo "  make clean        Remove all containers, images, and volumes"
 
 ci: fmt-fix clippy test analyzer-test frontend-lint-fix frontend-test frontend-build
 
@@ -53,19 +58,19 @@ test:
 	@docker compose up -d redis && \
 		cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
-		cd analyzer && python3 -m pytest . -v; \
+		cd process/analyzer && python3 -m pytest . -v; \
 		pst=$$?; \
 		docker compose stop redis; \
 		exit $$(( rst + pst ))
 
 analyzer-test:
-	@cd analyzer && python3 -m pytest . -v
+	@cd process/analyzer && python3 -m pytest . -v
 
 benchmark-test:
-	@cd analyzer && python3 -m pytest benchmark/tests/ -v
+	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
 
 benchmark:
-	@python3 -m analyzer.benchmark.main
+	@cd process && python3 -m analyzer.benchmark.main
 
 frontend-install:
 	cd react && npm ci
@@ -105,7 +110,7 @@ test-api:
 
 trade:
 	@docker compose up -d redis && \
-		(REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
+		(cd process && REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
 		PID=$$!; sleep 2 && \
 		REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
 		sleep 3; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \

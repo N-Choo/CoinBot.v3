@@ -6,3 +6,4 @@ target/
 .superpowers/
 graphify-out/
 __pycache__/
+process/analyzer/*

@@ -72,7 +72,10 @@ mod tests {
     #[test]
     fn display_missing_env() {
         let err = ProcessError::MissingEnv("DATABASE_URL".into());
-        assert_eq!(err.to_string(), "missing environment variable: DATABASE_URL");
+        assert_eq!(
+            err.to_string(),
+            "missing environment variable: DATABASE_URL"
+        );
     }
 
     #[test]

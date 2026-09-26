@@ -130,8 +130,8 @@ services:
 
   analyzer:
     build:
-      context: .
-      dockerfile: analyzer/Dockerfile
+      context: ./process/analyzer
+      dockerfile: Dockerfile
     environment:
       - REDIS_HOST=redis
       - REDIS_PORT=6379

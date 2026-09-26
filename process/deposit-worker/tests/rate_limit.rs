@@ -1,10 +1,10 @@
 use tokio::sync::{mpsc, oneshot};
 use tonic::Request;
 
-use share::deposit_service_server::DepositService;
-use share::TicketRequest;
 use deposit::grpc_handler::DepositServer;
 use deposit::task::DepositTask;
+use share::deposit_service_server::DepositService;
+use share::TicketRequest;
 
 #[tokio::test]
 async fn rejects_when_queue_full() {

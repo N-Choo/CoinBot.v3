@@ -15,7 +15,7 @@ mod analyzer {
     tonic::include_proto!("analyzer");
 }
 
-pub use wallet::*;
 pub use analyzer::*;
 pub use config::{ProcessConfig, ServiceConfig};
 pub use error::{ProcessError, ServiceError};
+pub use wallet::*;

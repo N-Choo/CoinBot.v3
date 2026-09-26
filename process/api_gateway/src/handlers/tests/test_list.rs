@@ -14,12 +14,16 @@ mod tests {
 
     async fn setup_session_cache() -> SessionCache {
         let url = format!("{}/0", redis_base().trim_end_matches('/'));
-        SessionCache::new(&url).await.expect("Redis required for tests")
+        SessionCache::new(&url)
+            .await
+            .expect("Redis required for tests")
     }
 
     async fn setup_nonce_cache() -> NonceCache {
         let url = format!("{}/1", redis_base().trim_end_matches('/'));
-        NonceCache::new(&url).await.expect("Redis required for tests")
+        NonceCache::new(&url)
+            .await
+            .expect("Redis required for tests")
     }
 
     fn dummy_pool() -> PgPool {
