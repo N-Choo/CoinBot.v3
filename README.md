@@ -50,7 +50,7 @@ flowchart TB
     GW -->|"gRPC"| DW
     DW -->|"verify tx"| ETH
     DW -->|"sweep"| KC
-    DW -->|"credit balance"| DB
+    DW -->|"upsert user + credit balance"| DB
 
     TE -->|"publish tickers:analyze"| RD
     RD -->|"subscribe"| AN
@@ -139,7 +139,7 @@ sequenceDiagram
     W->>DB: insert deposit (pending)
     W-->>G: ticket_id
     G-->>U: 200 ticket_id
-    Note over W,DB: sweeper confirms tx and credits balance
+    Note over W,DB: sweeper confirms tx, upserts the user, credits balance
 ```
 
 ### Trading

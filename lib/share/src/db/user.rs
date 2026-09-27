@@ -33,7 +33,7 @@ impl User {
         sqlx::query_as::<_, Self>(
             r#"INSERT INTO users (wallet_address)
                VALUES ($1)
-               ON CONFLICT (wallet_address) DO NOTHING
+               ON CONFLICT (wallet_address) DO UPDATE SET wallet_address = EXCLUDED.wallet_address
                RETURNING *"#,
         )
         .bind(wallet)

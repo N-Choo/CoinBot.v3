@@ -113,11 +113,10 @@ async fn check_and_finalize(
     {
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-        // Add Money to Member Wallet
-        let user = User::find_by_wallet(pool, &deposit.from_address)
+        // Create the user on their first finalized deposit, or fetch the existing one.
+        let user = User::upsert(&mut tx, &deposit.from_address)
             .await
-            .map_err(|e| format!("Failed to identify user: {}", e))?
-            .ok_or_else(|| format!("user not found: {}", deposit.from_address))?;
+            .map_err(|e| format!("Failed to upsert user: {}", e))?;
 
         if let Err(e) = user.add_balance(&mut tx, &deposit.amount).await {
             return Err(e.to_string());
