@@ -1,3 +1,4 @@
+//! Wallet-based authentication: challenge/response login, sessions, and logout.
 pub mod cache;
 
 pub use cache::{NonceCache, SessionCache};
@@ -13,9 +14,18 @@ use uuid::Uuid;
 use crate::models::auth::{ChallengeQuery, ChallengeResponse, VerifySignaturRequest};
 use crate::models::err::AppError;
 
+/// Wallet authentication handlers.
 pub struct AuthController;
 
 impl AuthController {
+    /// `GET /api/user/auth?wallet_address=...` — issue a login nonce.
+    ///
+    /// Generates a UUID nonce, stores it in the nonce cache keyed by the
+    /// lowercased wallet address, and returns it as [`ChallengeResponse`].
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON `{ nonce }`.
+    /// - `500 Internal Server Error` — nonce could not be stored.
     pub async fn request_challenge(
         query: web::Query<ChallengeQuery>,
         nonce_cache: web::Data<NonceCache>,
@@ -33,6 +43,17 @@ impl AuthController {
         HttpResponse::Ok().json(ChallengeResponse { nonce })
     }
 
+    /// `POST /api/user/auth` — verify a signed nonce and start a session.
+    ///
+    /// Recovers the wallet from the signature, requires it to match the nonce
+    /// stored for that wallet, invalidates the nonce, and issues a session token
+    /// as an HttpOnly `session_token` cookie.
+    ///
+    /// Responses:
+    /// - `200 OK` — session cookie set.
+    /// - `400 Bad Request` — nonce missing or mismatched.
+    /// - `401 Unauthorized` — signature could not be recovered.
+    /// - `500 Internal Server Error` — session could not be stored.
     pub async fn login(
         payload: web::Json<VerifySignaturRequest>,
         nonce_cache: web::Data<NonceCache>,
@@ -72,6 +93,11 @@ impl AuthController {
         HttpResponse::Ok().cookie(session_cookies).finish()
     }
 
+    /// `POST /api/user/logout` — invalidate the current session.
+    ///
+    /// Responses:
+    /// - `200 OK` — session invalidated.
+    /// - `400 Bad Request` — no session cookie present.
     pub async fn logout(
         header: actix_web::HttpRequest,
         session_cache: web::Data<SessionCache>,
@@ -86,6 +112,12 @@ impl AuthController {
         }
     }
 
+    /// `POST /api/user/verify` — check whether the session cookie is valid.
+    ///
+    /// Responses:
+    /// - `200 OK` — session is valid.
+    /// - `400 Bad Request` — no session cookie present.
+    /// - `401 Unauthorized` — session token unknown or expired.
     pub async fn verify_session(
         header: actix_web::HttpRequest,
         session_cache: web::Data<SessionCache>,
@@ -103,6 +135,11 @@ impl AuthController {
         }
     }
 
+    /// Recover the signer address from a signature over `msg`.
+    ///
+    /// Returns the lowercased `0x`-prefixed wallet address, or an
+    /// [`AppError::Input`] when the signature is malformed or cannot be
+    /// recovered.
     pub fn get_wallet(s: &str, msg: &str) -> Result<String, AppError> {
         let signature = match Signature::from_str(s) {
             Ok(sig) => sig,

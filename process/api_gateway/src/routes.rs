@@ -6,6 +6,7 @@ use crate::handlers::contracts::Contracts;
 use crate::handlers::transaction::Transaction;
 use crate::handlers::user::auth::AuthController;
 
+/// Register the `/api` route tree on the Actix app.
 pub fn api_routes(cfg: &mut web::ServiceConfig) {
     cfg.service(
         web::scope("/api")
@@ -16,6 +17,7 @@ pub fn api_routes(cfg: &mut web::ServiceConfig) {
     );
 }
 
+/// Routes under `/api/user`: challenge, login, logout, and session verification.
 fn user_routes() -> impl HttpServiceFactory {
     web::scope("/user")
         .service(
@@ -27,12 +29,14 @@ fn user_routes() -> impl HttpServiceFactory {
         .route("/verify", web::post().to(AuthController::verify_session))
 }
 
+/// Routes under `/api/transactions`: deposit intake and deposit listing.
 fn transaction_routes() -> impl HttpServiceFactory {
     web::scope("/transactions")
         .route("/deposit", web::post().to(Transaction::deposit))
         .route("", web::get().to(Transaction::list))
 }
 
+/// Routes under `/api/contracts`: nonce issuance and contract signing.
 fn contract_routes() -> impl HttpServiceFactory {
     web::scope("/contracts")
         .route("/nonce", web::get().to(Contracts::get_nonce))

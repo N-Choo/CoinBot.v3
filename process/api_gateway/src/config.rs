@@ -2,20 +2,38 @@ use actix_cors::Cors;
 use actix_web::http;
 use share::{ProcessConfig, ProcessError};
 
+/// Runtime configuration for the API gateway, loaded from environment variables.
 #[derive(Debug, Clone)]
 pub struct AppConfig {
+    /// Bind address for the HTTP server.
     pub ip: String,
+    /// TCP port for the HTTP server.
     pub port: u16,
+    /// Number of Actix HTTP worker threads.
     pub n_worker: usize,
+    /// TCP backlog size for pending connections.
     pub n_queue: u32,
+    /// PostgreSQL connection string.
     pub db_url: String,
+    /// Redis URL (database 0) backing session tokens.
     pub session_redis_url: String,
+    /// Redis URL (database 1) backing login/signing nonces.
     pub nonce_redis_url: String,
+    /// gRPC endpoint of the deposit worker.
     pub grpc_deposit: String,
+    /// Origin permitted by CORS.
     pub allowed_origin: String,
 }
 
 impl AppConfig {
+    /// Build the configuration from environment variables.
+    ///
+    /// Reads `api_gateway`-prefixed values (falling back to unprefixed ones)
+    /// through [`ProcessConfig`], deriving the session and nonce Redis URLs
+    /// from `REDIS_URL` (databases 0 and 1 respectively).
+    ///
+    /// Returns [`ProcessError`] if a required variable is missing or cannot be
+    /// parsed.
     pub fn from_env() -> Result<Self, ProcessError> {
         let cfg = ProcessConfig::new("api_gateway");
 
@@ -34,6 +52,10 @@ impl AppConfig {
         })
     }
 
+    /// Build the CORS policy applied to every response.
+    ///
+    /// Allows the configured origin, `GET`/`POST`/`OPTIONS`, credentials, and
+    /// the authorization/accept/content-type headers.
     pub fn get_cors(&self) -> Cors {
         Cors::default()
             .allowed_origin(&self.allowed_origin)

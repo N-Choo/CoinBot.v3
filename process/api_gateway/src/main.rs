@@ -9,6 +9,11 @@ use dotenvy::dotenv;
 use share::ProcessError;
 use share::logger::init_logger;
 
+/// Service entry point.
+///
+/// Loads environment configuration, initialises logging and the shared
+/// [`AppState`](api_gateway::state::AppState), then starts the Actix-Web server
+/// with rate limiting, CORS, path normalisation, and request logging.
 #[actix_web::main]
 async fn main() -> Result<(), ProcessError> {
     dotenv().ok();

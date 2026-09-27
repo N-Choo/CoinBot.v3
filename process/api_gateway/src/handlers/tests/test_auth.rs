@@ -1,5 +1,7 @@
 #[cfg(test)]
 mod tests {
+    //! Login, logout, and session-verification tests. Require a reachable Redis.
+
     use crate::{
         handlers::user::auth::{AuthController, NonceCache, SessionCache},
         models::auth::VerifySignaturRequest,
@@ -16,10 +18,12 @@ mod tests {
         signers::{LocalWallet, Signer},
     };
 
+    /// Redis base URL from `REDIS_URL`, defaulting to localhost.
     fn redis_base() -> String {
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
     }
 
+    /// Build nonce (db 1) and session (db 0) caches, panicking if Redis is down.
     async fn setup_caches() -> (NonceCache, SessionCache) {
         let base = redis_base().trim_end_matches('/').to_string();
         let nonce_cache = NonceCache::new(&format!("{}/1", base))
@@ -31,6 +35,7 @@ mod tests {
         (nonce_cache, session_cache)
     }
 
+    /// A valid signature over the stored nonce yields a session cookie.
     #[actix_web::test]
     async fn test_post_auth_success() {
         let mut seeded_rng = StdRng::seed_from_u64(84);
@@ -77,6 +82,7 @@ mod tests {
         assert_eq!(cached_wallet.unwrap(), wallet_address);
     }
 
+    /// Signing a nonce other than the stored one is rejected with `400`.
     #[actix_web::test]
     async fn test_post_auth_nonce_mismatch() {
         let mut seeded_rng = StdRng::seed_from_u64(84);
@@ -110,6 +116,7 @@ mod tests {
         assert_eq!(http_resp.status(), StatusCode::BAD_REQUEST);
     }
 
+    /// A malformed signature is rejected with `401`.
     #[actix_web::test]
     async fn test_post_auth_invalid_signature() {
         let (nonce_cache, session_cache) = setup_caches().await;
@@ -132,6 +139,7 @@ mod tests {
         assert_eq!(http_resp.status(), StatusCode::UNAUTHORIZED);
     }
 
+    /// Logout invalidates the session token.
     #[actix_web::test]
     async fn test_logout() {
         let (_, session_cache) = setup_caches().await;
@@ -155,6 +163,7 @@ mod tests {
         assert!(cached_wallet.is_none());
     }
 
+    /// A known session token verifies successfully.
     #[actix_web::test]
     async fn test_verify_session_ok() {
         let (_, session_cache) = setup_caches().await;
@@ -180,6 +189,7 @@ mod tests {
         assert_eq!(cached_wallet.unwrap(), wallet_address);
     }
 
+    /// An unknown session token is rejected with `401`.
     #[actix_web::test]
     async fn test_verify_session_invalid() {
         let (_, session_cache) = setup_caches().await;

@@ -6,9 +6,23 @@ use crate::handlers::authenticate;
 use crate::handlers::user::auth::{AuthController, NonceCache, SessionCache};
 use crate::models::contracts::{BotSettings, MessagePayload, SignRequest};
 
+/// HTTP handlers for the `/api/contracts` surface.
+///
+/// Issues one-time signing nonces and accepts signed bot-contract requests.
 pub struct Contracts;
 
 impl Contracts {
+    /// Issue a one-time nonce for the authenticated wallet.
+    ///
+    /// `GET /api/contracts/nonce`
+    ///
+    /// Stores a fresh UUID nonce in the nonce cache, bound to the session
+    /// wallet, and returns it as `{ "nonce": ... }`.
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON `{ nonce }`.
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `500 Internal Server Error` — nonce could not be stored.
     pub async fn get_nonce(
         header: actix_web::HttpRequest,
         session_cache: web::Data<SessionCache>,
@@ -30,6 +44,23 @@ impl Contracts {
         HttpResponse::Ok().json(serde_json::json!({ "nonce": nonce }))
     }
 
+    /// Verify and persist a signed bot contract.
+    ///
+    /// `POST /api/contracts/sign`
+    ///
+    /// Validates, in order: the session, the signed message format, that the
+    /// message nonce matches the request nonce, the signature (the recovered
+    /// wallet must equal the session wallet), the bot settings, that the user
+    /// exists, and that the user has sufficient funds. On success the nonce is
+    /// invalidated and the contract is stored.
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON `{ "message": "Contract signed" }`.
+    /// - `400 Bad Request` — malformed message, nonce mismatch, invalid
+    ///   settings, unknown user, or insufficient funds.
+    /// - `401 Unauthorized` — missing session, wallet mismatch, or bad signature.
+    /// - `409 Conflict` — nonce already used.
+    /// - `500 Internal Server Error` — unexpected persistence failure.
     pub async fn sign(
         header: actix_web::HttpRequest,
         payload: web::Json<SignRequest>,
@@ -108,6 +139,7 @@ impl Contracts {
         HttpResponse::Ok().json(serde_json::json!({ "message": "Contract signed" }))
     }
 
+    /// Authenticate the request, mapping failure to a `401` response.
     async fn authenticated_wallet(
         header: &actix_web::HttpRequest,
         cache: &web::Data<SessionCache>,
@@ -118,6 +150,11 @@ impl Contracts {
         }
     }
 
+    /// Recover the signer from `signature`/`message` and require it to equal
+    /// `expected_wallet`.
+    ///
+    /// Returns `401` when the signature is invalid or recovers a different
+    /// wallet.
     fn verify_signature(
         signature: &str,
         message: &str,

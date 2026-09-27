@@ -1,5 +1,8 @@
 #[cfg(test)]
 mod tests {
+    //! Route-level integration tests: CORS, routing, and status codes.
+    //! Require a reachable Redis.
+
     use actix_cors::Cors;
     use actix_web::http::header;
     use actix_web::{App, http, middleware::NormalizePath, test, web};
@@ -7,10 +10,12 @@ mod tests {
     use crate::handlers::user::auth::{NonceCache, SessionCache};
     use crate::routes::api_routes;
 
+    /// Redis base URL from `REDIS_URL`, defaulting to localhost.
     fn redis_base() -> String {
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
     }
 
+    /// Build a test app wired with the real routes and CORS policy.
     async fn create_test_app() -> impl actix_web::dev::Service<
         actix_http::Request,
         Response = actix_web::dev::ServiceResponse<impl actix_web::body::MessageBody>,
@@ -46,6 +51,7 @@ mod tests {
         .await
     }
 
+    /// CORS preflight on `/api/` returns the allow headers.
     #[actix_web::test]
     async fn test_cors_preflight_root() {
         let app = create_test_app().await;
@@ -74,6 +80,7 @@ mod tests {
         assert!(resp.headers().get(header::ACCESS_CONTROL_MAX_AGE).is_some());
     }
 
+    /// CORS preflight on the auth endpoint succeeds.
     #[actix_web::test]
     async fn test_cors_preflight_auth() {
         let app = create_test_app().await;
@@ -92,6 +99,7 @@ mod tests {
         );
     }
 
+    /// The nonce endpoint accepts a `wallet_address` query parameter.
     #[actix_web::test]
     async fn test_auth_nonce_endpoint_exists() {
         let app = create_test_app().await;
@@ -103,6 +111,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::OK);
     }
 
+    /// A missing `wallet_address` query parameter is rejected with `400`.
     #[actix_web::test]
     async fn test_auth_nonce_missing_wallet() {
         let app = create_test_app().await;
@@ -114,6 +123,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
     }
 
+    /// An unregistered route returns `404`.
     #[actix_web::test]
     async fn test_unknown_route_returns_404() {
         let app = create_test_app().await;
@@ -125,6 +135,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::NOT_FOUND);
     }
 
+    /// Logout without a session cookie returns `400`.
     #[actix_web::test]
     async fn test_logout_without_cookie_returns_400() {
         let app = create_test_app().await;
@@ -136,6 +147,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::BAD_REQUEST);
     }
 
+    /// An unsupported method on the auth endpoint returns `405`.
     #[actix_web::test]
     async fn test_auth_endpoint_method_not_allowed() {
         let app = create_test_app().await;
@@ -147,6 +159,7 @@ mod tests {
         assert_eq!(resp.status(), http::StatusCode::METHOD_NOT_ALLOWED);
     }
 
+    /// CORS headers are still present on an error response.
     #[actix_web::test]
     async fn test_cors_headers_on_error_response() {
         let app = create_test_app().await;
@@ -164,6 +177,7 @@ mod tests {
         );
     }
 
+    /// The verify endpoint rejects a request with no session (`400`).
     #[actix_web::test]
     async fn test_verify_session_endpoint_exists() {
         let app = create_test_app().await;
