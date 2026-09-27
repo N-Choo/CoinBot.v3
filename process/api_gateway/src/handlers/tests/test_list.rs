@@ -68,6 +68,10 @@ mod tests {
     #[actix_web::test]
     async fn test_list_no_user_returns_empty() {
         let Some(pool) = real_pool() else { return };
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("migrations failed");
 
         let session_cache = setup_session_cache().await;
         let nonce_cache = setup_nonce_cache().await;

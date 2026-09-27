@@ -85,7 +85,7 @@ mod tests {
     /// Signing a nonce other than the stored one is rejected with `400`.
     #[actix_web::test]
     async fn test_post_auth_nonce_mismatch() {
-        let mut seeded_rng = StdRng::seed_from_u64(84);
+        let mut seeded_rng = StdRng::seed_from_u64(85);
         let wallet = LocalWallet::new(&mut seeded_rng);
         let wallet_address = format!("0x{:x}", wallet.address()).to_lowercase();
 
