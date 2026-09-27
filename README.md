@@ -61,6 +61,34 @@ API Gateway (Rust) ──→ PostgreSQL (users, deposits, contracts, trade_order
 React SPA ◄────────────── HTTP API
 ```
 
+## Processes
+
+```mermaid
+flowchart LR
+    UI[React SPA] -->|HTTP /api| GW[api_gateway]
+    GW -->|SQL| DB[(PostgreSQL)]
+    GW -->|gRPC| DW[deposit-worker]
+    DW -->|verify tx| ETH[Ethereum RPC]
+    DW -->|sweep| KC[KuCoin]
+    DW -->|credit balance| DB
+
+    TE[trade-engine] -->|publish tickers| RD[(Redis)]
+    RD -->|subscribe| AN[analyzer]
+    AN -->|publish signals| RD
+    RD -->|signals| TE
+    TE -->|load + verify contracts| DB
+    TE -.->|place orders| KC
+```
+
+| Process | Path | Role | Talks to |
+|---------|------|------|----------|
+| `api_gateway` | `process/api_gateway` | HTTP API — auth, contract signing, deposit intake | React, PostgreSQL, deposit-worker |
+| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
+| `trade-engine` | `process/trade-engine` | Publishes tickers, consumes signals, verifies contracts | Redis, PostgreSQL, KuCoin |
+| `analyzer` | `process/analyzer` | RSI + SMA + ATR signal engine (Python) | Redis, KuCoin |
+
+Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
+
 ## Project layout
 
 ```
