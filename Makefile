@@ -8,7 +8,7 @@ help:
 	@echo "Getting Started"
 	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
 	@echo ""
-	@echo "Testing (needs 'make dev' running first)"
+	@echo "Testing (starts Postgres + Redis automatically)"
 	@echo "  make test         Run all tests (Rust + Python)"
 	@echo "  make analyzer-test  Python analyzer unit tests only"
 	@echo "  make benchmark-test  Benchmark unit tests only"

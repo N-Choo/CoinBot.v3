@@ -56,7 +56,7 @@ Analyzer (Python) ◄──subscribe────────────┘
   │  publishes single most-recent signal with SL/TP
   └──→ Redis ──consume signals──→ Trade Engine
 
-API Gateway (Rust) ──→ PostgreSQL (users, deposits, contracts)
+API Gateway (Rust) ──→ PostgreSQL (users, deposits, contracts, trade_orders)
                     ──→ gRPC ──→ Deposit Worker (KuCoin sweep)
 React SPA ◄────────────── HTTP API
 ```
@@ -70,15 +70,15 @@ analyzer/            Python signal engine + backtesting bench
   indicators/          RSI, SMA, ATR
   signals/             Divergence → Signal generation
 process/
-  trade-engine/        Publishes contracts → Redis, consumes signals
-  api_gateway/         HTTP API — auth, routing, deposit validation
+  trade-engine/        Verifies contracts, publishes tickers, consumes signals
+  api_gateway/         HTTP API — auth, contract signing, deposit intake
   deposit-worker/      gRPC + background KuCoin sweeper
   migrations/          SQL migrations
 lib/
-  common/              Shared config, errors, proto stubs
-  share/               DB models, Redis cache, contract model
+  share/               Shared crate: config, errors, logging, Redis, DB
+                       models, on-chain helpers, gRPC stubs (see lib/README.md)
 react/                 SPA dashboard + trading interface
-docs/                  Architecture docs, sequence diagrams
+docs/                  Architecture docs, sequence diagrams, specs
 ```
 
 ## Trading pipeline
@@ -108,5 +108,9 @@ make test             # Rust cargo test + Python pytest (51 tests)
 make analyzer-test    # Python only
 make benchmark-test   # benchmark tests only
 ```
+
+`make test` starts Postgres + Redis via Docker and runs the Rust and Python
+suites; DB-backed tests apply migrations automatically, so `make dev` is not
+required.
 
 See `docs/sequence-diagrams.md` for data flows. See `docs/README_PROJECT.md` for full stack details.
