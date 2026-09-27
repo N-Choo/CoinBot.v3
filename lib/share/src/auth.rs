@@ -26,7 +26,7 @@ pub fn recover_wallet(signature: &str, message: &str) -> Result<String, ProcessE
 #[cfg(test)]
 mod tests {
     use super::*;
-    use ethers::core::rand::{SeedableRng, rngs::StdRng};
+    use ethers::core::rand::{rngs::StdRng, SeedableRng};
     use ethers::signers::{LocalWallet, Signer};
 
     /// A valid signature recovers the signer's address.
