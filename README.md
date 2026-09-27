@@ -1,144 +1,146 @@
 # CoinBot.v3
 
-Automated KuCoin futures trading with RSI divergence signals, ATR-based risk management, and backtesting.
-
-## Quick start
-
-```bash
-make dev          # start all services (API + worker + DB + Redis + frontend)
-make trade        # run trade-engine + analyzer against KuCoin (needs DB)
-make benchmark    # backtest all tickers (no DB needed, just .env)
-make test         # Rust + Python tests
-make ci           # full pipeline (fmt → clippy → test → build)
-```
-
-## Configuration
-
-All settings in `.env` at project root:
-
-```ini
-# ── Required ──────────────────────────────────
-DATABASE_URL=postgresql://user:pass@host:port/coinbot
-REDIS_URL=redis://redis:6379
-
-# ── KuCoin API Keys ───────────────────────────
-TRADE_ENGINE_KC_KEY=your_key
-TRADE_ENGINE_KC_SECRET=your_secret
-TRADE_ENGINE_KC_PASSPHRASE=your_passphrase
-
-# ── Analyzer ──────────────────────────────────
-KUCOIN_TIMEFRAME=1day
-SMA_ENABLED=true
-SMA_PERIOD=200
-RSI_PERIOD=14
-RSI_DIVERGENCE_ORDER=8
-
-# ── Risk Management ───────────────────────────
-ATR_SL_MULTIPLIER=2.8
-ATR_TP_MULTIPLIER=3.5
-ATR_SL_MAX_PCT=0.10
-
-# ── Benchmark ─────────────────────────────────
-BENCHMARK_DAYS=360
-BENCHMARK_TICKERS=BTC-USDT,ETH-USDT,SOL-USDT
-ALLOW_PYRAMIDING=false
-```
-
-Full config reference: see `analyzer/README.md`.
-
-## Architecture
-
-```
-Trade Engine (Rust) ──publish tickers──→ Redis
-                                          │
-Analyzer (Python) ◄──subscribe────────────┘
-  │  reads KuCoin klines, computes RSI + SMA + ATR
-  │  publishes single most-recent signal with SL/TP
-  └──→ Redis ──consume signals──→ Trade Engine
-
-API Gateway (Rust) ──→ PostgreSQL (users, deposits, contracts, trade_orders)
-                    ──→ gRPC ──→ Deposit Worker (KuCoin sweep)
-React SPA ◄────────────── HTTP API
-```
+**CoinBot.v3** is an event-driven crypto trading platform that turns user-signed contracts into automated trades on KuCoin futures. Users authenticate with an Ethereum wallet, deposit USDT on-chain, and sign a contract allocating funds to a strategy; a Rust **trade engine** consumes RSI-divergence signals from a Python **analyzer** and executes them, while an **API gateway** and **deposit worker** handle wallet auth, contract signing, and on-chain deposit verification.
 
 ## Processes
 
 ```mermaid
-flowchart LR
-    UI[React SPA] -->|HTTP /api| GW[api_gateway]
-    GW -->|SQL| DB[(PostgreSQL)]
-    GW -->|gRPC| DW[deposit-worker]
-    DW -->|verify tx| ETH[Ethereum RPC]
-    DW -->|sweep| KC[KuCoin]
-    DW -->|credit balance| DB
+%%{init: {"theme":"base","themeVariables":{"clusterBkg":"transparent","clusterBorder":"#888","lineColor":"#888","primaryTextColor":"#fff","tertiaryTextColor":"#fff","edgeLabelBackground":"transparent"}}}%%
+flowchart TB
+    classDef plain fill:transparent,stroke:#888,color:#fff;
 
-    TE[trade-engine] -->|publish tickers| RD[(Redis)]
-    RD -->|subscribe| AN[analyzer]
-    AN -->|publish signals| RD
-    RD -->|signals| TE
-    TE -->|load + verify contracts| DB
-    TE -.->|place orders| KC
+    UI["React SPA"]
+
+    subgraph rust["Rust services"]
+        GW["api_gateway"]
+        DW["deposit-worker"]
+        TE["trade-engine"]
+    end
+
+    AN["analyzer (Python)"]
+    DB[("PostgreSQL")]
+    RD[("Redis")]
+    ETH["Ethereum RPC"]
+    KC["KuCoin"]
+
+    UI -->|"HTTP /api"| GW
+    GW -->|"SQL"| DB
+    GW -->|"gRPC"| DW
+    DW -->|"verify tx"| ETH
+    DW -->|"sweep"| KC
+    DW -->|"credit balance"| DB
+
+    TE -->|"publish tickers:analyze"| RD
+    RD -->|"subscribe"| AN
+    AN -->|"publish signals:result"| RD
+    RD -->|"signals"| TE
+    TE -->|"load + verify contracts"| DB
+    TE -.->|"place orders"| KC
+
+    class UI,GW,DW,TE,AN,DB,RD,ETH,KC plain;
 ```
 
-| Process | Path | Role | Talks to |
-|---------|------|------|----------|
-| `api_gateway` | `process/api_gateway` | HTTP API — auth, contract signing, deposit intake | React, PostgreSQL, deposit-worker |
-| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
-| `trade-engine` | `process/trade-engine` | Publishes tickers, consumes signals, verifies contracts | Redis, PostgreSQL, KuCoin |
-| `analyzer` | `process/analyzer` | RSI + SMA + ATR signal engine (Python) | Redis, KuCoin |
+| Process          | Path                     | Role                                                    | Talks to                                      |
+| ---------------- | ------------------------ | ------------------------------------------------------- | --------------------------------------------- |
+| `api_gateway`    | `process/api_gateway`    | HTTP API — auth, contract signing, deposit intake       | React, PostgreSQL, deposit-worker             |
+| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper                | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
+| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts | Redis, PostgreSQL, KuCoin                     |
+| `analyzer`       | `process/analyzer`       | signal engine (Python)                                  | Redis, KuCoin                                 |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
 
-## Project layout
+## Flows
 
-```
-analyzer/            Python signal engine + backtesting bench
-  main.py              Live mode (Redis subscriber)
-  benchmark/main.py    Day-by-day historical simulation
-  indicators/          RSI, SMA, ATR
-  signals/             Divergence → Signal generation
-process/
-  trade-engine/        Verifies contracts, publishes tickers, consumes signals
-  api_gateway/         HTTP API — auth, contract signing, deposit intake
-  deposit-worker/      gRPC + background KuCoin sweeper
-  migrations/          SQL migrations
-lib/
-  share/               Shared crate: config, errors, logging, Redis, DB
-                       models, on-chain helpers, gRPC stubs (see lib/README.md)
-react/                 SPA dashboard + trading interface
-docs/                  Architecture docs, sequence diagrams, specs
-```
+### Authentication
 
-## Trading pipeline
+Wallet challenge/response login — proves wallet ownership and issues a session cookie.
 
-1. **Trade engine** loads active KuCoin futures contracts from DB
-2. Publishes ticker list to Redis `tickers:analyze`
-3. **Analyzer** fetches daily klines, computes RSI divergences
-4. Applies SMA trend filter (buy only above, sell only below)
-5. Sizes SL/TP via ATR with volatility scaling and max-loss cap
-6. Publishes the single most recent signal to `signals:result`
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
+sequenceDiagram
+    participant U as Wallet / SPA
+    participant G as api_gateway
+    participant R as Redis (nonce)
 
-## Signals
-
-| Type          | Condition                              | Direction |
-|---------------|----------------------------------------|-----------|
-| Regular Bull  | Price lower low, RSI higher low        | BUY       |
-| Regular Bear  | Price higher high, RSI lower high       | SELL      |
-| Hidden Bull   | Price higher low, RSI lower low         | BUY       |
-| Hidden Bear   | Price lower high, RSI higher high       | SELL      |
-
-Only the most recent divergence per ticker is emitted. Confidence: 0.6 regular, 0.8 near overbought/oversold, 0.5 hidden.
-
-## Testing
-
-```bash
-make test             # Rust cargo test + Python pytest (51 tests)
-make analyzer-test    # Python only
-make benchmark-test   # benchmark tests only
+    U->>G: GET /api/user/auth?wallet_address=0x..
+    G->>R: store nonce
+    G-->>U: nonce
+    U->>U: sign(nonce)
+    U->>G: POST /api/user/auth (signature, msg)
+    G->>G: recover wallet, check nonce
+    G->>R: invalidate nonce, store session
+    G-->>U: Set-Cookie session_token
 ```
 
-`make test` starts Postgres + Redis via Docker and runs the Rust and Python
-suites; DB-backed tests apply migrations automatically, so `make dev` is not
-required.
+### Contract signing
 
-See `docs/sequence-diagrams.md` for data flows. See `docs/README_PROJECT.md` for full stack details.
+Authorize a strategy — verify the signed settings and lock the allocated funds on a new contract.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
+sequenceDiagram
+    participant U as Wallet / SPA
+    participant G as api_gateway
+    participant R as Redis (nonce)
+    participant DB as PostgreSQL
+
+    U->>G: GET /api/contracts/nonce
+    G->>R: store nonce
+    G-->>U: nonce
+    U->>U: sign(nonce, settings)
+    U->>G: POST /api/contracts/sign (nonce, message, signature)
+    G->>G: verify signature + settings
+    G->>DB: lock init_fund (balance -> locked_balance)
+    G->>DB: insert contract (available = init_fund, used = 0)
+    G-->>U: 200 Contract signed
+```
+
+### Deposit
+
+On-chain USDT deposit — verify the transaction, then credit the user's balance.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
+sequenceDiagram
+    participant U as Wallet / SPA
+    participant G as api_gateway
+    participant W as deposit-worker
+    participant E as Ethereum RPC
+    participant DB as PostgreSQL
+
+    U->>U: send USDT on-chain to platform wallet
+    U->>G: POST /api/transactions/deposit (tx_hash)
+    G->>E: get transaction + receipt
+    E-->>G: tx (from, to, input)
+    G->>G: verify sender, USDT contract, recipient
+    G->>W: gRPC create_ticket0(tx_hash, uid)
+    W->>DB: insert deposit (pending)
+    W-->>G: ticket_id
+    G-->>U: 200 ticket_id
+    Note over W,DB: sweeper confirms tx and credits balance
+```
+
+### Trading
+
+Signal to execution — match analyzer signals to active contracts, verify each signature, then execute.
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
+sequenceDiagram
+    participant TE as trade-engine
+    participant R as Redis
+    participant AN as analyzer
+    participant DB as PostgreSQL
+    participant KC as KuCoin
+
+    TE->>R: PUBLISH tickers:analyze
+    R-->>AN: tickers
+    AN->>KC: fetch klines
+    KC-->>AN: OHLCV
+    AN->>AN: RSI + SMA + ATR
+    AN->>R: PUBLISH signals:result
+    R-->>TE: signals
+    TE->>DB: load active contracts
+    TE->>TE: re-verify signatures (fail-closed)
+    TE-->>KC: place orders (WIP)
+```
