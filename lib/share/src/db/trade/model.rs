@@ -49,8 +49,8 @@ impl TradeOrders {
         side: &str,
         comment: &str,
         requested_qty: &str,
-    ) -> Result<Self, sqlx::Error> {
-        sqlx::query_as::<_, Self>(
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
             r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, comment, requested_qty)
                VALUES ($1, $2, $3, $4, $5, $6)
                RETURNING *"#,
@@ -70,8 +70,8 @@ impl TradeOrders {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         exchange_order_id: &str,
-    ) -> Result<Self, sqlx::Error> {
-        sqlx::query_as::<_, Self>(
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
                SET exchange_order_id = $1, status = 'open', updated_at = NOW()
                WHERE id = $2
@@ -90,8 +90,8 @@ impl TradeOrders {
         filled_qty: &str,
         fill_price: &str,
         fee: &str,
-    ) -> Result<Self, sqlx::Error> {
-        sqlx::query_as::<_, Self>(
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
                SET filled_qty = $1, fill_price = $2, fee = $3, status = 'filled', updated_at = NOW()
                WHERE id = $4
@@ -106,14 +106,14 @@ impl TradeOrders {
     }
 
     /// Mark an order as `failed` with a reason.
-    pub async fn mark_failed(
+    pub async fn mark_closed(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         reason: &str,
-    ) -> Result<Self, sqlx::Error> {
-        sqlx::query_as::<_, Self>(
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
-               SET status = 'failed', reason = $1, updated_at = NOW()
+               SET status = 'closed', reason = $1, updated_at = NOW()
                WHERE id = $2
                RETURNING *"#,
         )

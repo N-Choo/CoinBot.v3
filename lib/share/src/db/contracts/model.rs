@@ -87,8 +87,8 @@ impl Contracts {
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         amount: &str,
-    ) -> Result<Self, sqlx::Error> {
-        sqlx::query_as::<_, Self>(
+    ) -> Result<Contract, sqlx::Error> {
+        sqlx::query_as::<_, Contract>(
             r#"UPDATE contracts
                SET available_fund = available_fund::numeric - $1::numeric,
                    used_fund      = used_fund::numeric + $1::numeric,
