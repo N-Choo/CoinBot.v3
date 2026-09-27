@@ -16,9 +16,26 @@ use crate::{
     models::transaction::DepositPayloadRequest,
 };
 
+/// HTTP handlers for the `/api/transactions` surface.
+///
+/// Exposes the deposit intake path (on-chain USDT verification followed by a
+/// gRPC ticket on the deposit worker) and a read path listing the caller's
+/// deposits.
 pub struct Transaction {}
 
 impl Transaction {
+    /// List the authenticated caller's deposits.
+    ///
+    /// `GET /api/transactions`
+    ///
+    /// Requires a valid session. Resolves the session wallet to a user and
+    /// returns every deposit owned by that user. An unknown wallet is not an
+    /// error: it yields an empty JSON array.
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON array of deposits (possibly empty).
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `500 Internal Server Error` — user lookup or deposit query failed.
     pub async fn list(
         header: actix_web::HttpRequest,
         session_cache: web::Data<SessionCache>,
@@ -51,6 +68,27 @@ impl Transaction {
         }
     }
 
+    /// Submit an on-chain USDT deposit for verification.
+    ///
+    /// `POST /api/transactions/deposit`
+    ///
+    /// The body is a [`DepositPayloadRequest`] carrying a transaction hash. The
+    /// hash is validated in this order before a ticket is created:
+    ///
+    /// 1. The session is authenticated.
+    /// 2. The transaction is fetched on-chain and confirmed successful.
+    /// 3. The transaction sender must equal the session wallet.
+    /// 4. The transaction must target the USDT contract.
+    /// 5. The ERC20 transfer recipient must be the platform wallet.
+    /// 6. A deposit ticket is requested from the deposit worker over gRPC.
+    ///
+    /// Responses:
+    /// - `200 OK` — ticket created; JSON `{ ticket_id, timestamp, accepted }`.
+    /// - `400 Bad Request` — unknown/failed tx, non-USDT tx, malformed transfer,
+    ///   or recipient is not the platform wallet.
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `403 Forbidden` — tx sender does not match the session wallet.
+    /// - `500 Internal Server Error` — user lookup or ticket creation failed.
     pub async fn deposit(
         header: actix_web::HttpRequest,
         payload: web::Json<DepositPayloadRequest>,
