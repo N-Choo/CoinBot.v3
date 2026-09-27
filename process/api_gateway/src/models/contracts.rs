@@ -32,8 +32,8 @@ struct SignedSettings {
 pub struct BotSettings {
     /// Trading pair, e.g. `BTC/USDT`.
     pub ticker: String,
-    /// Position size as a decimal string.
-    pub amount: String,
+    /// Initial fund allocated to the contract, as a decimal string.
+    pub init_fund: String,
     /// Stop-loss distance, in percent.
     pub sl_pct: f32,
     /// Take-profit distance, in percent.
@@ -50,7 +50,7 @@ impl BotSettings {
             .map_err(|_| "Invalid bot settings in signed message")?;
         Ok(Self {
             ticker: signed.ticker,
-            amount: signed.amount,
+            init_fund: signed.amount,
             sl_pct: signed
                 .stop_loss
                 .parse()
@@ -68,7 +68,7 @@ impl BotSettings {
     /// and a `/USDT` pair. Returns a static error message otherwise.
     pub fn validate(&self) -> Result<(), &'static str> {
         if self
-            .amount
+            .init_fund
             .parse::<f64>()
             .map_err(|_| "Amount must be a number")?
             <= 0.0

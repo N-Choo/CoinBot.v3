@@ -1,5 +1,4 @@
 use actix_web::{HttpResponse, Responder, web};
-use share::db::get_uid;
 use uuid::Uuid;
 
 use crate::handlers::authenticate;
@@ -95,32 +94,48 @@ impl Contracts {
             return HttpResponse::BadRequest().body(msg);
         }
 
-        let uid = match get_uid(&pool, &wallet).await {
-            Ok(id) => id,
-            Err(sqlx::Error::RowNotFound) => {
-                return HttpResponse::BadRequest().body("User not found");
-            }
+        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return HttpResponse::BadRequest().body("User not found"),
             Err(e) => {
-                log::error!("Failed to get UID for wallet {}: {}", wallet, e);
+                log::error!("Failed to load user for wallet {}: {}", wallet, e);
                 return HttpResponse::InternalServerError().finish();
             }
         };
 
-        if let Err(e) = share::db::user::User::check_funds(&pool, uid, &settings.amount).await {
-            log::warn!("check_funds failed for {}: {}", wallet, e);
-            return HttpResponse::BadRequest().body(e);
+        let snap_balance = user.balance.clone();
+
+        let mut tx = match pool.begin().await {
+            Ok(t) => t,
+            Err(e) => {
+                log::error!("Failed to begin transaction: {}", e);
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        if let Err(e) = user.lock_balance(&mut tx, &settings.init_fund).await {
+            return match e {
+                sqlx::Error::RowNotFound => HttpResponse::BadRequest().body("Insufficient funds"),
+                other => {
+                    log::error!("lock_balance failed for {}: {}", wallet, other);
+                    HttpResponse::InternalServerError().finish()
+                }
+            };
         }
 
         nonce_cache.invalidate(&payload.nonce).await;
 
         if let Err(e) = share::db::contracts::Contracts::create(
-            &pool,
-            uid,
+            &mut tx,
+            user.uid,
             &payload.signature,
             &payload.message,
             &payload.nonce,
             &settings.ticker,
-            &settings.amount,
+            &snap_balance,
+            &settings.init_fund,
+            &settings.init_fund,
+            "0",
             settings.sl_pct,
             settings.tp_pct,
         )
@@ -132,6 +147,11 @@ impl Contracts {
                 return HttpResponse::Conflict().body("Nonce already used");
             }
             log::error!("Failed to create contract: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        }
+
+        if let Err(e) = tx.commit().await {
+            log::error!("Failed to commit contract for {}: {}", wallet, e);
             return HttpResponse::InternalServerError().finish();
         }
 
