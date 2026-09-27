@@ -1,7 +1,4 @@
-use share::models::signals::TradeSignal;
-
-/// This function analyse the results before crating a trade ticket.
-///
-pub async fn _signal_handler(_signal: &TradeSignal) -> Result<(), share::ProcessError> {
-    Ok(())
-}
+//! Trade execution module.
+//!
+//! Reserved for the order-placement logic that turns a verified signal into an
+//! exchange order. Signal handling currently lives in `main.rs`.
