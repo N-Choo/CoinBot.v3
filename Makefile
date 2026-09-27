@@ -61,12 +61,12 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
-	@docker compose up -d postgres redis && \
+	@[ -f .env ] || cp .env.ci .env; \
+	 docker compose up -d postgres redis && \
 		sleep 2 && \
 		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
-		cd process/analyzer && python3 -m pytest . -v; \
-		pst=$$?; \
+		if [ -d process/analyzer ]; then (cd process/analyzer && python3 -m pytest . -v); pst=$$?; else echo "skipping analyzer tests (process/analyzer absent)"; pst=0; fi; \
 		docker compose stop redis postgres; \
 		exit $$(( rst + pst ))
 
