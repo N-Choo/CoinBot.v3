@@ -1,15 +1,19 @@
+//! Integration tests for [`share::cache::Cache`]. Require a reachable Redis.
 use share::cache::Cache;
 
+/// Redis URL from `REDIS_URL`, defaulting to localhost.
 fn redis_url() -> String {
     std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
 }
 
+/// Connect to Redis, panicking if it is unavailable.
 async fn cache() -> Cache {
     Cache::new(&redis_url())
         .await
         .expect("Redis required — start it or set REDIS_URL")
 }
 
+/// `set` then `get` round-trips a value.
 #[tokio::test]
 async fn test_set_get() {
     let cache = cache().await;
@@ -21,6 +25,7 @@ async fn test_set_get() {
     cache.del(key).await;
 }
 
+/// Fetching a missing key returns `None`.
 #[tokio::test]
 async fn test_get_missing() {
     let cache = cache().await;
@@ -30,6 +35,7 @@ async fn test_get_missing() {
     assert_eq!(cache.get(key).await, None);
 }
 
+/// A key expires after its TTL elapses.
 #[tokio::test]
 async fn test_ttl_expires() {
     let cache = cache().await;
@@ -42,6 +48,7 @@ async fn test_ttl_expires() {
     assert_eq!(cache.get(key).await, None);
 }
 
+/// Setting an existing key overwrites its value.
 #[tokio::test]
 async fn test_set_overwrites() {
     let cache = cache().await;
@@ -54,6 +61,7 @@ async fn test_set_overwrites() {
     cache.del(key).await;
 }
 
+/// `del` removes a key.
 #[tokio::test]
 async fn test_del_removes() {
     let cache = cache().await;
@@ -65,6 +73,7 @@ async fn test_del_removes() {
     assert_eq!(cache.get(key).await, None);
 }
 
+/// Distinct keys are stored independently.
 #[tokio::test]
 async fn test_multiple_keys_independent() {
     let cache = cache().await;

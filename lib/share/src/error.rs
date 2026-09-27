@@ -1,25 +1,36 @@
+/// Errors surfaced by request/response service logic.
 #[derive(Debug, thiserror::Error)]
 pub enum ServiceError {
+    /// The requested resource does not exist.
     #[error("not found: {0}")]
     NotFound(String),
+    /// The account lacks funds for the operation.
     #[error("insufficient funds")]
     InsufficientFunds,
+    /// The caller supplied an invalid request.
     #[error("invalid request: {0}")]
     InvalidRequest(String),
+    /// An unexpected internal failure.
     #[error("internal: {0}")]
     Internal(String),
 }
 
+/// Errors surfaced while configuring or running a process.
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {
+    /// A required environment variable is missing.
     #[error("missing environment variable: {0}")]
     MissingEnv(String),
+    /// A configuration value is malformed.
     #[error("invalid configuration: {0}")]
     InvalidConfig(String),
+    /// A database operation failed.
     #[error("database error: {0}")]
     Database(String),
+    /// A network or transport operation failed.
     #[error("network error: {0}")]
     Network(String),
+    /// An unexpected internal failure.
     #[error("{0}")]
     Internal(String),
 }

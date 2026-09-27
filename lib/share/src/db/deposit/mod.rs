@@ -1,3 +1,4 @@
+//! Deposit records: model, lifecycle status, and query filters.
 mod filter;
 mod model;
 mod status;

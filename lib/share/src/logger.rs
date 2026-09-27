@@ -1,5 +1,9 @@
 use std::io::Write;
 
+/// Initialise the global logger.
+///
+/// Reads `RUST_LOG` (default `info`) and formats lines with a timestamp, a
+/// padded level, and the last segment of the log target.
 pub fn init_logger() {
     env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info"))
         .write_style(env_logger::WriteStyle::Always)

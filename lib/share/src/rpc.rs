@@ -5,6 +5,7 @@ use ethers::{providers::Middleware, types::Transaction as EthTx};
 
 type Provider = ethers::providers::Provider<ethers::providers::Http>;
 
+/// Lazily-initialised shared HTTP provider for the public Ethereum RPC.
 fn provider() -> &'static Provider {
     static PROVIDER: OnceLock<Provider> = OnceLock::new();
     PROVIDER.get_or_init(|| {
@@ -13,9 +14,14 @@ fn provider() -> &'static Provider {
     })
 }
 
+/// Ethereum JSON-RPC helpers for verifying deposit transactions.
 pub struct Rpc;
 
 impl Rpc {
+    /// Fetch a transaction by hash from the public Ethereum RPC.
+    ///
+    /// Returns a descriptive error when the hash is empty, malformed, the RPC
+    /// call fails, or the transaction is not found.
     pub async fn get_transaction(tx_hash: &str) -> Result<EthTx, String> {
         if tx_hash.trim().is_empty() {
             return Err("Transaction hash is empty".to_string());
@@ -32,6 +38,11 @@ impl Rpc {
             .ok_or_else(|| "Transaction not found".to_string())
     }
 
+    /// Confirm a transaction was mined successfully (receipt status `1`).
+    ///
+    /// Errors when the hash is malformed, the receipt is unavailable (still
+    /// pending), the transaction reverted (`status=0`), or the status is
+    /// otherwise unknown.
     pub async fn confirm_onchain_success(tx_hash: &str) -> Result<(), String> {
         let hash: ethers::types::TxHash = tx_hash
             .parse()

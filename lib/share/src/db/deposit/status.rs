@@ -1,8 +1,12 @@
 use std::fmt::{self, Display};
 
+/// Lifecycle status of a [`Deposit`](super::Deposit).
 pub enum Status {
+    /// Recorded but not yet swept/confirmed.
     Pending = 0,
+    /// Swept and credited to the user.
     Confirmed = 1,
+    /// Rejected or failed during processing.
     Failed = 2,
 }
 

@@ -2,15 +2,21 @@ use serde::Deserialize;
 
 use crate::error::ProcessError;
 
+/// Service-level configuration shared by gRPC workers.
 #[derive(Debug, Clone, Deserialize)]
 pub struct ServiceConfig {
+    /// gRPC bind host.
     pub grpc_host: String,
+    /// gRPC bind port.
     pub grpc_port: u16,
+    /// PostgreSQL connection string.
     pub database_url: String,
+    /// Redis connection string.
     pub redis_url: String,
 }
 
 impl ServiceConfig {
+    /// The gRPC bind address as `host:port`.
     pub fn grpc_addr(&self) -> String {
         format!("{}:{}", self.grpc_host, self.grpc_port)
     }
@@ -27,6 +33,7 @@ pub struct ProcessConfig {
 }
 
 impl ProcessConfig {
+    /// Create a config scoped to `name` (upper-cased as the env prefix).
     pub fn new(name: &str) -> Self {
         Self {
             prefix: name.to_uppercase(),

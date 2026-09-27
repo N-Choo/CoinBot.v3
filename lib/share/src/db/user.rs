@@ -1,16 +1,23 @@
 use sqlx::{PgPool, Transaction};
 use uuid::Uuid;
 
+/// A platform user, identified by wallet address.
 #[derive(Debug, Clone, sqlx::FromRow)]
 pub struct User {
+    /// Wallet address (primary key).
     pub wallet_address: String,
+    /// Stable internal identifier.
     pub uid: Uuid,
+    /// Available balance, stored as a decimal string.
     pub balance: String,
+    /// Balance reserved by open contracts, stored as a decimal string.
     pub locked_balance: String,
+    /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
 
 impl User {
+    /// Fetch a user by wallet address, or `None` if not registered.
     pub async fn find_by_wallet(pool: &PgPool, wallet: &str) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as::<_, Self>("SELECT * FROM users WHERE wallet_address = $1")
             .bind(wallet)
@@ -18,6 +25,7 @@ impl User {
             .await
     }
 
+    /// Insert the user if absent and return the row.
     pub async fn upsert(
         tx: &mut Transaction<'_, sqlx::Postgres>,
         wallet: &str,
@@ -33,6 +41,7 @@ impl User {
         .await
     }
 
+    /// Credit `amount` to the user's available balance.
     pub async fn add_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,
@@ -50,6 +59,9 @@ impl User {
         .await
     }
 
+    /// Move `amount` from available to locked balance.
+    ///
+    /// Fails (no row) when the available balance is insufficient.
     pub async fn lock_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,
@@ -68,6 +80,10 @@ impl User {
         .await
     }
 
+    /// Check that a user's balance covers `amount`.
+    ///
+    /// Returns an error message when the user is missing, the stored balance is
+    /// corrupt, the amount is invalid, or funds are insufficient.
     pub async fn check_funds(pool: &PgPool, uid: Uuid, amount: &str) -> Result<(), String> {
         let has: String = sqlx::query_scalar("SELECT balance FROM users WHERE uid = $1")
             .bind(uid)
@@ -89,6 +105,9 @@ impl User {
         }
     }
 
+    /// Move `amount` from locked back to available balance.
+    ///
+    /// Fails (no row) when the locked balance is insufficient.
     pub async fn unlock_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,

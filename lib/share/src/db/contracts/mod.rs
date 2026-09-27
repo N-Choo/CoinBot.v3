@@ -1,3 +1,4 @@
+//! Contract records: model, lifecycle status, and query filters.
 mod filter;
 pub mod model;
 mod status;

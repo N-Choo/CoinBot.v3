@@ -3,6 +3,9 @@ use uuid::Uuid;
 
 use super::model::Deposit;
 
+/// Builder for querying [`Deposit`] rows.
+///
+/// Filters are combined with `AND` and results are ordered by `created_at DESC`.
 #[derive(Default)]
 pub struct DepositFilter {
     user_uid: Option<Uuid>,
@@ -11,25 +14,30 @@ pub struct DepositFilter {
 }
 
 impl DepositFilter {
+    /// Create an empty filter matching all deposits.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Restrict to deposits owned by `uid`.
     pub fn with_user(mut self, uid: Uuid) -> Self {
         self.user_uid = Some(uid);
         self
     }
 
+    /// Restrict to deposits with the given `status`.
     pub fn with_status(mut self, status: &str) -> Self {
         self.status = Some(status.into());
         self
     }
 
+    /// Restrict to the deposit with the given transaction `hash`.
     pub fn with_tx_hash(mut self, hash: &str) -> Self {
         self.tx_hash = Some(hash.into());
         self
     }
 
+    /// Run the query, returning matching deposits newest-first.
     pub async fn execute(&self, pool: &PgPool) -> Result<Vec<Deposit>, sqlx::Error> {
         use sqlx::QueryBuilder;
         let mut builder = QueryBuilder::new("SELECT * FROM deposits WHERE 1=1");

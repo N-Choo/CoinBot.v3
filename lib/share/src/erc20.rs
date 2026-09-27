@@ -4,9 +4,13 @@
 
 use ethers::abi::{decode, ParamType};
 
+/// Decoder for ERC-20 `transfer(address,uint256)` calldata.
 pub struct Erc20;
 
 impl Erc20 {
+    /// Decode the transferred amount as a decimal string.
+    ///
+    /// Returns `"0"` when the selector is missing or the calldata is malformed.
     pub fn decode_amount(input: &[u8]) -> String {
         const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
 
@@ -20,6 +24,9 @@ impl Erc20 {
         }
     }
 
+    /// Decode the recipient address as a `0x`-prefixed hex string.
+    ///
+    /// Returns `None` when the selector is missing or the calldata is malformed.
     pub fn decode_recipient(input: &[u8]) -> Option<String> {
         const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
 
@@ -30,6 +37,7 @@ impl Erc20 {
         Self::decode_transfer(&input[4..]).map(|(recipient, _)| format!("0x{:x}", recipient))
     }
 
+    /// ABI-decode `(address recipient, uint256 amount)` from transfer calldata.
     fn decode_transfer(data: &[u8]) -> Option<(ethers::types::Address, ethers::types::U256)> {
         match decode(&[ParamType::Address, ParamType::Uint(256)], data) {
             Ok(tokens) => {
