@@ -12,6 +12,7 @@ pub struct DepositTask {
     pub reply: oneshot::Sender<Result<TicketResponse, Status>>,
 }
 
+#[allow(clippy::result_large_err)]
 pub async fn process_task(
     pool: &sqlx::PgPool,
     tx_hash: &str,

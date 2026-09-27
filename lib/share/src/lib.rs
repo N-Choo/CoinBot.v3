@@ -25,10 +25,12 @@ pub mod logger;
 pub mod models;
 pub mod rpc;
 
+#[allow(clippy::result_large_err)]
 mod wallet {
     tonic::include_proto!("wallet");
 }
 
+#[allow(clippy::result_large_err)]
 mod analyzer {
     tonic::include_proto!("analyzer");
 }

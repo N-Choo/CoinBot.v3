@@ -117,7 +117,7 @@ async fn check_and_finalize(
         let user = User::find_by_wallet(pool, &deposit.from_address)
             .await
             .map_err(|e| format!("Failed to identify user: {}", e))?
-            .ok_or_else(|| format!("user not found: {}", &deposit.from_address))?;
+            .ok_or_else(|| format!("user not found: {}", deposit.from_address))?;
 
         if let Err(e) = user.add_balance(&mut tx, &deposit.amount).await {
             return Err(e.to_string());
