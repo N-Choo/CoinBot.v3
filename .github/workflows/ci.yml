@@ -62,14 +62,14 @@ jobs:
       - name: Lowercase registry owner
         id: registry
         run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
-      - name: Build & push backend
+      - name: Build & push api_gateway
         uses: docker/build-push-action@v5
         with:
           context: .
           file: process/api_gateway/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-backend:latest
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-api_gateway:latest
       - name: Build & push deposit-worker
         uses: docker/build-push-action@v5
         with:
@@ -102,7 +102,7 @@ jobs:
           cp .env.ci .env
           docker compose -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod up -d
-      - name: Wait for backend
+      - name: Wait for api_gateway
         run: |
           for i in $(seq 1 30); do
             if curl -s -o /dev/null http://localhost:8080/api/config; then

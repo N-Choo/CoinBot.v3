@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api trade analyzer-test status seed seed-reset
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway test-api trade analyzer-test status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -20,7 +20,7 @@ help:
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
-	@echo "  make logs-backend Follow backend logs only"
+	@echo "  make logs-api-gateway Follow api_gateway logs only"
 	@echo "  make test-api     Run curl tests against the running API"
 	@echo ""
 	@echo "Production"
@@ -108,19 +108,19 @@ status:
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up backend deposit-worker trade-engine frontend
+		docker compose up api_gateway deposit-worker trade-engine frontend
 
 prod-build:
-	docker compose build deposit-worker-prod backend frontend-prod
+	docker compose build deposit-worker-prod api_gateway frontend-prod
 
 prod:
-	docker compose --profile prod up -d deposit-worker-prod backend-prod frontend-prod trade-engine-prod analyzer redis postgres
+	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer redis postgres
 
 logs:
 	docker compose logs -f
 
-logs-backend:
-	docker compose logs backend -f
+logs-api-gateway:
+	docker compose logs api_gateway -f
 
 test-api:
 	./scripts/test-api.sh

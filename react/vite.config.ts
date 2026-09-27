@@ -10,7 +10,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: process.env.VITE_BACKEND_URL || 'http://backend-dev:8080',
+        target: process.env.VITE_BACKEND_URL || 'http://api_gateway:8080',
         changeOrigin: true,
       },
       '/kucoin-api': {

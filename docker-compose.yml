@@ -68,7 +68,7 @@ services:
 
   # ── API Gateway ────────────────────────────
 
-  backend:
+  api_gateway:
     build:
       context: .
       dockerfile: process/api_gateway/Dockerfile
@@ -92,8 +92,8 @@ services:
     networks:
       - app-network
 
-  backend-prod:
-    image: ghcr.io/n-choo/coinbot-backend:latest
+  api_gateway-prod:
+    image: ghcr.io/n-choo/coinbot-api_gateway:latest
     build:
       context: .
       dockerfile: process/api_gateway/Dockerfile
@@ -124,11 +124,11 @@ services:
       - ./react:/app:Z
       - /app/node_modules
     depends_on:
-      - backend
+      - api_gateway
     networks:
       - app-network
     environment:
-      - VITE_BACKEND_URL=http://backend:8080
+      - VITE_BACKEND_URL=http://api_gateway:8080
 
   frontend-prod:
     build:
@@ -136,7 +136,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - backend-prod
+      - api_gateway-prod
     networks:
       - app-network
     profiles:
