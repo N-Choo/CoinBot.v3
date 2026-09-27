@@ -1,4 +1,4 @@
-use kucoin::client::rest::KuCoinClient;
+//use kucoin::client::rest::KuCoinClient;
 use share::ProcessError;
 use share::cache::Cache;
 use sqlx::PgPool;
