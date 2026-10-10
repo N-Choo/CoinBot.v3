@@ -21,13 +21,9 @@ pub async fn execute(
     c: &Contract,
 ) -> Result<(), ProcessError> {
     let action = signal.action.to_uppercase();
-    let (side, side_str) = match action.as_str() {
-        "BUY" => (Side::Buy, "buy"),
-        "SELL" => (Side::Sell, "sell"),
-        other => {
-            warn!("[TRADE] {} ignored signal action '{}'", c.ticker, other);
-            return Ok(());
-        }
+    let Some((side, side_str)) = order_side(&action) else {
+        warn!("[TRADE] {} ignored signal action '{}'", c.ticker, action);
+        return Ok(());
     };
 
     let price = signal.entry_price;
@@ -38,7 +34,7 @@ pub async fn execute(
         );
         return Ok(());
     };
-    let quantity = ((available / price) * 10_000.0).floor() / 10_000.0;
+    let quantity = compute_quantity(available, price);
     if price <= 0.0 || quantity <= 0.0 {
         warn!(
             "[TRADE] {} skipped | price={price} available={available} qty={quantity}",
@@ -109,6 +105,20 @@ pub async fn execute(
     Ok(())
 }
 
+/// Map an already-uppercased signal action to a KuCoin side and its wire string.
+fn order_side(action: &str) -> Option<(Side, &'static str)> {
+    match action {
+        "BUY" => Some((Side::Buy, "buy")),
+        "SELL" => Some((Side::Sell, "sell")),
+        _ => None,
+    }
+}
+
+/// Order size: available funds / price, floored to 4 decimal places.
+fn compute_quantity(available: f64, price: f64) -> f64 {
+    ((available / price) * 10_000.0).floor() / 10_000.0
+}
+
 /// Best-effort: mark an order failed so the ledger reflects a placement error.
 pub async fn fail_order(pool: &PgPool, id: sqlx::types::Uuid, reason: &str) {
     match pool.begin().await {
@@ -119,5 +129,31 @@ pub async fn fail_order(pool: &PgPool, id: sqlx::types::Uuid, reason: &str) {
             let _ = tx.commit().await;
         }
         Err(e) => warn!("[TRADE] could not open tx to mark order {id} failed: {e}"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn maps_buy_and_sell() {
+        assert_eq!(order_side("BUY"), Some((Side::Buy, "buy")));
+        assert_eq!(order_side("SELL"), Some((Side::Sell, "sell")));
+    }
+
+    #[test]
+    fn rejects_unknown_or_lowercase_actions() {
+        assert_eq!(order_side("buy"), None);
+        assert_eq!(order_side("HOLD"), None);
+        assert_eq!(order_side(""), None);
+    }
+
+    #[test]
+    fn quantity_is_floored_to_four_decimals() {
+        assert_eq!(compute_quantity(1.0, 3.0), 0.3333);
+        assert_eq!(compute_quantity(2.0, 3.0), 0.6666);
+        assert_eq!(compute_quantity(100.0, 2.0), 50.0);
+        assert_eq!(compute_quantity(0.0, 2.0), 0.0);
     }
 }
