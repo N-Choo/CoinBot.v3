@@ -17,6 +17,8 @@ pub struct TradeOrder {
     pub ticker: String,
     /// Order side, e.g. `buy` or `sell`.
     pub side: String,
+    /// What the order does to the position: `open` or `close`.
+    pub action: String,
     /// Comment sent to the exchange, linking back to `contract_id`.
     pub comment: String,
     /// Exchange-assigned order id, once accepted.
@@ -41,24 +43,27 @@ pub struct TradeOrder {
 
 impl TradeOrders {
     /// Record a new order in `pending` status.
+    #[allow(clippy::too_many_arguments)]
     pub async fn create(
         pool: &sqlx::PgPool,
         contract_id: Uuid,
         user_uid: Uuid,
         ticker: &str,
         side: &str,
+        action: &str,
         comment: &str,
         requested_qty: &str,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
-            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, comment, requested_qty)
-               VALUES ($1, $2, $3, $4, $5, $6)
+            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty)
+               VALUES ($1, $2, $3, $4, $5, $6, $7)
                RETURNING *"#,
         )
         .bind(contract_id)
         .bind(user_uid)
         .bind(ticker)
         .bind(side)
+        .bind(action)
         .bind(comment)
         .bind(requested_qty)
         .fetch_one(pool)
@@ -106,6 +111,24 @@ impl TradeOrders {
     }
 
     /// Mark an order as `failed` with a reason.
+    pub async fn mark_failed(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        reason: &str,
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"UPDATE trade_orders
+               SET status = 'failed', reason = $1, updated_at = NOW()
+               WHERE id = $2
+               RETURNING *"#,
+        )
+        .bind(reason)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Mark an order as `closed` with a reason.
     pub async fn mark_closed(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,

@@ -25,3 +25,20 @@ impl Display for Status {
         }
     }
 }
+
+/// What a trade order does to the position.
+pub enum Action {
+    /// Enter the position.
+    Open = 0,
+    /// Exit the position.
+    Close = 1,
+}
+
+impl Display for Action {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Action::Open => write!(f, "open"),
+            Action::Close => write!(f, "close"),
+        }
+    }
+}

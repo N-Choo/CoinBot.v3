@@ -25,8 +25,8 @@ pub struct Contract {
     pub init_fund: String,
     /// Funds still available to use, as a decimal string.
     pub available_fund: String,
-    /// Funds used so far, as a decimal string.
-    pub used_fund: String,
+    /// Cumulative funds traded on this contract, as a decimal string.
+    pub total_traded_fund: String,
     /// Stop-loss distance, in percent.
     pub sl_pct: f32,
     /// Take-profit distance, in percent.
@@ -43,7 +43,8 @@ impl Contracts {
     /// Insert a new contract in `active` status within `tx`.
     ///
     /// The ticker is upper-cased; the `nonce` is uniquely constrained by the
-    /// database. `available_fund` and `used_fund` start at `init_fund` and `0`.
+    /// database. `available_fund` starts at `init_fund` and `total_traded_fund`
+    /// at `0`.
     #[allow(clippy::too_many_arguments)]
     pub async fn create(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
@@ -55,12 +56,12 @@ impl Contracts {
         snap_balance: &str,
         init_fund: &str,
         available_fund: &str,
-        used_fund: &str,
+        total_traded_fund: &str,
         sl_pct: f32,
         tp_pct: f32,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO contracts (user_uid, signature, message, nonce, ticker, snap_balance, init_fund, available_fund, used_fund, sl_pct, tp_pct, status)
+            r#"INSERT INTO contracts (user_uid, signature, message, nonce, ticker, snap_balance, init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status)
                VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active')"#,
         )
         .bind(user_uid)
@@ -71,7 +72,7 @@ impl Contracts {
         .bind(snap_balance)
         .bind(init_fund)
         .bind(available_fund)
-        .bind(used_fund)
+        .bind(total_traded_fund)
         .bind(sl_pct)
         .bind(tp_pct)
         .execute(&mut **tx)
@@ -79,7 +80,7 @@ impl Contracts {
         Ok(())
     }
 
-    /// Move `amount` from `available_fund` to `used_fund` on a contract.
+    /// Move `amount` from `available_fund` to `total_traded_fund` on a contract.
     ///
     /// Returns [`sqlx::Error::RowNotFound`] when `available_fund` is less than
     /// `amount`, so callers can reject over-spending.
@@ -90,9 +91,9 @@ impl Contracts {
     ) -> Result<Contract, sqlx::Error> {
         sqlx::query_as::<_, Contract>(
             r#"UPDATE contracts
-               SET available_fund = available_fund::numeric - $1::numeric,
-                   used_fund      = used_fund::numeric + $1::numeric,
-                   updated_at     = NOW()
+               SET available_fund    = available_fund::numeric - $1::numeric,
+                   total_traded_fund = total_traded_fund::numeric + $1::numeric,
+                   updated_at        = NOW()
                WHERE id = $2 AND available_fund::numeric >= $1::numeric
                RETURNING *"#,
         )

@@ -4,4 +4,5 @@ mod status;
 
 pub use model::TradeOrder;
 pub use model::TradeOrders;
+pub use status::Action;
 pub use status::Status;

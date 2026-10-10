@@ -34,7 +34,7 @@ models, and on-chain helpers.
 | Item                                                           | Description                                                                                       |
 | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
 | `db::user::User`                                               | User wallet, uid, `balance`, `locked_balance`                                                     |
-| `db::contracts::{Contract, Contracts, ContractFilter, Status}` | Signed contracts and fund accounting (`snap_balance`, `init_fund`, `available_fund`, `used_fund`) |
+| `db::contracts::{Contract, Contracts, ContractFilter, Status}` | Signed contracts and fund accounting (`snap_balance`, `init_fund`, `available_fund`, `total_traded_fund`) |
 | `db::deposit::{Deposit, DepositFilter, Status}`                | On-chain USDT deposits                                                                            |
 | `db::trade::{TradeOrder, TradeOrders, Status}`                 | Order-level trade log                                                                             |
 | `db::get_uid(pool, wallet)`                                    | wallet → uid                                                                                      |
