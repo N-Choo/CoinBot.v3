@@ -27,6 +27,8 @@ pub struct TradeOrder {
     pub status: String,
     /// Requested quantity as a decimal string.
     pub requested_qty: String,
+    /// Reserved fund for this order (quote amount), as a decimal string.
+    pub funds: String,
     /// Filled quantity as a decimal string.
     pub filled_qty: String,
     /// Execution price as a decimal string, once filled.
@@ -53,10 +55,11 @@ impl TradeOrders {
         action: &str,
         comment: &str,
         requested_qty: &str,
+        funds: &str,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
-            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty)
-               VALUES ($1, $2, $3, $4, $5, $6, $7)
+            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING *"#,
         )
         .bind(contract_id)
@@ -66,6 +69,7 @@ impl TradeOrders {
         .bind(action)
         .bind(comment)
         .bind(requested_qty)
+        .bind(funds)
         .fetch_one(pool)
         .await
     }
@@ -105,6 +109,24 @@ impl TradeOrders {
         .bind(filled_qty)
         .bind(fill_price)
         .bind(fee)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Mark an order as `cancelled` with a reason.
+    pub async fn mark_cancelled(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        reason: &str,
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"UPDATE trade_orders
+               SET status = 'cancelled', reason = $1, updated_at = NOW()
+               WHERE id = $2
+               RETURNING *"#,
+        )
+        .bind(reason)
         .bind(id)
         .fetch_one(&mut **tx)
         .await

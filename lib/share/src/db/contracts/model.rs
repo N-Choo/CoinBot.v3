@@ -102,4 +102,46 @@ impl Contracts {
         .fetch_one(&mut **tx)
         .await
     }
+
+    /// Credit `amount` to a contract's `available_fund`.
+    pub async fn add_fund(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        amount: &str,
+    ) -> Result<Contract, sqlx::Error> {
+        sqlx::query_as::<_, Contract>(
+            r#"UPDATE contracts
+               SET available_fund = available_fund::numeric + $1::numeric,
+                   updated_at     = NOW()
+               WHERE id = $2
+               RETURNING *"#,
+        )
+        .bind(amount)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Move `amount` from `total_traded_fund` back to `available_fund`.
+    ///
+    /// Returns [`sqlx::Error::RowNotFound`] when `total_traded_fund` is less
+    /// than `amount`.
+    pub async fn release_fund(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        amount: &str,
+    ) -> Result<Contract, sqlx::Error> {
+        sqlx::query_as::<_, Contract>(
+            r#"UPDATE contracts
+               SET available_fund    = available_fund::numeric + $1::numeric,
+                   total_traded_fund = total_traded_fund::numeric - $1::numeric,
+                   updated_at        = NOW()
+               WHERE id = $2 AND total_traded_fund::numeric >= $1::numeric
+               RETURNING *"#,
+        )
+        .bind(amount)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
 }
