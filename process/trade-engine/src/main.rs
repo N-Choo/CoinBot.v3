@@ -1,7 +1,8 @@
 use kucoin::client::rest::KuCoinClient;
 use share::ProcessError;
 use share::auth::recover_wallet;
-use share::db::contracts::{ContractFilter, Status};
+use share::db::contracts::{ContractFilter, Contracts, Status};
+use share::db::trade::{TradeOrderFilter, TradeOrders};
 use share::models::signals::TradeSignal;
 
 mod app_config;
@@ -25,6 +26,16 @@ async fn main() -> Result<(), ProcessError> {
     let db = app_state.db_pool;
     let cache = app_state.redis_cache.clone();
     let kcc = app_state.kucoin.clone();
+
+    // Sync contract status
+    let sweeper_db = db.clone();
+    let kc_client = kcc.clone();
+    tokio::spawn(async move {
+        loop {
+            sync_contract_status(sweeper_db.clone(), kc_client.clone()).await;
+            tokio::time::sleep(std::time::Duration::from_secs(30)).await;
+        }
+    });
 
     // loop signal generator
     tokio::spawn(async move {
@@ -68,6 +79,102 @@ async fn main() -> Result<(), ProcessError> {
     log::info!("shutting down...");
 
     Ok(())
+}
+
+/// Sync open trade orders against the exchange and settle their contracts.
+async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
+    if let Ok(active_contracts) = ContractFilter::new()
+        .with_status(Status::Active)
+        .execute(&db)
+        .await
+    {
+        for c in active_contracts {
+            if let Ok(trade_orders) = TradeOrderFilter::new()
+                .with_contract(c.id)
+                .with_ticker(&c.ticker)
+                .with_status(share::db::trade::Status::Open)
+                .execute(&db)
+                .await
+            {
+                for o in trade_orders {
+                    let Some(order_id) = o.exchange_order_id.as_deref() else {
+                        continue;
+                    };
+                    let symbol = o.ticker.replace('/', "-");
+
+                    match o.status.as_str() {
+                        // Working on the exchange — reconcile it below.
+                        "open" => match kcc.spot().get_order(order_id, &symbol).await {
+                            Ok(order) => {
+                                let Some(data) = order.data else { continue };
+
+                                // Still working — nothing to settle yet.
+                                if data.active {
+                                    continue;
+                                }
+
+                                let filled: f64 = data.deal_size.parse().unwrap_or(0.0);
+                                if filled <= 0.0 {
+                                    // Done with no fill => cancelled.
+                                    if let Ok(mut tx) = db.begin().await {
+                                        let _ = TradeOrders::mark_cancelled(
+                                            &mut tx,
+                                            o.id,
+                                            "no fill (cancelled)",
+                                        )
+                                        .await;
+                                        // Return the reserved funds to the contract.
+                                        let _ =
+                                            Contracts::release_fund(&mut tx, c.id, &o.funds).await;
+                                        let _ = tx.commit().await;
+                                    }
+                                    continue;
+                                }
+
+                                let funds: f64 = data.deal_funds.parse().unwrap_or(0.0);
+                                let avg = funds / filled; // avg fill = dealFunds / dealSize
+
+                                if let Ok(mut tx) = db.begin().await {
+                                    let _ = TradeOrders::mark_filled(
+                                        &mut tx,
+                                        o.id,
+                                        &data.deal_size,
+                                        &avg.to_string(),
+                                        &data.fee,
+                                    )
+                                    .await;
+                                    // Credit the filled proceeds back to the contract.
+                                    let _ =
+                                        Contracts::add_fund(&mut tx, c.id, &data.deal_funds).await;
+                                    let _ = tx.commit().await;
+                                }
+
+                                log::info!(
+                                    "[SWEEP] {} order {} filled {} @ {avg} (fee {})",
+                                    symbol,
+                                    o.id,
+                                    data.deal_size,
+                                    data.fee
+                                );
+                            }
+                            Err(e) => trader::fail_order(&db, o.id, &e.to_string()).await,
+                        },
+
+                        // Not accepted yet, or already terminal: nothing to sync.
+                        "pending" | "filled" | "closed" | "cancelled" | "failed" => {
+                            log::debug!("[SWEEP] order {} skipped (status={})", o.id, o.status);
+                            continue;
+                        }
+
+                        other => {
+                            log::warn!("[SWEEP] order {} has unknown status '{}'", o.id, other);
+                            continue;
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// Analyse a signal and act on every active contract authorising its ticker.

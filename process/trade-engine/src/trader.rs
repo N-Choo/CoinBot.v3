@@ -63,6 +63,7 @@ pub async fn execute(
         "open",
         &comment,
         &quantity.to_string(),
+        &trade_fund.to_string(),
     )
     .await
     {
@@ -109,7 +110,7 @@ pub async fn execute(
 }
 
 /// Best-effort: mark an order failed so the ledger reflects a placement error.
-async fn fail_order(pool: &PgPool, id: sqlx::types::Uuid, reason: &str) {
+pub async fn fail_order(pool: &PgPool, id: sqlx::types::Uuid, reason: &str) {
     match pool.begin().await {
         Ok(mut tx) => {
             if let Err(e) = TradeOrders::mark_failed(&mut tx, id, reason).await {

@@ -22,7 +22,7 @@
 
 <br />
 
-**CoinBot.v3** is an event-driven crypto trading platform that turns user-signed contracts into automated trades on KuCoin futures. Users authenticate with an Ethereum wallet, deposit USDT on-chain, and sign a contract allocating funds to a strategy; a Rust **trade engine** consumes RSI-divergence signals from a Python **analyzer** and executes them, while an **API gateway** and **deposit worker** handle wallet auth, contract signing, and on-chain deposit verification.
+**CoinBot.v3** is an event-driven crypto trading platform that turns user-signed contracts into automated trades on KuCoin. Users authenticate with an Ethereum wallet, deposit USDT on-chain, and sign a contract allocating funds to a strategy; a Rust **trade engine** consumes RSI-divergence signals from a Python **analyzer**, places spot orders, and reconciles fills back to the contract, while an **API gateway** and **deposit worker** handle wallet auth, contract signing, and on-chain deposit verification.
 
 ## Processes
 
@@ -57,7 +57,7 @@ flowchart TB
     AN -->|"publish signals:result"| RD
     RD -->|"signals"| TE
     TE -->|"load + verify contracts"| DB
-    TE -.->|"place orders"| KC
+    TE -->|"execute + reconcile orders"| KC
 
     class UI,GW,DW,TE,AN,DB,RD,ETH,KC plain;
 ```
@@ -66,7 +66,7 @@ flowchart TB
 | ---------------- | ------------------------ | ------------------------------------------------------- | --------------------------------------------- |
 | `api_gateway`    | `process/api_gateway`    | HTTP API — auth, contract signing, deposit intake       | React, PostgreSQL, deposit-worker             |
 | `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper                | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
-| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts | Redis, PostgreSQL, KuCoin                     |
+| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | Redis, PostgreSQL, KuCoin |
 | `analyzer`       | `process/analyzer`       | signal engine (Python)                                  | Redis, KuCoin                                 |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
@@ -113,7 +113,7 @@ sequenceDiagram
     U->>G: POST /api/contracts/sign (nonce, message, signature)
     G->>G: verify signature + settings
     G->>DB: lock init_fund (balance -> locked_balance)
-    G->>DB: insert contract (available = init_fund, used = 0)
+    G->>DB: insert contract (available = init_fund, total_traded = 0)
     G-->>U: 200 Contract signed
 ```
 
@@ -144,7 +144,7 @@ sequenceDiagram
 
 ### Trading
 
-Signal to execution — match analyzer signals to active contracts, verify each signature, then execute.
+Signal to execution — match analyzer signals to active contracts, verify each signature, place the order, then reconcile fills.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
@@ -164,5 +164,8 @@ sequenceDiagram
     R-->>TE: signals
     TE->>DB: load active contracts
     TE->>TE: re-verify signatures (fail-closed)
-    TE-->>KC: place orders (WIP)
+    TE->>KC: place spot market order + reserve funds
+    KC-->>TE: order id
+    TE->>DB: record trade order (status = open)
+    Note over TE,DB: sweeper polls the exchange, marks filled/cancelled, settles contract funds
 ```
