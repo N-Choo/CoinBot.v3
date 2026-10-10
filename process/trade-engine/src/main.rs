@@ -1,3 +1,4 @@
+use kucoin::client::rest::KuCoinClient;
 use share::ProcessError;
 use share::auth::recover_wallet;
 use share::db::contracts::{ContractFilter, Status};
@@ -23,6 +24,7 @@ async fn main() -> Result<(), ProcessError> {
 
     let db = app_state.db_pool;
     let cache = app_state.redis_cache.clone();
+    let kcc = app_state.kucoin.clone();
 
     // loop signal generator
     tokio::spawn(async move {
@@ -37,11 +39,14 @@ async fn main() -> Result<(), ProcessError> {
         if let Err(e) = signal_cache
             .subscribe("signals:result", move |payload| {
                 let db = db.clone();
+                let kcc = kcc.clone();
                 async move {
                     match serde_json::from_str::<Vec<TradeSignal>>(&payload) {
                         Ok(signals) => {
                             for signal in &signals {
-                                if let Err(e) = signal_handler(signal, db.clone()).await {
+                                if let Err(e) =
+                                    signal_handler(signal, db.clone(), kcc.clone()).await
+                                {
                                     log::error!("signal handler failed: {e}");
                                 }
                             }
@@ -69,7 +74,11 @@ async fn main() -> Result<(), ProcessError> {
 ///
 /// Each contract is verified before use: the stored signature must recover to
 /// the wallet that owns the contract, otherwise the contract is skipped.
-pub async fn signal_handler(signal: &TradeSignal, db: Pool<Postgres>) -> Result<(), ProcessError> {
+pub async fn signal_handler(
+    signal: &TradeSignal,
+    db: Pool<Postgres>,
+    kcc: KuCoinClient,
+) -> Result<(), ProcessError> {
     let contracts = ContractFilter::new()
         .with_ticker(&signal.ticker)
         .with_status(Status::Active)
@@ -101,14 +110,24 @@ pub async fn signal_handler(signal: &TradeSignal, db: Pool<Postgres>) -> Result<
             continue;
         }
 
-        // let mininum = c.init_fund / 4;
-        // if mininum =< c.available_fund {
-        //
-        //     // gerenerate trade ticket to kcc.
-        //     // comsume_fund
-        //
-        //
-        // }
+        let Ok(init_fund) = c.init_fund.parse::<f64>() else {
+            log::warn!("contract {} has invalid init_fund '{}'", c.id, c.init_fund);
+            continue;
+        };
+        let Ok(available) = c.available_fund.parse::<f64>() else {
+            log::warn!(
+                "contract {} has invalid available_fund '{}'",
+                c.id,
+                c.available_fund
+            );
+            continue;
+        };
+
+        if available >= init_fund / 4.0
+            && let Err(e) = trader::execute(&kcc, &db, signal, &c).await
+        {
+            log::error!("trade execution failed on contract {}: {e}", c.id);
+        }
 
         log::info!(
             "contract {} verified for {} ({} {})",
