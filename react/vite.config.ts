@@ -10,7 +10,7 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       '/api': {
-        target: 'http://backend-dev:8080',
+        target: process.env.VITE_BACKEND_URL || 'http://api_gateway:8080',
         changeOrigin: true,
       },
       '/kucoin-api': {
@@ -19,6 +19,15 @@ export default defineConfig({
         configure: (proxy) => {
           proxy.on('proxyReq', (proxyReq) => {
             proxyReq.path = proxyReq.path.replace('/kucoin-api', '')
+          })
+        },
+      },
+      '/news-api': {
+        target: 'https://cointelegraph.com',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.path = proxyReq.path.replace('/news-api', '')
           })
         },
       },

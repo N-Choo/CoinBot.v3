@@ -1,40 +1,57 @@
-PACKAGES = api-gateway share deposit
+PACKAGES = api-gateway share deposit trade-engine
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-backend test-api
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
 
 help:
-	@echo "Usage: make <target>"
+	@echo "CoinBot.v3 Makefile"
 	@echo ""
-	@echo "Docker"
-	@echo "  clean        Remove all containers, images, and volumes"
+	@echo "Getting Started"
+	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
+	@echo ""
+	@echo "Testing (starts Postgres + Redis automatically)"
+	@echo "  make test         Run all tests (Rust + Python)"
+	@echo "  make analyzer-test  Python analyzer unit tests only"
+	@echo "  make benchmark-test  Benchmark unit tests only"
+	@echo "  make frontend-test  Frontend tests only"
+	@echo ""
+	@echo "Trading"
+	@echo "  make trade        Run trade-engine + Python analyzer live (needs DB + Redis)"
+	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
 	@echo ""
 	@echo "Development"
-	@echo "  dev          Start deposit-worker + backend-dev + frontend"
-	@echo "  test-api     Run curl tests against the API"
-	@echo "  logs         Follow logs from all services"
-	@echo "  logs-backend Follow backend logs"
+	@echo "  make logs         Follow logs from all services"
+	@echo "  make logs-api-gateway Follow api_gateway logs only"
+	@echo "  make restart      Recompile + restart Rust services (after .rs changes)"
+	@echo "                    make restart SERVICE=api_gateway  (one service)"
+	@echo "  make test-api     Run curl tests against the running API"
 	@echo ""
 	@echo "Production"
-	@echo "  prod         Build + start all production services (detached)"
-	@echo "  prod-build   Build production images without running"
+	@echo "  make prod         Build + start all production services (detached)"
+	@echo "  make prod-build   Build production images without running"
 	@echo ""
 	@echo "Rust"
-	@echo "  fmt          Check formatting"
-	@echo "  fmt-fix      Fix formatting"
-	@echo "  clippy       Lint (deny warnings)"
-	@echo "  test         Run unit tests"
-	@echo "  proto        Compile wallet.proto (verify proto only)"
+	@echo "  make fmt          Check Rust formatting"
+	@echo "  make fmt-fix      Fix Rust formatting"
+	@echo "  make clippy       Lint Rust (deny warnings)"
 	@echo ""
 	@echo "Frontend"
-	@echo "  frontend-lint      Lint frontend"
-	@echo "  frontend-lint-fix  Auto-fix frontend lint"
-	@echo "  frontend-test      Run frontend tests"
-	@echo "  frontend-build     Build frontend for production"
+	@echo "  make frontend-lint      Lint frontend"
+	@echo "  make frontend-lint-fix  Auto-fix frontend lint"
+	@echo "  make frontend-build     Build frontend for production"
 	@echo ""
 	@echo "CI"
-	@echo "  ci           Run full CI pipeline (fmt + clippy + test + lint + build)"
+	@echo "  make ci           Full pipeline (fmt + clippy + test + lint + build)"
+	@echo ""
+	@echo "Cleanup"
+	@echo "  make clean        Remove prod containers, images, and volumes"
+	@echo "  make clean-all    Remove ALL containers, images, and volumes"
+	@echo ""
+	@echo "Seeding"
+	@echo "  make seed         Insert demo data into local DB (4 users, 6 contracts, 8 orders)"
+	@echo "  make seed-reset   Wipe and re-seed demo data"
+	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test analyzer-test frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -46,7 +63,23 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
 
 test:
-	cargo test $(addprefix -p ,$(PACKAGES))
+	@[ -f .env ] || cp .env.ci .env; \
+	 docker compose up -d postgres redis && \
+		sleep 2 && \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
+		rst=$$?; \
+		if [ -d process/analyzer ]; then (cd process/analyzer && python3 -m pytest . -v); pst=$$?; else echo "skipping analyzer tests (process/analyzer absent)"; pst=0; fi; \
+		docker compose stop redis postgres; \
+		exit $$(( rst + pst ))
+
+analyzer-test:
+	@cd process/analyzer && python3 -m pytest . -v
+
+benchmark-test:
+	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
+
+benchmark:
+	@cd process && python3 -m analyzer.benchmark.main
 
 frontend-install:
 	cd react && npm ci
@@ -64,25 +97,58 @@ frontend-build: frontend-install
 	cd react && npm run build
 
 clean:
-	docker compose down --rmi all -v
+	docker compose --profile prod stop
+	docker compose --profile prod down --rmi all --volumes --remove-orphans
+
+clean-all:
+	docker compose stop
+	docker compose down --rmi all --volumes --remove-orphans
+	docker volume prune -f
+
+status:
+	@docker compose ps 2>/dev/null
+
+restart:
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine)
 
 dev:
-	docker compose up backend-dev deposit-worker frontend
+	docker compose up -d postgres redis && \
+		docker compose up api_gateway deposit-worker trade-engine frontend
 
 prod-build:
-	docker compose build deposit-worker-prod backend frontend-prod
+	docker compose build deposit-worker-prod api_gateway frontend-prod
 
 prod:
-	docker compose --profile prod up -d deposit-worker-prod backend frontend-prod
+	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer redis postgres
 
 logs:
 	docker compose logs -f
 
-logs-backend:
-	docker compose logs backend -f
+logs-api-gateway:
+	docker compose logs api_gateway -f
 
 test-api:
-	./test-api.sh
+	./scripts/test-api.sh
+
+trade:
+	@docker compose up -d postgres redis && \
+		sleep 2 && \
+		(cd process && DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
+		PID=$$!; sleep 2 && \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
+		sleep 3; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
+		exit $$st); \
+		docker compose stop redis postgres
 
 proto:
 	cargo build -p common --timings
+
+seed:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -f scripts/seed-demo.sql
+
+seed-reset:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -c "TRUNCATE contracts, users RESTART IDENTITY CASCADE;"
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -f scripts/seed-demo.sql
+
+db:
+	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot

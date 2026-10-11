@@ -1,0 +1,52 @@
+use actix_governor::{Governor, GovernorConfigBuilder};
+use actix_web::{
+    App, HttpServer,
+    middleware::{Logger, NormalizePath},
+    web,
+};
+use api_gateway::{config::AppConfig, routes::api_routes};
+use dotenvy::dotenv;
+use share::ProcessError;
+use share::logger::init_logger;
+
+/// Service entry point.
+///
+/// Loads environment configuration, initialises logging and the shared
+/// [`AppState`](api_gateway::state::AppState), then starts the Actix-Web server
+/// with rate limiting, CORS, path normalisation, and request logging.
+#[actix_web::main]
+async fn main() -> Result<(), ProcessError> {
+    dotenv().ok();
+    init_logger();
+
+    let config = AppConfig::from_env()?;
+    let app_state = api_gateway::state::AppState::new(&config).await?;
+    let config_data = web::Data::new(config.clone());
+
+    let governor = GovernorConfigBuilder::default()
+        .milliseconds_per_request(20)
+        .burst_size(100)
+        .finish()
+        .unwrap();
+
+    // Initial HTTP workers to handle inncomming TCP connections.
+    HttpServer::new(move || {
+        App::new()
+            .wrap(Governor::new(&governor))
+            .wrap(config_data.get_cors())
+            .wrap(NormalizePath::trim())
+            .wrap(Logger::new("%a\t | %s\t | %Dms\t | %r\t"))
+            .app_data(web::Data::new(app_state.nonce_cache.clone()))
+            .app_data(web::Data::new(app_state.session_cache.clone()))
+            .app_data(web::Data::new(app_state.db_pool.clone()))
+            .app_data(web::Data::new(app_state.grpc_deposit.clone()))
+            .configure(api_routes)
+    })
+    .workers(config.n_worker)
+    .backlog(config.n_queue)
+    .bind((config.ip, config.port))?
+    .run()
+    .await?;
+
+    Ok(())
+}

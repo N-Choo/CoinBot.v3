@@ -1,0 +1,21 @@
+syntax = "proto3";
+package analyzer;
+
+message AnalyzeRequest {
+  repeated string tickers = 1;
+}
+
+message Signal {
+  string ticker = 1;
+  string action = 2;    // "buy", "sell", "hold"
+  double confidence = 3;
+  double entry_price = 4;
+}
+
+message AnalyzeResponse {
+  repeated Signal signals = 1;
+}
+
+service AnalyzerService {
+  rpc Analyze(AnalyzeRequest) returns (AnalyzeResponse);
+}

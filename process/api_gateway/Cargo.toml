@@ -1,0 +1,27 @@
+[package]
+name = "api-gateway"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+share = { path = "../../lib/share" }
+actix-web.workspace = true
+uuid.workspace = true
+chrono.workspace = true
+serde.workspace = true
+log.workspace = true
+
+sqlx.workspace = true
+ethers.workspace = true
+thiserror.workspace = true
+redis.workspace = true
+dotenvy.workspace = true
+actix-cors.workspace = true
+rand.workspace = true
+serde_json.workspace = true
+tokio.workspace = true
+actix-governor.workspace = true
+tonic = "0.12"
+
+[dev-dependencies]
+actix-http.workspace = true

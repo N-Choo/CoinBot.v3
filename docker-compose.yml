@@ -1,8 +1,40 @@
+# ──────────────────────────────────────────────
+# Dev services  → local DB, hot-reload, debug
+# Prod services → cloud DB, pre-built images
+#
+# make dev   → starts all dev services
+# make prod  → starts all prod services
+# ──────────────────────────────────────────────
+
 services:
+  # ── Shared Infrastructure ──────────────────
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_DB=coinbot
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - app-network
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    networks:
+      - app-network
+
+  # ── Deposit Worker ─────────────────────────
+
   deposit-worker:
     build:
       context: .
-      dockerfile: deposit-worker/Dockerfile
+      dockerfile: process/deposit-worker/Dockerfile
       target: dev-builder
     command: cargo run -p deposit
     volumes:
@@ -12,7 +44,9 @@ services:
       - .env
     environment:
       - RUST_LOG=debug
-      - GRPC_ADDR=0.0.0.0:50051
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+    depends_on:
+      - postgres
     networks:
       - app-network
 
@@ -20,20 +54,24 @@ services:
     image: ghcr.io/n-choo/coinbot-worker:latest
     build:
       context: .
-      dockerfile: deposit-worker/Dockerfile
+      dockerfile: process/deposit-worker/Dockerfile
     env_file:
       - .env
     environment:
       - GRPC_ADDR=0.0.0.0:50051
+    depends_on:
+      - postgres
     networks:
       - app-network
     profiles:
       - prod
 
-  backend-dev:
+  # ── API Gateway ────────────────────────────
+
+  api_gateway:
     build:
       context: .
-      dockerfile: api_gateway/Dockerfile
+      dockerfile: process/api_gateway/Dockerfile
       target: dev-builder
     command: cargo run -p api-gateway
     env_file:
@@ -46,29 +84,35 @@ services:
     environment:
       - RUST_LOG=debug
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+      - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
     depends_on:
+      - postgres
       - deposit-worker
     networks:
       - app-network
 
-  backend:
-    image: ghcr.io/n-choo/coinbot-backend:latest
+  api_gateway-prod:
+    image: ghcr.io/n-choo/coinbot-api_gateway:latest
     build:
       context: .
-      dockerfile: api_gateway/Dockerfile
+      dockerfile: process/api_gateway/Dockerfile
     env_file:
       - .env
     ports:
       - "8080:8080"
     environment:
       - RUST_LOG=debug
-      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
+      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
     depends_on:
-      - deposit-worker
+      - postgres
+      - deposit-worker-prod
     networks:
       - app-network
     profiles:
       - prod
+
+  # ── Frontend ───────────────────────────────
 
   frontend:
     image: node:22-alpine
@@ -80,24 +124,82 @@ services:
       - ./react:/app:Z
       - /app/node_modules
     depends_on:
-      - backend-dev
+      - api_gateway
     networks:
       - app-network
     environment:
-      - VITE_API_URL=http://localhost:8081
+      - VITE_BACKEND_URL=http://api_gateway:8080
 
   frontend-prod:
-    profiles:
-      - prod
     build:
       context: ./react
     ports:
       - "80:80"
     depends_on:
-      - backend
+      - api_gateway-prod
     networks:
       - app-network
+    profiles:
+      - prod
+
+  # ── Trade Engine ───────────────────────────
+
+  trade-engine:
+    build:
+      context: .
+      dockerfile: process/trade-engine/Dockerfile
+      target: dev-builder
+    command: cargo run -p trade-engine
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=debug
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+    depends_on:
+      - postgres
+      - redis
+      - deposit-worker
+    networks:
+      - app-network
+
+  trade-engine-prod:
+    build:
+      context: .
+      dockerfile: process/trade-engine/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    profiles:
+      - prod
+
+  # ── Analyzer (prod only) ───────────────────
+
+  analyzer:
+    image: ghcr.io/n-choo/coinbot-analyzer:latest
+    build:
+      context: ./process/analyzer
+      dockerfile: Dockerfile
+    env_file:
+      - .env
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on:
+      - redis
+    networks:
+      - app-network
+    profiles:
+      - prod
 
 networks:
   app-network:
     driver: bridge
+
+volumes:
+  postgres_data:

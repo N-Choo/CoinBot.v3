@@ -1,65 +1,59 @@
 import { useState, useEffect } from 'react'
 import Skeleton from '../ui/Skeleton'
+import { getUserStats, type UserStats } from '../../services/stats'
+import { useContractsData } from '../../hooks/useContractsData'
 
-const stats = [
-  { label: 'Total Balance', value: '$124,582.40', change: '+3.24%', isUp: true },
-  { label: 'Free Balance', value: '$48,230.15', change: '+1.87%', isUp: true },
-  { label: 'Locked Balance', value: '$76,352.25', change: '-0.52%', isUp: false },
-]
+const fmtUsd = (v: string): string => {
+  const n = parseFloat(v)
+  return '$' + (Number.isNaN(n) ? 0 : n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+const fmtSigned = (n: number): string =>
+  `${n >= 0 ? '+' : '−'}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 
 export default function BalanceStats() {
-  const [loading, setLoading] = useState(true)
+  const { totalPnl } = useContractsData()
+  const [stats, setStats] = useState<UserStats | null>(null)
 
   useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 600)
-    return () => clearTimeout(t)
+    let active = true
+    getUserStats()
+      .then(d => { if (active) setStats(d) })
+      .catch(() => {})
+    return () => { active = false }
   }, [])
 
-  if (loading) {
+  if (!stats) {
     return (
-      <div className="flex w-full min-w-0">
-        {[1, 2, 3].map(i => (
-          <div key={i} className="flex-1 min-w-0 p-3 sm:p-5 sm:border-r border-border-light last:border-r-0">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {[1, 2, 3, 4].map(i => (
+          <div key={i} className="bg-bg-panel border border-border-light rounded-xl p-4 backdrop-blur-xl">
             <Skeleton variant="text-sm" width="60%" />
-            <Skeleton variant="text-lg" width="70%" />
-            <Skeleton variant="text-sm" width="40%" />
+            <div className="my-2"><Skeleton variant="text-lg" width="70%" /></div>
           </div>
         ))}
       </div>
     )
   }
 
+  const cards = [
+    { label: 'Total Balance', value: fmtUsd(stats.total), cls: 'text-text-main' },
+    { label: 'Free Balance', value: fmtUsd(stats.free), cls: 'text-text-main' },
+    { label: 'Locked Balance', value: fmtUsd(stats.locked), cls: 'text-text-main' },
+    { label: 'Realized PnL', value: fmtSigned(totalPnl), cls: totalPnl >= 0 ? 'text-up-text' : 'text-down-text' },
+  ]
+
   return (
-    <div className="flex w-full min-w-0">
-      {stats.map((stat, idx) => (
-        <div key={idx} className="flex-1 min-w-0 p-3 sm:p-5 sm:border-r border-border-light last:border-r-0 border-b sm:border-b-0" tabIndex={0}>
-          <div className="flex justify-between items-center">
-            <div className="flex flex-col">
-              <span className="text-[10px] text-text-muted font-semibold uppercase tracking-[0.3px]">{stat.label}</span>
-            </div>
-            <div className="w-8 h-8 rounded flex items-center justify-center border border-border-light shrink-0">
-              {idx === 0 && (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
-                </svg>
-              )}
-              {idx === 1 && (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
-                </svg>
-              )}
-              {idx === 2 && (
-                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M21 2l-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0l3 3L22 7l-3-3m-3.5 3.5L19 4" />
-                </svg>
-              )}
-            </div>
-          </div>
-          <div className="text-lg sm:text-[22px] font-extrabold font-mono text-text-main leading-tight my-1 sm:my-1.5 truncate">{stat.value}</div>
-          <div className="flex items-center gap-1.5 text-xs font-semibold">
-            <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${stat.isUp ? 'bg-up' : 'bg-down'}`} />
-            <span className={`${stat.isUp ? 'text-up-text' : 'text-down-text'}`}>{stat.change}</span>
-            <span className="text-text-muted font-medium text-[10px]">24h</span>
+    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+      {cards.map(card => (
+        <div
+          key={card.label}
+          tabIndex={0}
+          className="bg-bg-panel border border-border-light rounded-xl p-4 backdrop-blur-xl transition-colors hover:border-accent/40"
+        >
+          <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{card.label}</div>
+          <div className={`font-mono text-[22px] sm:text-[24px] font-bold mt-2 leading-tight truncate ${card.cls}`}>
+            {card.value}
           </div>
         </div>
       ))}

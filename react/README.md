@@ -1,73 +1,119 @@
-# React + TypeScript + Vite
+# Frontend Architecture
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+The React app (`react/src`) is a thin view layer over the backend REST API: providers
+own auth and contract data, pages compose feature components, and `services/` wrap the
+HTTP calls.
 
-Currently, two official plugins are available:
+## Component tree
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+```mermaid
+flowchart TD
+    main["main.tsx"] --> App["App.tsx (router)"]
+    App --> Auth["AuthProvider (useAuth)"]
+    App --> Guard{"AuthGuard"}
 
-## React Compiler
+    Guard -->|"/ (public)"| Home["homePage"]
+    Guard -->|"/trading (session)"| Trade["tradingPage"]
+    Guard -->|"/dashboard (session)"| Dash["dashboard"]
+    Guard -.->|wraps| CP["ContractsProvider"]
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+    Home --> Hero["HeroSection"]
+    Home --> Live["LiveTicker"]
+    Home --> News["NewsFeed"]
+    Home --> Stats["StatsBar"]
+    Home --> Feat["FeaturesSection"]
+    Home --> Foot["FooterSection"]
 
-## Expanding the ESLint configuration
+    Trade --> MTB["MarketTickerBar"]
+    Trade --> TC["TradingChart"]
+    Trade --> TF["TradingForm"]
+    Trade --> AC1["ActiveContracts"]
 
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
+    Dash --> BS["BalanceStats"]
+    Dash --> Pnl["PnlChart"]
+    Dash --> AC2["ActiveContracts"]
+    Dash --> SA["SidebarActions"]
 
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+    AC1 -.->|useContractsData| CP
+    AC2 -.->|useContractsData| CP
+    Pnl -.->|useContractsData| CP
+    BS  -.->|useContractsData| CP
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+- **`AuthProvider`** — session state and `login`/`logout` (`useAuth`); verifies the
+  session with `POST /api/user/verify`.
+- **`AuthGuard`** — redirects to `/` when not authenticated.
+- **`ContractsProvider`** — one fetch of contracts + orders and one 1s price sweep,
+  shared by every contract/PnL consumer (see below).
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
+## Data flow
 
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```mermaid
+flowchart LR
+    %% React  ·  services/  ·  backend endpoints
+    CP["ContractsProvider"] -->|getMyContracts| C["contract.ts"]
+    CP -->|getContractOrders| C
+    CP -->|fetchTickerPrice · 1s| K["kucoin.ts"]
+    C --> E1["/api/contracts/me"]
+    C --> E2["/api/contracts/{id}/orders"]
+    K --> E3["/kucoin-api orderbook/level1"]
+
+    BS["BalanceStats"] -->|getUserStats| ST["stats.ts"]
+    SS["StatsBar"] -->|getStats · 15s| ST
+    ST --> E4["/api/user/stats"]
+    ST --> E5["/api/stats"]
+
+    NF["NewsFeed"] -->|fetchNews · 60s| NW["news.ts"] --> E6["/news-api (RSS)"]
+    LV["LiveTicker"] -->|fetchTickers| K
+
+    AU["useAuth"] -->|connectWallet / verify| CW["connectWallet.ts"] --> E7["/api/user/auth · /verify"]
+    TF["TradingForm"] -->|signContract| C
+    SA["SidebarActions"] -->|getActivity / withdraw| TX["transaction.ts"] --> E8["/api/transactions"]
 ```
+
+### Runtime sequence (authenticated pages)
+
+**On mount**
+
+| # | Call | Result |
+| --- | --- | --- |
+| 1 | `POST /api/user/verify` (`useAuth`) | session → `isAuthenticated` |
+| 2 | `GET /api/contracts/me` (`getMyContracts`) | the user's contracts |
+| 3 | `GET /api/contracts/{id}/orders` (per contract) | each contract's orders |
+| 4 | `GET /api/user/stats` (`BalanceStats`) | Total / Free / Locked balances |
+
+**Live — every 1s** (`ContractsProvider`)
+
+- Sweeps each distinct ticker **sequentially** → `GET /kucoin-api/api/v1/market/orderbook/level1`.
+- Derives `pnlOf(order, ticker)` (filled → vs `fill_price`; open → vs `funds / requested_qty`),
+  `contractPnl`, and `totalPnl`; re-renders consumers on each tick.
+
+**Landing pollers**
+
+| Component | Endpoint | Interval |
+| --- | --- | --- |
+| `StatsBar` | `GET /api/stats` | 15s |
+| `NewsFeed` | `GET /news-api/rss` | 60s |
+| `LiveTicker` | `GET /kucoin-api/.../allTickers` | 10s |
+
+## Components → data source
+
+| Component         | Data source                                 | Notes                             |
+| ----------------- | ------------------------------------------- | --------------------------------- |
+| `HeroSection`     | `useAuth`, `LiveTicker`                     | login + wallet                    |
+| `LiveTicker`      | `services/kucoin` · `/kucoin-api`           | BTC/ETH/SOL prices                |
+| `NewsFeed`        | `services/news` · `/news-api`               | CoinTelegraph RSS                 |
+| `StatsBar`        | `services/stats` · `/api/stats`             | public aggregates                 |
+| `ActiveContracts` | `useContractsData`                          | list + detail + orders + live PnL |
+| `PnlChart`        | `useContractsData`                          | cumulative PnL series             |
+| `BalanceStats`    | `services/stats` + `useContractsData`       | balances + total PnL              |
+| `TradingForm`     | `services/contract`, `services/transaction` | sign contract                     |
+| `SidebarActions`  | `services/transaction`                      | deposits / activity               |
+
+## Providers & hooks
+
+| Hook / provider    | File                            | Responsibility                                                                                  |
+| ------------------ | ------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `useAuth`          | `hooks/useAuth.tsx`             | session state, `login`, `logout`                                                                |
+| `useContractsData` | `hooks/useContractsData.tsx`    | contracts, orders, prices, `pnlOf` / `contractPnl` / `totalPnl`; effects key on the contract-id set |
+| `useTheme`         | `hooks/useTheme.tsx`            | light / dark                                                                                    |

@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react'
 import { Route, Routes } from 'react-router-dom'
 import { Toaster } from 'react-hot-toast'
 import { AuthProvider } from './hooks/useAuth'
+import { ContractsProvider } from './hooks/useContractsData'
 import Topbar from './components/layout/Topbar'
 import AuthGuard from './components/auth/AuthGuard'
 import Landing from './pages/homePage'
@@ -43,8 +44,8 @@ export default function AppRoutes() {
       <Suspense fallback={<PageLoader />}>
         <Routes>
           <Route path={PATHS.HOME} element={<Landing />} />
-          <Route path={PATHS.TRADE} element={<AuthGuard><Trading /></AuthGuard>} />
-          <Route path={PATHS.DASHBOARD} element={<AuthGuard><Dashboard /></AuthGuard>} />
+          <Route path={PATHS.TRADE} element={<AuthGuard><ContractsProvider><Trading /></ContractsProvider></AuthGuard>} />
+          <Route path={PATHS.DASHBOARD} element={<AuthGuard><ContractsProvider><Dashboard /></ContractsProvider></AuthGuard>} />
         </Routes>
       </Suspense>
     </AuthProvider>

@@ -99,3 +99,16 @@ export function searchTickers(list: TickerData[], query: string): TickerData[] {
   const q = query.toLowerCase()
   return list.filter(t => t.pair.toLowerCase().includes(q))
 }
+
+/** Latest price for a single symbol, e.g. `BTC-USDT`. `null` on failure. */
+export async function fetchTickerPrice(raw: string): Promise<number | null> {
+  try {
+    const res = await fetch(`/kucoin-api/api/v1/market/orderbook/level1?symbol=${raw}`)
+    if (!res.ok) return null
+    const json = await res.json()
+    const price = parseFloat(json?.data?.price)
+    return Number.isNaN(price) ? null : price
+  } catch {
+    return null
+  }
+}

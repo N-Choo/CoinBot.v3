@@ -4,6 +4,14 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from '../hooks/useAuth'
 import CoinBot from './homePage'
 
+vi.mock('../services/stats', () => ({
+  getStats: vi.fn().mockResolvedValue({ accounts: 0, active_contracts: 0, funds_deployed: '0', trades_executed: 0 }),
+}))
+
+vi.mock('../services/news', () => ({
+  fetchNews: vi.fn().mockResolvedValue([]),
+}))
+
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider>{children}</AuthProvider></BrowserRouter>
 }
@@ -33,17 +41,17 @@ describe('CoinBot (homePage)', () => {
 
   test('renders stats section', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('Trading Volume')).toBeInTheDocument()
-    expect(screen.getByText('Uptime')).toBeInTheDocument()
-    expect(screen.getByText('Active Users')).toBeInTheDocument()
-    expect(screen.getByText('Liquidation Risk')).toBeInTheDocument()
+    expect(screen.getByText('Accounts')).toBeInTheDocument()
+    expect(screen.getByText('Active Contracts')).toBeInTheDocument()
+    expect(screen.getByText('Funds Deployed')).toBeInTheDocument()
+    expect(screen.getByText('Trades Executed')).toBeInTheDocument()
   })
 
   test('renders feature cards', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('Buy Low, Sell High')).toBeInTheDocument()
-    expect(screen.getByText('Auto-Stake')).toBeInTheDocument()
-    expect(screen.getByText('Zero Effort')).toBeInTheDocument()
+    expect(screen.getByText('Wallet Accounts')).toBeInTheDocument()
+    expect(screen.getByText('Trading Service')).toBeInTheDocument()
+    expect(screen.getByText('Automated Deposits')).toBeInTheDocument()
   })
 
   test('renders CTA buttons', () => {

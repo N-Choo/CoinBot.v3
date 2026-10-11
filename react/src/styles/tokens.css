@@ -15,14 +15,14 @@
   --bg-danger: rgba(255, 77, 77, 0.08);
 
   /* Accent */
-  --neon-teal: #1dcd9f;
+  --neon-teal: #ff5722;
   --neon-blue: #0ea5e9;
-  --neon-teal-dim: rgba(29, 205, 159, 0.15);
-  --neon-teal-glow: rgba(29, 205, 159, 0.25);
+  --neon-teal-dim: rgba(255, 87, 34, 0.15);
+  --neon-teal-glow: rgba(255, 87, 34, 0.25);
   --neon-blue-glow: rgba(14, 165, 233, 0.25);
 
-  --color-primary: #1dcd9f;
-  --color-primary-dark: #10a37c;
+  --color-primary: #ff5722;
+  --color-primary-dark: #e64a19;
   --color-accent: #ff5722;
   --color-danger: #ef4444;
   --color-up: #22c55e;
@@ -68,7 +68,7 @@
   --gradient-btn: linear-gradient(135deg, #1dcd9f 0%, #10a37c 100%);
   --shadow-panel: 0 1px 2px rgba(0, 0, 0, 0.04), 0 1px 4px rgba(0, 0, 0, 0.06);
   --shadow-btn: 0 2px 8px rgba(29, 205, 159, 0.25);
-  --primary-glow: rgba(29, 205, 159, 0.2);
+  --primary-glow: rgba(255, 87, 34, 0.2);
   --accent-glow: rgba(255, 87, 34, 0.15);
   --accent-alpha: rgba(168, 85, 247, 0.25);
   --primary-shadow: rgba(29, 205, 159, 0.1);
@@ -104,14 +104,14 @@
   --bg-success: rgba(29, 205, 159, 0.1);
   --bg-danger: rgba(255, 77, 77, 0.1);
 
-  --neon-teal: #1dcd9f;
+  --neon-teal: #ff5722;
   --neon-blue: #00f3ff;
-  --neon-teal-dim: rgba(29, 205, 159, 0.3);
-  --neon-teal-glow: rgba(29, 205, 159, 0.4);
+  --neon-teal-dim: rgba(255, 87, 34, 0.3);
+  --neon-teal-glow: rgba(255, 87, 34, 0.4);
   --neon-blue-glow: rgba(0, 243, 255, 0.4);
 
-  --color-primary: #1dcd9f;
-  --color-primary-dark: #0fb589;
+  --color-primary: #ff5722;
+  --color-primary-dark: #e64a19;
   --color-accent: #ff5722;
   --color-danger: #ff4d4d;
   --color-up: #1dcd9f;
@@ -148,7 +148,7 @@
   --gradient-btn: linear-gradient(135deg, #1dcd9f 0%, #0fb589 100%);
   --shadow-panel: 0 10px 40px rgba(0, 0, 0, 0.5);
   --shadow-btn: 0 0 20px rgba(29, 205, 159, 0.3);
-  --primary-glow: rgba(29, 205, 159, 0.4);
+  --primary-glow: rgba(255, 87, 34, 0.4);
   --accent-glow: rgba(255, 87, 34, 0.25);
   --accent-alpha: rgba(168, 85, 247, 0.3);
   --primary-shadow: rgba(29, 205, 159, 0.15);

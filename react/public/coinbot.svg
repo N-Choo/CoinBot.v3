@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 48 48" fill="none" role="img" aria-label="CoinBot">
+  <!-- 1 · full -->
+  <rect x="4" y="9" width="40" height="6" rx="3" fill="#ff5722"/>
+  <!-- 2 · 30 / 60 -->
+  <rect x="4" y="17" width="12" height="6" rx="3" fill="#ff5722"/>
+  <rect x="18" y="17" width="24" height="6" rx="3" fill="#ff5722"/>
+  <!-- 3 · 50 / 50 -->
+  <rect x="4" y="25" width="19" height="6" rx="3" fill="#ff5722"/>
+  <rect x="25" y="25" width="19" height="6" rx="3" fill="#ff5722"/>
+  <!-- 4 · 20 -->
+  <rect x="4" y="33" width="8" height="6" rx="3" fill="#ff5722"/>
+</svg>

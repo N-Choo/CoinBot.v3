@@ -1,20 +1,31 @@
 import BalanceStats from '../components/dashboard/BalanceStats'
 import PnlChart from '../components/dashboard/PnlChart'
-import TradingContracts from '../components/dashboard/TradingContracts'
+import ActiveContracts from '../components/trading/ActiveContracts'
 import SidebarActions from '../components/dashboard/SidebarActions'
 
 export default function Dashboard() {
   return (
-    <div className="min-h-screen pt-14 flex bg-bg-dark">
-      <div className="flex flex-col w-full">
-        <BalanceStats />
-        <div className="flex flex-col lg:flex-row border-t border-border-light">
-          <div className="flex-1 flex flex-col min-w-0 lg:border-r border-border-light">
-            <PnlChart />
-            <TradingContracts />
-          </div>
-          <div className="lg:w-[340px] shrink-0">
-            <SidebarActions />
+    <div className="relative min-h-screen pt-14 flex bg-bg-dark">
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            'radial-gradient(700px 500px at 95% -10%, rgba(255,87,34,0.12), transparent 65%), radial-gradient(600px 400px at -5% 110%, rgba(255,87,34,0.07), transparent 60%)',
+        }}
+      />
+      <div className="relative z-[1] w-full">
+        <div className="max-w-[1200px] mx-auto p-3 sm:p-5 flex flex-col gap-3 sm:gap-4">
+          <BalanceStats />
+          <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-3 sm:gap-4">
+            <div className="flex flex-col gap-3 sm:gap-4 min-w-0">
+              <div className="bg-bg-panel border border-border-light rounded-xl overflow-hidden backdrop-blur-xl transition-colors hover:border-accent/40">
+                <PnlChart />
+              </div>
+              <ActiveContracts />
+            </div>
+            <div className="bg-bg-panel border border-border-light rounded-xl overflow-hidden backdrop-blur-xl transition-colors hover:border-accent/40 lg:max-h-[calc(100vh-140px)]">
+              <SidebarActions />
+            </div>
           </div>
         </div>
       </div>

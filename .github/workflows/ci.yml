@@ -14,8 +14,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: "1.98.1"
           components: clippy, rustfmt
       - name: Install protoc
         run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
@@ -25,6 +26,14 @@ jobs:
         run: make fmt
       - name: Clippy (Linter)
         run: make clippy
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: process/analyzer/requirements.txt
+      - name: Install analyzer test deps
+        run: pip install -r process/analyzer/requirements.txt pytest
       - name: Run Tests
         run: make test
 
@@ -62,19 +71,19 @@ jobs:
       - name: Lowercase registry owner
         id: registry
         run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
-      - name: Build & push backend
+      - name: Build & push api_gateway
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: api_gateway/Dockerfile
+          file: process/api_gateway/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-backend:latest
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-api_gateway:latest
       - name: Build & push deposit-worker
         uses: docker/build-push-action@v5
         with:
           context: .
-          file: deposit-worker/Dockerfile
+          file: process/deposit-worker/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-worker:latest
@@ -85,4 +94,47 @@ jobs:
           file: ./react/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:la
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:latest
+      - name: Build & push analyzer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./process/analyzer
+          file: ./process/analyzer/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
+
+  # --- Full-stack smoke test (main only) ---
+  smoke-test:
+    name: Smoke Test
+    needs: [backend-test, frontend-test]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production images
+        run: make prod-build
+      - name: Start services
+        run: |
+          cp .env.ci .env
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+            --profile prod up -d
+      - name: Wait for api_gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8080/api/config; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: Backend failed to start within 60 seconds"
+          exit 1
+      - name: Run smoke tests
+        run: BASE_URL=http://localhost:8080 make test-api
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose logs --tail=200
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down

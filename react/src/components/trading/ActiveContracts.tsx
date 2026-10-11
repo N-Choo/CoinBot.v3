@@ -1,169 +1,223 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Skeleton from '../ui/Skeleton'
+import { type ContractItem } from '../../services/contract'
+import { useContractsData } from '../../hooks/useContractsData'
 
-interface Contract {
-  id: number
-  pair: string
-  side: 'Long' | 'Short'
-  status: 'Active' | 'Paused' | 'Inactive'
-  size: number
-  entryPrice: number
-  markPrice: number
-  pnl: number
-  liquidation: number
+const STATUS_COLOR: Record<string, string> = {
+  active: 'text-up',
+  inactive: 'text-text-muted',
+  completed: 'text-accent',
+  cancelled: 'text-down',
+  failed: 'text-down',
 }
 
-const MOCK: Contract[] = [
-  { id: 1, pair: 'BTC/USDT', side: 'Long', status: 'Active', size: 1.5, entryPrice: 64230, markPrice: 64850, pnl: 930.00, liquidation: 58900 },
-  { id: 2, pair: 'ETH/USDT', side: 'Short', status: 'Active', size: 12, entryPrice: 3420, markPrice: 3380, pnl: 480.00, liquidation: 3650 },
-  { id: 3, pair: 'SOL/USDT', side: 'Long', status: 'Paused', size: 25, entryPrice: 142.75, markPrice: 141.20, pnl: -38.75, liquidation: 128 },
-  { id: 4, pair: 'AVAX/USDT', side: 'Short', status: 'Active', size: 50, entryPrice: 35.40, markPrice: 34.80, pnl: 30.00, liquidation: 42 },
-  { id: 5, pair: 'DOGE/USDT', side: 'Long', status: 'Active', size: 5000, entryPrice: 0.145, markPrice: 0.151, pnl: 30.00, liquidation: 0.12 },
-]
-
-const pnlPct = (entry: number, mark: number, side: 'Long' | 'Short'): number => {
-  const raw = ((mark - entry) / entry) * 100
-  return side === 'Long' ? raw : -raw
-}
+const statusDot = (status: string): string =>
+  status === 'active'
+    ? 'bg-up'
+    : status === 'inactive'
+      ? 'bg-text-muted'
+      : status === 'completed'
+        ? 'bg-accent'
+        : 'bg-down'
 
 const logoUrl = (symbol: string) =>
   `https://cdn.jsdelivr.net/gh/atomiclabs/cryptocurrency-icons@master/128/color/${symbol.toLowerCase()}.png`
 
+const baseSymbol = (ticker: string) => ticker.split('/')[0]
+
+const FUND_FMT: Intl.NumberFormatOptions = { maximumFractionDigits: 6 }
+
+const fmt = (value: string): string => {
+  const n = parseFloat(value)
+  return Number.isNaN(n) ? value : n.toLocaleString(undefined, FUND_FMT)
+}
+
+const fmtPnl = (pnl: number | null): string =>
+  pnl == null ? '—' : `${pnl >= 0 ? '+' : '−'}$${Math.abs(pnl).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
+
+const shortDate = (iso: string): string => new Date(iso).toLocaleDateString()
+
+const timeAgo = (iso: string): string => {
+  const t = new Date(iso).getTime()
+  if (Number.isNaN(t)) return ''
+  const s = Math.max(1, Math.floor((Date.now() - t) / 1000))
+  if (s < 60) return `${s}s ago`
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m}m ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h}h ago`
+  return `${Math.floor(h / 24)}d ago`
+}
+
 export default function ActiveContracts() {
-  const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Contract | null>(null)
-  const [addAmount, setAddAmount] = useState('')
-  const [withdrawAmount, setWithdrawAmount] = useState('')
-  const [ticker, setTicker] = useState(0)
-  const [flash, setFlash] = useState('')
+  const { contracts, setContracts, loading, error, ordersByContract, ordersReady, pnlOf, contractPnl } = useContractsData()
+  const [selected, setSelected] = useState<ContractItem | null>(null)
+  const [ordersFilter, setOrdersFilter] = useState('All')
 
-  useEffect(() => {
-    const t = setTimeout(() => setLoading(false), 400)
-    return () => clearTimeout(t)
-  }, [])
-
-  useEffect(() => {
-    const timeouts: ReturnType<typeof setTimeout>[] = []
-    const interval = setInterval(() => {
-      const change = (Math.random() * 40 - 20)
-      setTicker(prev => +(prev + change).toFixed(2))
-      setFlash(change >= 0 ? 'text-up' : 'text-down')
-      timeouts.push(setTimeout(() => setFlash(''), 400))
-    }, 3000)
-    return () => {
-      clearInterval(interval)
-      timeouts.forEach(clearTimeout)
-    }
-  }, [])
-
-  const closeDetail = () => {
+  const closeContract = () => {
+    if (!selected) return
+    setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'cancelled' } : c)))
     setSelected(null)
-    setAddAmount('')
-    setWithdrawAmount('')
   }
 
   if (selected) {
-    const pct = pnlPct(selected.entryPrice, selected.markPrice, selected.side)
+    const orders = ordersByContract[selected.id] ?? []
+    const filteredOrders = orders.filter(o => ordersFilter === 'All' || o.side.toLowerCase() === ordersFilter.toLowerCase())
+    const boughtQty = orders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    const soldQty = orders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    let totalPnl = 0
+    let hasPnl = false
+    for (const o of orders) {
+      const p = pnlOf(o, selected.ticker)
+      if (p != null) { hasPnl = true; totalPnl += p }
+    }
+
     return (
-      <div className="flex flex-col bg-bg-panel border-t border-border-light">
+      <div className="flex flex-col bg-bg-panel border border-border-light rounded-xl overflow-hidden transition-colors hover:border-accent/40">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-light">
           <div className="flex items-center gap-2">
-            <button className="bg-transparent border-none text-text-muted cursor-pointer p-0 flex items-center text-sm hover:text-text-main" onClick={closeDetail}>
+            <button className="bg-transparent border-none text-text-muted cursor-pointer p-0 flex items-center text-sm hover:text-text-main" aria-label="Back" onClick={() => setSelected(null)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
-            <img className="w-5 h-5 rounded-full shrink-0 object-cover" src={logoUrl(selected.pair.split('/')[0])} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-            <span className="text-[13px] font-semibold text-text-main">{selected.pair.split('/')[0]}</span>
-            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${selected.side === 'Long' ? 'bg-up/10 text-up' : 'bg-down/10 text-down'}`}>{selected.side}</span>
-            <span className={`w-1.5 h-1.5 rounded-full ${selected.status === 'Active' ? 'bg-up' : selected.status === 'Paused' ? 'bg-text-muted' : 'bg-down'}`} />
-          </div>
-          <div className="flex items-center gap-3">
-            <span className={`text-[13px] font-mono font-bold transition-colors duration-300 ${flash || (selected.pnl >= 0 ? 'text-up' : 'text-down')}`}>
-              {selected.pnl >= 0 ? '+' : ''}${selected.pnl.toFixed(2)}
-            </span>
+            <img className="w-5 h-5 rounded-full shrink-0 object-cover" src={logoUrl(baseSymbol(selected.ticker))} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+            <span className="text-[13px] font-semibold text-text-main">{baseSymbol(selected.ticker)}</span>
+            <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize ${STATUS_COLOR[selected.status] ?? 'text-text-muted'}`}>{selected.status}</span>
           </div>
         </div>
 
         <div className="p-4 space-y-3 overflow-y-auto" style={{ scrollbarWidth: 'thin' }}>
           <div className="bg-[rgba(255,255,255,0.02)] border border-border-light rounded-lg p-3 grid grid-cols-2 gap-x-6 gap-y-2 text-[11px]">
             <div className="flex justify-between">
-              <span className="text-text-muted">Size</span>
-              <span className="text-text-main font-semibold font-mono">{selected.size.toFixed(2)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Entry</span>
-              <span className="text-text-main font-mono">${selected.entryPrice.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Mark</span>
-              <span className="text-text-main font-mono">${selected.markPrice.toLocaleString()}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">PnL %</span>
-              <span className={`font-mono font-semibold ${pct >= 0 ? 'text-up' : 'text-down'}`}>{pct >= 0 ? '+' : ''}{pct.toFixed(2)}%</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-text-muted">Liquidation</span>
-              <span className="text-down font-mono">${selected.liquidation.toLocaleString()}</span>
+              <span className="text-text-muted">Ticker</span>
+              <span className="text-text-main font-semibold font-mono">{selected.ticker}</span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Status</span>
-              <span className={`font-semibold ${selected.status === 'Active' ? 'text-up' : selected.status === 'Paused' ? 'text-text-muted' : 'text-down'}`}>{selected.status}</span>
+              <span className={`font-semibold capitalize ${STATUS_COLOR[selected.status] ?? 'text-text-muted'}`}>{selected.status}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Allocated</span>
+              <span className="text-text-main font-mono">${fmt(selected.init_fund)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Available</span>
+              <span className="text-text-main font-mono">${fmt(selected.available_fund)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Traded</span>
+              <span className="text-text-main font-mono">${fmt(selected.total_traded_fund)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">SL / TP</span>
+              <span className="text-text-main font-mono">{selected.sl_pct}% / {selected.tp_pct}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Created</span>
+              <span className="text-text-main font-mono">{shortDate(selected.created_at)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Updated</span>
+              <span className="text-text-main font-mono">{shortDate(selected.updated_at)}</span>
             </div>
           </div>
 
-          <div>
-            <label className="block text-[10px] text-text-muted mb-1 font-semibold uppercase tracking-[0.3px]">Add Funds</label>
-            <div className="flex gap-2">
-              <input type="number" placeholder="0.00" value={addAmount} onChange={e => setAddAmount(e.target.value)}
-                className="flex-1 bg-[rgba(255,255,255,0.03)] border border-border-light rounded px-3 py-2 text-text-main text-xs outline-none font-mono" />
-              <button className="px-4 py-2 border-none rounded bg-accent text-white text-[11px] font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40"
-                disabled={!addAmount || parseFloat(addAmount) <= 0}>
-                ADD
-              </button>
+          <div className="border border-border-light rounded-lg overflow-hidden">
+            <div className="flex items-center justify-between px-3 py-2 border-b border-border-light">
+              <span className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">Trade Orders</span>
+              <div className="flex gap-1">
+                {(['All', 'Buy', 'Sell'] as const).map(f => (
+                  <button
+                    key={f}
+                    onClick={() => setOrdersFilter(f)}
+                    className={`bg-transparent border rounded px-1.5 py-0.5 text-[10px] font-semibold cursor-pointer transition-colors ${ordersFilter === f ? 'border-accent text-accent' : 'border-border-light text-text-muted hover:text-text-main'}`}
+                  >
+                    {f}
+                  </button>
+                ))}
+              </div>
             </div>
+
+            {!ordersReady ? (
+              <div className="p-3 space-y-2">
+                {[1, 2].map(i => <div key={i} className="h-3 rounded bg-[rgba(255,255,255,0.04)]" />)}
+              </div>
+            ) : orders.length === 0 ? (
+              <div className="px-3 py-3 text-[11px] text-text-muted text-center">No trade orders</div>
+            ) : (
+              <>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-[10px] text-text-muted border-b border-border-light">
+                  <span>Orders <span className="text-text-main font-mono">{orders.length}</span></span>
+                  <span>Bought <span className="text-text-main font-mono">{boughtQty.toLocaleString()}</span></span>
+                  <span>Sold <span className="text-text-main font-mono">{soldQty.toLocaleString()}</span></span>
+                  <span>PnL <span className={`font-mono ${!hasPnl ? 'text-text-muted' : totalPnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(hasPnl ? totalPnl : null)}</span></span>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-[11px] border-collapse">
+                    <thead>
+                      <tr className="text-text-muted border-b border-border-light">
+                        <th className="text-left font-medium px-3 py-1.5 whitespace-nowrap">Time</th>
+                        <th className="text-left font-medium px-3 py-1.5">Side</th>
+                        <th className="text-right font-medium px-3 py-1.5">Qty</th>
+                        <th className="text-right font-medium px-3 py-1.5 whitespace-nowrap">Filled Price</th>
+                        <th className="text-right font-medium px-3 py-1.5">PnL</th>
+                        <th className="text-right font-medium px-3 py-1.5">Fee</th>
+                        <th className="text-left font-medium px-3 py-1.5">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {filteredOrders.map(o => {
+                        const buy = o.side.toLowerCase() === 'buy'
+                        const pnl = pnlOf(o, selected.ticker)
+                        return (
+                          <tr key={o.id} className="border-b border-border-light last:border-b-0">
+                            <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap">{timeAgo(o.created_at)}</td>
+                            <td className={`px-3 py-1.5 font-bold ${buy ? 'text-up' : 'text-down'}`}>{o.side.toUpperCase()}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-text-main">{o.requested_qty || o.filled_qty || '—'}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fill_price ? `$${Number(o.fill_price).toLocaleString()}` : '—'}</td>
+                            <td className={`px-3 py-1.5 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fee}</td>
+                            <td className="px-3 py-1.5"><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(29,205,159,0.12)] text-up capitalize">{o.status}</span></td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
           </div>
 
-          <div>
-            <label className="block text-[10px] text-text-muted mb-1 font-semibold uppercase tracking-[0.3px]">Withdraw</label>
-            <div className="flex gap-2">
-              <input type="number" placeholder="0.00" value={withdrawAmount} onChange={e => setWithdrawAmount(e.target.value)}
-                className="flex-1 bg-[rgba(255,255,255,0.03)] border border-border-light rounded px-3 py-2 text-text-main text-xs outline-none font-mono" />
-              <button className="px-4 py-2 border-none rounded bg-down text-white text-[11px] font-bold cursor-pointer transition-opacity hover:opacity-90 disabled:opacity-40"
-                disabled={!withdrawAmount || parseFloat(withdrawAmount) <= 0}>
-                WITHDRAW
-              </button>
-            </div>
-          </div>
+          <button
+            className="w-full py-2 border border-down rounded-lg bg-transparent text-down text-[11px] font-bold tracking-wide cursor-pointer transition-colors hover:bg-down hover:text-white disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-down"
+            onClick={closeContract}
+            disabled={selected.status !== 'active'}
+          >
+            {selected.status === 'active' ? 'Close Contract' : `Contract ${selected.status}`}
+          </button>
+          {selected.status === 'active' && (
+            <p className="text-[10px] text-text-muted text-center m-0">Closing releases the contract's funds back to your balance.</p>
+          )}
         </div>
       </div>
     )
   }
 
+  const availableTotal = contracts.reduce(
+    (sum, c) => sum + (parseFloat(c.available_fund) || 0),
+    0,
+  )
+
   return (
-    <div className="flex flex-col bg-bg-panel border-t border-border-light">
+    <div className="flex flex-col bg-bg-panel border border-border-light rounded-xl overflow-hidden transition-colors hover:border-accent/40">
       <div className="flex items-center justify-between px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <span className="text-[13px] font-semibold text-text-main">Open Positions</span>
-          <span className={`inline-flex items-center gap-1 text-[11px] font-mono font-semibold transition-colors duration-300 ${flash || 'text-text-muted'}`}>
-            {ticker !== 0 && (
-              <span className="inline-block text-xs" style={{ animation: 'ticker-pop 0.3s ease' }}>
-                {ticker > 0 ? `+${ticker}` : ticker}
-              </span>
-            )}
-          </span>
-        </div>
+        <span className="text-[13px] font-semibold text-text-main">Contracts</span>
         <div className="flex items-center gap-3">
           {loading ? (
             <Skeleton variant="text-sm" width="60px" />
-          ) : (
+          ) : error ? null : (
             <>
-              <span className="text-[11px] text-text-muted">{MOCK.length} contracts</span>
-              <span className="text-[11px] font-semibold text-up">
-                +{MOCK.reduce((s, c) => s + Math.max(c.pnl, 0), 0).toLocaleString()}
-              </span>
-              <span className="text-[11px] font-semibold text-down">
-                {MOCK.reduce((s, c) => s + Math.min(c.pnl, 0), 0).toLocaleString()}
-              </span>
+              <span className="text-[11px] text-text-muted">{contracts.length} contracts</span>
+              <span className="text-[11px] font-semibold text-text-main">${availableTotal.toLocaleString(undefined, FUND_FMT)} available</span>
             </>
           )}
         </div>
@@ -175,47 +229,62 @@ export default function ActiveContracts() {
             <Skeleton key={i} variant="card" width="100%" height="36px" />
           ))}
         </div>
-      ) : MOCK.length === 0 ? (
-        <div className="px-4 pb-4 text-xs text-text-muted text-center">No open positions</div>
+      ) : error ? (
+        <div className="px-4 pb-4 text-xs text-down text-center">Failed to load contracts</div>
+      ) : contracts.length === 0 ? (
+        <div className="px-4 pb-4 text-xs text-text-muted text-center">No contracts</div>
       ) : (
         <div className="overflow-y-auto max-h-[220px] overflow-x-auto" style={{ scrollbarWidth: 'thin' }}>
           <table className="w-full text-[11px] border-collapse">
             <thead>
               <tr className="text-text-muted border-b border-border-light">
                 <th className="text-left font-medium px-3 py-1.5">Pair</th>
-                <th className="text-right font-medium px-3 py-1.5">Side</th>
-                <th className="text-right font-medium px-3 py-1.5">Size</th>
-                <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Entry</th>
-                <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Mark</th>
+                <th className="text-left font-medium px-3 py-1.5">Status</th>
+                <th className="text-right font-medium px-3 py-1.5">Allocated</th>
+                <th className="text-right font-medium px-3 py-1.5">Available</th>
+                <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">Traded</th>
                 <th className="text-right font-medium px-3 py-1.5">PnL</th>
-                <th className="text-right font-medium px-3 py-1.5 hidden lg:table-cell">Liq.</th>
+                <th className="text-right font-medium px-3 py-1.5 hidden sm:table-cell">SL%</th>
+                <th className="text-right font-medium px-3 py-1.5 hidden lg:table-cell">TP%</th>
+                <th className="text-right font-medium px-3 py-1.5 hidden lg:table-cell">Created</th>
               </tr>
             </thead>
             <tbody>
-              {MOCK.map(c => (
-                <tr key={c.id} className="border-b border-border-light hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer"
-                  onClick={() => setSelected(c)}>
-                  <td className="px-3 py-2">
-                    <div className="flex items-center gap-2">
-                      <img className="w-4 h-4 rounded-full shrink-0 object-cover" src={logoUrl(c.pair.split('/')[0])} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
-                      <span className="font-semibold text-text-main">{c.pair.split('/')[0]}</span>
-                      <span className={`w-1.5 h-1.5 rounded-full ${c.status === 'Active' ? 'bg-up' : c.status === 'Paused' ? 'bg-text-muted' : 'bg-down'}`} />
-                    </div>
-                  </td>
-                  <td className="px-3 py-2 text-right">
-                    <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded ${c.side === 'Long' ? 'bg-up/10 text-up' : 'bg-down/10 text-down'}`}>
-                      {c.side}
-                    </span>
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-text-main font-semibold">{c.size.toFixed(2)}</td>
-                  <td className="px-3 py-2 text-right font-mono text-text-muted hidden sm:table-cell">${c.entryPrice.toLocaleString()}</td>
-                  <td className="px-3 py-2 text-right font-mono text-text-muted hidden sm:table-cell">${c.markPrice.toLocaleString()}</td>
-                  <td className={`px-3 py-2 text-right font-mono font-bold ${c.pnl >= 0 ? 'text-up' : 'text-down'}`}>
-                    {c.pnl >= 0 ? '+' : ''}${c.pnl.toFixed(2)}
-                  </td>
-                  <td className="px-3 py-2 text-right font-mono text-text-muted hidden lg:table-cell">${c.liquidation.toLocaleString()}</td>
-                </tr>
-              ))}
+              {contracts.map(c => {
+                const pnl = contractPnl(c)
+                return (
+                  <tr
+                    key={c.id}
+                    tabIndex={0}
+                    className="border-b border-border-light hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer"
+                    onClick={() => setSelected(c)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setSelected(c)
+                      }
+                    }}
+                  >
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-2">
+                        <img className="w-4 h-4 rounded-full shrink-0 object-cover" src={logoUrl(baseSymbol(c.ticker))} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
+                        <span className="font-semibold text-text-main">{baseSymbol(c.ticker)}</span>
+                        <span className={`w-1.5 h-1.5 rounded-full ${statusDot(c.status)}`} />
+                      </div>
+                    </td>
+                    <td className="px-3 py-2 text-left">
+                      <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded capitalize ${STATUS_COLOR[c.status] ?? 'text-text-muted'}`}>{c.status}</span>
+                    </td>
+                    <td className="px-3 py-2 text-right font-mono text-text-main font-semibold">${fmt(c.init_fund)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-text-muted">${fmt(c.available_fund)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-text-muted hidden sm:table-cell">${fmt(c.total_traded_fund)}</td>
+                    <td className={`px-3 py-2 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
+                    <td className="px-3 py-2 text-right font-mono text-text-muted hidden sm:table-cell">{c.sl_pct}%</td>
+                    <td className="px-3 py-2 text-right font-mono text-text-muted hidden lg:table-cell">{c.tp_pct}%</td>
+                    <td className="px-3 py-2 text-right font-mono text-text-muted hidden lg:table-cell">{shortDate(c.created_at)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </table>
         </div>
