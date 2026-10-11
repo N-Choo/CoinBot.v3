@@ -29,6 +29,7 @@ fn user_routes() -> impl HttpServiceFactory {
         )
         .route("/logout", web::post().to(AuthController::logout))
         .route("/verify", web::post().to(AuthController::verify_session))
+        .route("/stats", web::get().to(Stats::user))
 }
 
 /// Routes under `/api/transactions`: deposit intake and deposit listing.
@@ -44,4 +45,5 @@ fn contract_routes() -> impl HttpServiceFactory {
         .route("/nonce", web::get().to(Contracts::get_nonce))
         .route("/sign", web::post().to(Contracts::sign))
         .route("/me", web::get().to(Contracts::get_my_contracts))
+        .route("/{id}/orders", web::get().to(Contracts::orders))
 }

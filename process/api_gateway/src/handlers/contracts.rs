@@ -207,6 +207,51 @@ impl Contracts {
         }
     }
 
+    /// List the authenticated caller's trade orders for one contract.
+    ///
+    /// `GET /api/contracts/{id}/orders`
+    ///
+    /// Requires a valid session. Returns the caller's orders for that contract,
+    /// newest first. Only the caller's own orders are ever returned.
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON array of trade orders (possibly empty).
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `500 Internal Server Error` — user lookup or query failed.
+    pub async fn orders(
+        header: actix_web::HttpRequest,
+        path: web::Path<Uuid>,
+        session_cache: web::Data<SessionCache>,
+        pool: web::Data<sqlx::PgPool>,
+    ) -> impl Responder {
+        let wallet = match Self::authenticated_wallet(&header, &session_cache).await {
+            Ok(w) => w,
+            Err(resp) => return resp,
+        };
+
+        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return HttpResponse::Ok().json(Vec::<share::db::trade::TradeOrder>::new()),
+            Err(e) => {
+                log::error!("orders: find_by_wallet failed: {e}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        match share::db::trade::TradeOrderFilter::new()
+            .with_user(user.uid)
+            .with_contract(path.into_inner())
+            .execute(&pool)
+            .await
+        {
+            Ok(orders) => HttpResponse::Ok().json(orders),
+            Err(e) => {
+                log::error!("orders: query failed for uid={}: {e}", user.uid);
+                HttpResponse::InternalServerError().finish()
+            }
+        }
+    }
+
     /// Authenticate the request, mapping failure to a `401` response.
     async fn authenticated_wallet(
         header: &actix_web::HttpRequest,

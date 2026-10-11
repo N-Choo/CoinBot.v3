@@ -22,3 +22,29 @@ pub async fn system_stats(pool: &PgPool) -> Result<SystemStats, sqlx::Error> {
     .fetch_one(pool)
     .await
 }
+
+/// Per-user balance stats for the dashboard.
+///
+/// `realized_pnl` is a placeholder (`0`) until PnL tracking exists.
+#[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
+pub struct UserStats {
+    pub total: String,
+    pub free: String,
+    pub locked: String,
+    pub realized_pnl: String,
+}
+
+/// Read a user's balance stats by wallet address.
+pub async fn user_stats(pool: &PgPool, wallet: &str) -> Result<Option<UserStats>, sqlx::Error> {
+    sqlx::query_as::<_, UserStats>(
+        r#"SELECT
+             (balance::numeric + locked_balance::numeric)::text AS total,
+             balance                                            AS free,
+             locked_balance                                     AS locked,
+             '0'::text                                          AS realized_pnl
+           FROM users WHERE wallet_address = $1"#,
+    )
+    .bind(wallet)
+    .fetch_optional(pool)
+    .await
+}
