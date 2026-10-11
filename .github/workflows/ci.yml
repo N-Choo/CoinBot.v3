@@ -61,7 +61,7 @@ jobs:
   # --- Push ARM64 images to registry (main only) ---
   push-arm:
     name: Build & Push ARM64
-    needs: [backend-test, frontend-test]
+    needs: [backend-test, frontend-test, smoke-test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04-arm
     steps:
@@ -103,6 +103,14 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
+      - name: Build & push trade-engine
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          file: process/trade-engine/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-trade_engine:latest
 
   # --- Full-stack smoke test (main only) ---
   smoke-test:

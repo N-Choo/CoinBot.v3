@@ -32,6 +32,8 @@ services:
   # ── Deposit Worker ─────────────────────────
 
   deposit-worker:
+    profiles:
+      - dev
     build:
       context: .
       dockerfile: process/deposit-worker/Dockerfile
@@ -69,6 +71,8 @@ services:
   # ── API Gateway ────────────────────────────
 
   api_gateway:
+    profiles:
+      - dev
     build:
       context: .
       dockerfile: process/api_gateway/Dockerfile
@@ -115,6 +119,8 @@ services:
   # ── Frontend ───────────────────────────────
 
   frontend:
+    profiles:
+      - dev
     image: node:22-alpine
     working_dir: /app
     command: sh -c "npm install && npm run dev -- --host 0.0.0.0"
@@ -131,6 +137,7 @@ services:
       - VITE_BACKEND_URL=http://api_gateway:8080
 
   frontend-prod:
+    image: ghcr.io/n-choo/coinbot-frontend:latest
     build:
       context: ./react
     ports:
@@ -145,6 +152,8 @@ services:
   # ── Trade Engine ───────────────────────────
 
   trade-engine:
+    profiles:
+      - dev
     build:
       context: .
       dockerfile: process/trade-engine/Dockerfile
@@ -166,6 +175,7 @@ services:
       - app-network
 
   trade-engine-prod:
+    image: ghcr.io/n-choo/coinbot-trade_engine:latest
     build:
       context: .
       dockerfile: process/trade-engine/Dockerfile
