@@ -26,6 +26,14 @@ jobs:
         run: make fmt
       - name: Clippy (Linter)
         run: make clippy
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: process/analyzer/requirements.txt
+      - name: Install analyzer test deps
+        run: pip install -r process/analyzer/requirements.txt pytest
       - name: Run Tests
         run: make test
 
