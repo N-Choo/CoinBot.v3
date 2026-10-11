@@ -62,110 +62,17 @@ flowchart TB
     class UI,GW,DW,TE,AN,DB,RD,ETH,KC plain;
 ```
 
-| Process          | Path                     | Role                                                                                       | Talks to                                      |
-| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `api_gateway`    | `process/api_gateway`    | HTTP API — auth, contract signing, deposit intake                                          | React, PostgreSQL, deposit-worker             |
-| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper                                                   | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
-| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | Redis, PostgreSQL, KuCoin                     |
-| `analyzer`       | `process/analyzer`       | signal engine (Python)                                                                     | Redis, KuCoin                                 |
+| Process          | Role                                                                                       | Docs                                       |
+| ---------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
+| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                          | [README](process/api_gateway/README.md)    |
+| `deposit-worker` | gRPC ticket + background deposit sweeper                                                   | [README](process/deposit-worker/README.md) |
+| `trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | [README](process/trade-engine/README.md)   |
+| `analyzer`       | signal engine (Python)                                                                     | [README](process/analyzer/README.md)       |
+| `frontend`       | React SPA                                                                                  | [README](react/README.md)                  |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
 
 ## Flows
 
-### Authentication
-
-Wallet challenge/response login — proves wallet ownership and issues a session cookie.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
-sequenceDiagram
-    participant U as Wallet / SPA
-    participant G as api_gateway
-    participant R as Redis (nonce)
-
-    U->>G: GET /api/user/auth?wallet_address=0x..
-    G->>R: store nonce
-    G-->>U: nonce
-    U->>U: sign(nonce)
-    U->>G: POST /api/user/auth (signature, msg)
-    G->>G: recover wallet, check nonce
-    G->>R: invalidate nonce, store session
-    G-->>U: Set-Cookie session_token
-```
-
-### Contract signing
-
-Authorize a strategy — verify the signed settings and lock the allocated funds on a new contract.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
-sequenceDiagram
-    participant U as Wallet / SPA
-    participant G as api_gateway
-    participant R as Redis (nonce)
-    participant DB as PostgreSQL
-
-    U->>G: GET /api/contracts/nonce
-    G->>R: store nonce
-    G-->>U: nonce
-    U->>U: sign(nonce, settings)
-    U->>G: POST /api/contracts/sign (nonce, message, signature)
-    G->>G: verify signature + settings
-    G->>DB: lock init_fund (balance -> locked_balance)
-    G->>DB: insert contract (available = init_fund, total_traded = 0)
-    G-->>U: 200 Contract signed
-```
-
-### Deposit
-
-On-chain USDT deposit — verify the transaction, then credit the user's balance.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
-sequenceDiagram
-    participant U as Wallet / SPA
-    participant G as api_gateway
-    participant W as deposit-worker
-    participant E as Ethereum RPC
-    participant DB as PostgreSQL
-
-    U->>U: send USDT on-chain to platform wallet
-    U->>G: POST /api/transactions/deposit (tx_hash)
-    G->>E: get transaction + receipt
-    E-->>G: tx (from, to, input)
-    G->>G: verify sender, USDT contract, recipient
-    G->>W: gRPC create_ticket0(tx_hash, uid)
-    W->>DB: insert deposit (pending)
-    W-->>G: ticket_id
-    G-->>U: 200 ticket_id
-    Note over W,DB: sweeper confirms tx, upserts the user, credits balance
-```
-
-### Trading
-
-Signal to execution — match analyzer signals to active contracts, verify each signature, place the order, then reconcile fills.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"actorBkg":"transparent","actorBorder":"#888","actorTextColor":"#fff","signalColor":"#888","signalTextColor":"#fff","labelBoxBkgColor":"transparent","labelBoxBorderColor":"#888","labelTextColor":"#fff","noteBkgColor":"transparent","noteBorderColor":"#888","noteTextColor":"#fff"}}}%%
-sequenceDiagram
-    participant TE as trade-engine
-    participant R as Redis
-    participant AN as analyzer
-    participant DB as PostgreSQL
-    participant KC as KuCoin
-
-    TE->>R: PUBLISH tickers:analyze
-    R-->>AN: tickers
-    AN->>KC: fetch klines
-    KC-->>AN: OHLCV
-    AN->>AN: RSI + SMA + ATR
-    AN->>R: PUBLISH signals:result
-    R-->>TE: signals
-    TE->>DB: load active contracts
-    TE->>TE: re-verify signatures (fail-closed)
-    TE->>KC: place spot market order + reserve funds
-    KC-->>TE: order id
-    TE->>DB: record trade order (status = open)
-    Note over TE,DB: sweeper polls the exchange, marks filled/cancelled, settles contract funds
-```
+End-to-end flows spanning multiple services. Single-service flows — wallet auth and
+contract signing — are detailed in the [api_gateway README](process/api_gateway/README.md).
