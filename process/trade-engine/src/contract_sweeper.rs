@@ -2,11 +2,12 @@
 //! their contracts.
 
 use kucoin::client::rest::KuCoinClient;
+use kucoin::types::KuCoinResponse;
+use serde::Deserialize;
+use share::ProcessError;
 use share::db::contracts::Contracts;
 use share::db::trade::{TradeOrderFilter, TradeOrders};
 use sqlx::{Pool, Postgres};
-
-use crate::trader;
 
 /// Sync open trade orders against the exchange and settle their contracts.
 ///
@@ -32,10 +33,8 @@ pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
         };
         let symbol = spot_symbol(&o.ticker);
 
-        match kcc.spot().get_order(order_id, &symbol).await {
-            Ok(order) => {
-                let Some(data) = order.data else { continue };
-
+        match fetch_order(&kcc, order_id, &symbol).await {
+            Ok(Some(data)) => {
                 match classify_order(data.active, &data.deal_size, &data.deal_funds) {
                     // Still working — nothing to settle yet.
                     OrderOutcome::Working => continue,
@@ -130,9 +129,44 @@ pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
                     }
                 }
             }
-            Err(e) => trader::fail_order(&db, o.id, &e.to_string()).await,
+            Ok(None) => continue,
+            Err(e) => {
+                log::warn!("[SWEEP] get_order failed for order {}: {e}", o.id);
+                continue;
+            }
         }
     }
+}
+
+/// Subset of a KuCoin order status needed for reconciliation.
+///
+/// Deliberately lenient: only `active` is required; the rest default, so a
+/// `null` in any other response field cannot fail decoding.
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OrderStatus {
+    active: bool,
+    #[serde(default)]
+    deal_size: String,
+    #[serde(default)]
+    deal_funds: String,
+    #[serde(default)]
+    fee: String,
+}
+
+/// Fetch `order_id`'s reconciliation fields from KuCoin without the strict
+/// `SpotDatum` schema; unrelated fields (which may be `null`) are ignored.
+async fn fetch_order(
+    kcc: &KuCoinClient,
+    order_id: &str,
+    symbol: &str,
+) -> Result<Option<OrderStatus>, ProcessError> {
+    let endpoint = format!("/api/v1/hf/orders/{order_id}?symbol={symbol}");
+    let res = kcc
+        .send::<KuCoinResponse<OrderStatus>>("GET", "", &endpoint)
+        .await
+        .map_err(|e| ProcessError::Network(format!("get_order failed: {e}")))?;
+    Ok(res.data)
 }
 
 /// KuCoin spot symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
@@ -174,6 +208,34 @@ mod tests {
     fn builds_spot_symbol() {
         assert_eq!(spot_symbol("BTC/USDT"), "BTC-USDT");
         assert_eq!(spot_symbol("BTC-USDT"), "BTC-USDT");
+    }
+
+    #[test]
+    fn tolerates_null_unrelated_fields() {
+        let json = r#"{
+            "active": false,
+            "dealSize": "0.072",
+            "dealFunds": "7.95",
+            "fee": "0.008",
+            "visibleSize": null,
+            "tax": null,
+            "channel": null,
+            "clientOid": null
+        }"#;
+        let status: OrderStatus = serde_json::from_str(json).expect("lenient decode");
+        assert!(!status.active);
+        assert_eq!(status.deal_size, "0.072");
+        assert_eq!(status.deal_funds, "7.95");
+        assert_eq!(status.fee, "0.008");
+    }
+
+    #[test]
+    fn defaults_missing_reconcile_fields() {
+        let status: OrderStatus = serde_json::from_str(r#"{"active": true}"#).unwrap();
+        assert!(status.active);
+        assert_eq!(status.deal_size, "");
+        assert_eq!(status.deal_funds, "");
+        assert_eq!(status.fee, "");
     }
 
     #[test]
