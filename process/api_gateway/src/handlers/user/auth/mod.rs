@@ -9,6 +9,8 @@ use actix_web::{HttpResponse, Responder, cookie::Cookie, web};
 use ethers::types::Signature;
 use ethers::utils::hash_message;
 use log::{error, info, warn};
+use share::db::user::User;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 use crate::models::auth::{ChallengeQuery, ChallengeResponse, VerifySignaturRequest};
@@ -58,6 +60,7 @@ impl AuthController {
         payload: web::Json<VerifySignaturRequest>,
         nonce_cache: web::Data<NonceCache>,
         session_cache: web::Data<SessionCache>,
+        pool: web::Data<PgPool>,
     ) -> impl Responder {
         let wallet = match Self::get_wallet(&payload.signature, &payload.msg) {
             Ok(w) => w,
@@ -74,6 +77,24 @@ impl AuthController {
         }
 
         nonce_cache.invalidate(&wallet).await;
+
+        // Get-or-create the user so every authenticated endpoint (deposit,
+        // contracts, stats) always finds a row for this wallet.
+        let mut tx = match pool.begin().await {
+            Ok(t) => t,
+            Err(e) => {
+                error!("Failed to begin user upsert txn for wallet={wallet}: {e}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+        if let Err(e) = User::upsert(&mut tx, &wallet).await {
+            error!("Failed to upsert user for wallet={wallet}: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
+        if let Err(e) = tx.commit().await {
+            error!("Failed to commit user upsert for wallet={wallet}: {e}");
+            return HttpResponse::InternalServerError().finish();
+        }
 
         let token = uuid::Uuid::new_v4().to_string();
         session_cache.insert(token.clone(), wallet.clone()).await;

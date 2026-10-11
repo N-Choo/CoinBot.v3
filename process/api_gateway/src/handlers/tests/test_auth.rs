@@ -17,10 +17,22 @@ mod tests {
         core::rand::{SeedableRng, rngs::StdRng},
         signers::{LocalWallet, Signer},
     };
+    use sqlx::PgPool;
 
     /// Redis base URL from `REDIS_URL`, defaulting to localhost.
     fn redis_base() -> String {
         std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string())
+    }
+
+    /// A lazy pool pointing at a non-existent database (never queried).
+    fn dummy_pool() -> PgPool {
+        PgPool::connect_lazy("postgresql://localhost:5432/nonexistent").expect("dummy pool")
+    }
+
+    /// A lazy pool for `DATABASE_URL`, or `None` when it is not configured.
+    fn real_pool() -> Option<PgPool> {
+        let url = std::env::var("DATABASE_URL").ok()?;
+        PgPool::connect_lazy(&url).ok()
     }
 
     /// Build nonce (db 1) and session (db 0) caches, panicking if Redis is down.
@@ -38,6 +50,12 @@ mod tests {
     /// A valid signature over the stored nonce yields a session cookie.
     #[actix_web::test]
     async fn test_post_auth_success() {
+        let Some(pool) = real_pool() else { return };
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("migrations failed");
+
         let mut seeded_rng = StdRng::seed_from_u64(84);
         let wallet = LocalWallet::new(&mut seeded_rng);
         let wallet_address = format!("0x{:x}", wallet.address()).to_lowercase();
@@ -61,6 +79,7 @@ mod tests {
             web::Json(payload),
             nonce_cache_data.clone(),
             session_cache_data.clone(),
+            web::Data::new(pool.clone()),
         )
         .await;
 
@@ -80,6 +99,12 @@ mod tests {
 
         let cached_wallet = session_cache.get(token).await;
         assert_eq!(cached_wallet.unwrap(), wallet_address);
+
+        // Login get-or-creates the user row for the wallet.
+        let user = share::db::user::User::find_by_wallet(&pool, &wallet_address)
+            .await
+            .expect("find_by_wallet");
+        assert!(user.is_some(), "login should have created the user row");
     }
 
     /// Signing a nonce other than the stored one is rejected with `400`.
@@ -107,6 +132,7 @@ mod tests {
             web::Json(payload),
             web::Data::new(nonce_cache),
             web::Data::new(session_cache),
+            web::Data::new(dummy_pool()),
         )
         .await;
 
@@ -130,6 +156,7 @@ mod tests {
             web::Json(payload),
             web::Data::new(nonce_cache),
             web::Data::new(session_cache),
+            web::Data::new(dummy_pool()),
         )
         .await;
 
