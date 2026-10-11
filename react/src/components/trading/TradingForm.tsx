@@ -54,9 +54,9 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
 
   return (
     <>
-      <div className="flex flex-col bg-bg-panel h-full max-h-[calc(100vh-180px)] sm:max-h-none">
-        <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-border-light">
-          <span className="w-2 h-2 rounded-full bg-[#00d46a] shrink-0" />
+      <div className="flex flex-col bg-bg-panel border border-border-light rounded-xl overflow-hidden h-full max-h-[calc(100vh-180px)] sm:max-h-none">
+        <div className="flex items-center gap-1.5 px-4 py-3 border-b border-border-light">
+          <span className="w-2 h-2 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)] shrink-0" />
           <span className="text-[13px] font-semibold text-text-main">Trade Contract</span>
         </div>
 
@@ -117,7 +117,7 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
         </div>
 
         <div className="p-4 mt-auto">
-          <button className="w-full flex items-center justify-center gap-2 py-2 px-4 border-none rounded bg-accent text-[12px] font-bold text-bg-dark cursor-pointer transition-all hover:brightness-110 active:brightness-95" onClick={handleStart}>
+          <button className="w-full flex items-center justify-center gap-2 py-2.5 px-4 border-none rounded-lg bg-gradient-to-r from-accent to-[#e64a19] text-[12px] font-bold text-white cursor-pointer transition-all hover:-translate-y-0.5 hover:shadow-[0_8px_28px_var(--color-accent-glow,rgba(255,87,34,0.18))] active:translate-y-0" onClick={handleStart}>
             <svg viewBox="0 0 24 24" fill="currentColor" width="12" height="12"><polygon points="5 3 19 12 5 21 5 3" /></svg>
             Sign Contract
           </button>

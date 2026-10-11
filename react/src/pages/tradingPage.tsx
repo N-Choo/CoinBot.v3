@@ -41,17 +41,26 @@ const Trading = () => {
   }
 
   return (
-    <div className="min-h-screen pt-14 flex bg-bg-dark">
-      <div className="flex flex-col w-full">
-        <MarketTickerBar pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
-        <div className="flex flex-col lg:flex-row flex-1 min-h-0 border-t border-border-light">
-          <div className="flex-1 flex flex-col min-w-0 lg:border-r border-border-light">
-            <div className="flex-1 min-h-[400px] lg:min-h-[500px]">
+    <div className="relative min-h-screen pt-14 flex bg-bg-dark">
+      <div
+        className="pointer-events-none absolute inset-0 z-0"
+        style={{
+          backgroundImage:
+            'radial-gradient(700px 500px at 95% -10%, rgba(255,87,34,0.12), transparent 65%), radial-gradient(600px 400px at -5% 110%, rgba(255,87,34,0.07), transparent 60%)',
+        }}
+      />
+      <div className="relative z-[1] flex flex-col w-full">
+        <div className="p-3 sm:p-4">
+          <MarketTickerBar pairs={tradingPairs} selectedPair={selectedPair} onSelectPair={setSelectedPair} />
+        </div>
+        <div className="flex flex-col lg:flex-row flex-1 min-h-0 gap-3 sm:gap-4 px-3 sm:px-4 pb-4">
+          <div className="flex-1 flex flex-col min-w-0 gap-3 sm:gap-4">
+            <div className="flex-1 min-h-[400px] lg:min-h-[500px] bg-bg-panel overflow-hidden backdrop-blur-xl">
               <TradingChart symbol={selectedPair} />
             </div>
             <ActiveContracts />
           </div>
-          <div className="lg:w-[320px] shrink-0 border-t lg:border-t-0 border-border-light">
+          <div className="lg:w-[340px] shrink-0">
             <TradingForm selectedPair={selectedPair} botSettings={botSettings} onSettingChange={handleSettingChange} />
           </div>
         </div>

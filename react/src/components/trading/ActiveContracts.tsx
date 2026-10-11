@@ -58,7 +58,7 @@ export default function ActiveContracts() {
 
   if (selected) {
     return (
-      <div className="flex flex-col bg-bg-panel border-t border-border-light">
+      <div className="flex flex-col bg-bg-panel border border-border-light rounded-xl overflow-hidden transition-colors hover:border-accent/40">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-light">
           <div className="flex items-center gap-2">
             <button className="bg-transparent border-none text-text-muted cursor-pointer p-0 flex items-center text-sm hover:text-text-main" aria-label="Back" onClick={() => setSelected(null)}>

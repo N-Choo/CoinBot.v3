@@ -37,7 +37,7 @@ export default function MarketTickerBar({ pairs, selectedPair, onSelectPair }: M
   if (!active) return null
 
   return (
-    <div className="flex items-center h-11 px-2 sm:px-3 gap-0 bg-glass-bg-subtle border-b border-border-light flex-wrap sm:flex-nowrap">
+    <div className="flex items-center min-h-[52px] px-2 sm:px-3 gap-0 bg-bg-panel border border-border-light rounded-xl flex-wrap sm:flex-nowrap">
       <div className="relative shrink-0" ref={selectorRef}>
         <button className="flex items-center gap-1.5 px-1.5 sm:px-2.5 py-1.5 border-none rounded bg-transparent text-text-main cursor-pointer transition-colors hover:bg-[rgba(255,255,255,0.04)]"
           onClick={() => setShowDropdown(p => !p)}>
