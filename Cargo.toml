@@ -28,6 +28,3 @@ actix-governor = "0.6.0"
 chrono = { version = "0.4.42", features = ["serde"] }
 redis = { version = "0.28", features = ["tokio-comp"] }
 
-# Build against the local kucoin fork (0.7.6) until it is published to crates.io.
-[patch.crates-io]
-kucoin = { path = "/home/blackh-t/Documents/git/syndicate_system/kucoin" }
