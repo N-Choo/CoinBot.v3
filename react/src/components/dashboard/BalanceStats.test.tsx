@@ -1,28 +1,27 @@
 import { render, screen } from '@testing-library/react'
-import { describe, test, expect } from 'vitest'
+import { describe, test, expect, vi } from 'vitest'
 import BalanceStats from './BalanceStats'
+import { getUserStats } from '../../services/stats'
+
+vi.mock('../../services/stats', () => ({ getUserStats: vi.fn() }))
+const mockGet = vi.mocked(getUserStats)
 
 describe('BalanceStats', () => {
-  test('renders all 3 stat cards', async () => {
+  test('renders the four stat cards', async () => {
+    mockGet.mockResolvedValue({ total: '124582.40', free: '48230.15', locked: '76352.25', realized_pnl: '12400' })
     render(<BalanceStats />)
     expect(await screen.findByText('Total Balance')).toBeInTheDocument()
-    expect(await screen.findByText('Free Balance')).toBeInTheDocument()
-    expect(await screen.findByText('Locked Balance')).toBeInTheDocument()
+    expect(screen.getByText('Free Balance')).toBeInTheDocument()
+    expect(screen.getByText('Locked Balance')).toBeInTheDocument()
+    expect(screen.getByText('Realized PnL')).toBeInTheDocument()
   })
 
-  test('shows Total Balance, Free Balance, Locked Balance values', async () => {
+  test('renders the balances returned by the API', async () => {
+    mockGet.mockResolvedValue({ total: '124582.40', free: '48230.15', locked: '76352.25', realized_pnl: '12400' })
     render(<BalanceStats />)
     expect(await screen.findByText('$124,582.40')).toBeInTheDocument()
-    expect(await screen.findByText('$48,230.15')).toBeInTheDocument()
-    expect(await screen.findByText('$76,352.25')).toBeInTheDocument()
-  })
-
-  test('shows positive changes with correct color classes', async () => {
-    render(<BalanceStats />)
-    const changes = await screen.findAllByText(/[+-]\d+\.\d+%/)
-    expect(changes).toHaveLength(3)
-    expect(changes[0]).toHaveClass('text-up-text')
-    expect(changes[1]).toHaveClass('text-up-text')
-    expect(changes[2]).toHaveClass('text-down-text')
+    expect(screen.getByText('$48,230.15')).toBeInTheDocument()
+    expect(screen.getByText('$76,352.25')).toBeInTheDocument()
+    expect(screen.getByText('$12,400.00')).toBeInTheDocument()
   })
 })

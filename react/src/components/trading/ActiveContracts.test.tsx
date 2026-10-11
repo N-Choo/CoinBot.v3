@@ -7,6 +7,7 @@ import { getMyContracts } from '../../services/contract'
 
 vi.mock('../../services/contract', () => ({
   getMyContracts: vi.fn(),
+  getContractOrders: vi.fn().mockResolvedValue([]),
 }))
 
 const mockGet = vi.mocked(getMyContracts)

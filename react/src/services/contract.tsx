@@ -68,3 +68,20 @@ export async function getMyContracts(): Promise<ContractItem[]> {
   const res = await axios.get('/api/contracts/me')
   return res.data
 }
+
+export interface ContractOrder {
+  id: string
+  side: string
+  status: string
+  requested_qty: string
+  filled_qty: string
+  fill_price: string | null
+  funds: string
+  fee: string
+  created_at: string
+}
+
+export async function getContractOrders(id: string): Promise<ContractOrder[]> {
+  const res = await axios.get(`/api/contracts/${id}/orders`)
+  return res.data
+}
