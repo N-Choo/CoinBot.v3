@@ -4,6 +4,7 @@ use uuid::Uuid;
 
 pub mod contracts;
 pub mod deposit;
+pub mod stats;
 pub mod trade;
 pub mod user;
 

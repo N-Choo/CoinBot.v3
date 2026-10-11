@@ -3,6 +3,7 @@ use actix_web::web::{self};
 
 use crate::constants;
 use crate::handlers::contracts::Contracts;
+use crate::handlers::stats::Stats;
 use crate::handlers::transaction::Transaction;
 use crate::handlers::user::auth::AuthController;
 
@@ -13,7 +14,8 @@ pub fn api_routes(cfg: &mut web::ServiceConfig) {
             .service(user_routes())
             .service(transaction_routes())
             .service(contract_routes())
-            .route("/config", web::get().to(constants::get_config)),
+            .route("/config", web::get().to(constants::get_config))
+            .route("/stats", web::get().to(Stats::get)),
     );
 }
 

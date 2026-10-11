@@ -1,5 +1,6 @@
 //! HTTP handlers grouped by domain: contracts, transactions, and user auth.
 pub mod contracts;
+pub mod stats;
 pub mod transaction;
 pub mod user;
 

@@ -4,6 +4,10 @@ import { BrowserRouter } from 'react-router-dom'
 import { AuthProvider } from '../hooks/useAuth'
 import CoinBot from './homePage'
 
+vi.mock('../services/stats', () => ({
+  getStats: vi.fn().mockResolvedValue({ accounts: 0, active_contracts: 0, funds_deployed: '0', trades_executed: 0 }),
+}))
+
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider>{children}</AuthProvider></BrowserRouter>
 }
@@ -33,10 +37,10 @@ describe('CoinBot (homePage)', () => {
 
   test('renders stats section', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('P&L Today')).toBeInTheDocument()
-    expect(screen.getByText('Uptime')).toBeInTheDocument()
-    expect(screen.getByText('Active Users')).toBeInTheDocument()
-    expect(screen.getByText('Liquidation Risk')).toBeInTheDocument()
+    expect(screen.getByText('Accounts')).toBeInTheDocument()
+    expect(screen.getByText('Active Contracts')).toBeInTheDocument()
+    expect(screen.getByText('Funds Deployed')).toBeInTheDocument()
+    expect(screen.getByText('Trades Executed')).toBeInTheDocument()
   })
 
   test('renders feature cards', () => {
