@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway test-api trade analyzer-test status seed seed-reset
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -21,6 +21,8 @@ help:
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
 	@echo "  make logs-api-gateway Follow api_gateway logs only"
+	@echo "  make restart      Recompile + restart Rust services (after .rs changes)"
+	@echo "                    make restart SERVICE=api_gateway  (one service)"
 	@echo "  make test-api     Run curl tests against the running API"
 	@echo ""
 	@echo "Production"
@@ -105,6 +107,9 @@ clean-all:
 
 status:
 	@docker compose ps 2>/dev/null
+
+restart:
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine)
 
 dev:
 	docker compose up -d postgres redis && \
