@@ -37,6 +37,12 @@ pub struct TradeOrder {
     pub fee: String,
     /// Failure reason, when the order failed.
     pub reason: Option<String>,
+    /// Take-profit price from the originating signal, as a decimal string.
+    pub tp_price: Option<String>,
+    /// Stop-loss price from the originating signal, as a decimal string.
+    pub sl_price: Option<String>,
+    /// Exchange order id of the protective OCO exit, once placed.
+    pub exit_order_id: Option<String>,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last update timestamp.
@@ -56,10 +62,12 @@ impl TradeOrders {
         comment: &str,
         requested_qty: &str,
         funds: &str,
+        tp_price: &str,
+        sl_price: &str,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
-            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds, tp_price, sl_price)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
                RETURNING *"#,
         )
         .bind(contract_id)
@@ -70,6 +78,8 @@ impl TradeOrders {
         .bind(comment)
         .bind(requested_qty)
         .bind(funds)
+        .bind(tp_price)
+        .bind(sl_price)
         .fetch_one(pool)
         .await
     }
@@ -87,6 +97,24 @@ impl TradeOrders {
                RETURNING *"#,
         )
         .bind(exchange_order_id)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Record the exchange order id of the protective OCO exit.
+    pub async fn mark_exit_order(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        exit_order_id: &str,
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"UPDATE trade_orders
+               SET exit_order_id = $1, updated_at = NOW()
+               WHERE id = $2
+               RETURNING *"#,
+        )
+        .bind(exit_order_id)
         .bind(id)
         .fetch_one(&mut **tx)
         .await

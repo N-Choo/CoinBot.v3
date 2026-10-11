@@ -1,0 +1,3 @@
+ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS tp_price TEXT;
+ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS sl_price TEXT;
+ALTER TABLE trade_orders ADD COLUMN IF NOT EXISTS exit_order_id TEXT;

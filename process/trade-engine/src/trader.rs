@@ -3,14 +3,14 @@
 use kucoin::{
     client::rest::KuCoinClient,
     types::KuCoinResponse,
-    types::spot::{Side, SpotOrderRequest, TradeType},
+    types::spot::{OcoOrderRequest, Side, SpotOrderRequest, TradeType},
 };
 use log::{info, warn};
 use serde::Deserialize;
 use share::{
     ProcessError,
     db::contracts::{Contract, Contracts},
-    db::trade::TradeOrders,
+    db::trade::{TradeOrder, TradeOrders},
     models::signals::TradeSignal,
 };
 use sqlx::PgPool;
@@ -70,6 +70,8 @@ pub async fn execute(
         &comment,
         &quantity,
         &trade_fund.to_string(),
+        &signal.tp_price.to_string(),
+        &signal.sl_price.to_string(),
     )
     .await
     {
@@ -113,6 +115,9 @@ pub async fn execute(
     TradeOrders::mark_placed(&mut tx, order.id, &data.order_id).await?;
     tx.commit().await?;
 
+    // Protect the position with a TP/SL OCO exit (uses the signal's TP/SL).
+    place_exit_oco(kcc, pool, &order, &quantity).await;
+
     info!(
         "[TRADE] {} {} qty={quantity} price={price} fund={trade_fund} oid={}",
         c.ticker, side_str, data.order_id
@@ -129,6 +134,15 @@ fn order_side(action: &str) -> Option<(Side, &'static str)> {
     }
 }
 
+/// Map an execution side string to its opposite KuCoin side.
+fn opposite_side(side: &str) -> Option<Side> {
+    match side {
+        "buy" => Some(Side::Sell),
+        "sell" => Some(Side::Buy),
+        _ => None,
+    }
+}
+
 /// Minimal KuCoin symbol metadata needed to size a market order.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -139,6 +153,8 @@ struct SymbolInfo {
     base_increment: String,
     /// Minimum order size for the base asset, as a decimal string.
     base_min_size: String,
+    /// Minimum price step for the quote asset, as a decimal string.
+    price_increment: String,
 }
 
 /// Fetch `symbol`'s increment metadata from KuCoin's `/api/v1/symbols`.
@@ -191,6 +207,87 @@ fn decimal_scale(decimal: &str) -> usize {
     decimal.split_once('.').map_or(0, |(_, frac)| frac.len())
 }
 
+/// Place a protective OCO (take-profit + stop-loss) exit for a placed order.
+///
+/// Uses the signal's absolute TP/SL prices stored on the order and `base_qty`
+/// (the requested entry quantity). Best-effort: failures are logged, not propagated.
+pub async fn place_exit_oco(kcc: &KuCoinClient, pool: &PgPool, order: &TradeOrder, base_qty: &str) {
+    let (Some(tp), Some(sl)) = (order.tp_price.as_deref(), order.sl_price.as_deref()) else {
+        warn!("[TRADE] order {} has no TP/SL; skipping OCO", order.id);
+        return;
+    };
+    let (Ok(tp), Ok(sl)) = (tp.parse::<f64>(), sl.parse::<f64>()) else {
+        warn!("[TRADE] order {} has invalid TP/SL; skipping OCO", order.id);
+        return;
+    };
+    let Some(exit_side) = opposite_side(&order.side) else {
+        warn!(
+            "[TRADE] order {} has unknown side '{}'; skipping OCO",
+            order.id, order.side
+        );
+        return;
+    };
+
+    let symbol = order.ticker.replace('/', "-");
+    let info = match fetch_symbol_info(kcc, &symbol).await {
+        Ok(i) => i,
+        Err(e) => {
+            warn!("[TRADE] {} OCO symbol lookup failed: {e}", order.ticker);
+            return;
+        }
+    };
+    let scale = decimal_scale(&info.price_increment);
+
+    // Stop-limit buffer so the limit sits just past the trigger, by side.
+    let limit = match exit_side {
+        Side::Sell => sl * 0.999,
+        Side::Buy => sl * 1.001,
+    };
+    let remark: String = order.comment.chars().take(20).collect();
+
+    let mut oco = OcoOrderRequest::new(&symbol, exit_side);
+    oco.price = format!("{:.*}", scale, tp);
+    oco.size = base_qty.to_string();
+    oco.stop_price = format!("{:.*}", scale, sl);
+    oco.limit_price = format!("{:.*}", scale, limit);
+    oco.client_oid = format!("{}-oco", order.id);
+    oco.remark = Some(remark);
+
+    match kcc.spot().place_oco_order(oco).await {
+        Ok(res) => match res.data {
+            Some(data) => {
+                let mut tx = match pool.begin().await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        warn!(
+                            "[TRADE] OCO placed but could not open tx for {}: {e}",
+                            order.id
+                        );
+                        return;
+                    }
+                };
+                if let Err(e) =
+                    TradeOrders::mark_exit_order(&mut tx, order.id, &data.order_id).await
+                {
+                    warn!("[TRADE] failed to store OCO id for {}: {e}", order.id);
+                }
+                let _ = tx.commit().await;
+                info!(
+                    "[TRADE] {} exit OCO placed oid={}",
+                    order.ticker, data.order_id
+                );
+            }
+            None => warn!(
+                "[TRADE] {} OCO rejected (code={}, msg={})",
+                order.ticker,
+                res.code,
+                res.msg.as_deref().unwrap_or("<none>")
+            ),
+        },
+        Err(e) => warn!("[TRADE] {} OCO placement failed: {e}", order.ticker),
+    }
+}
+
 /// Best-effort: mark an order failed so the ledger reflects a placement error.
 pub async fn fail_order(pool: &PgPool, id: sqlx::types::Uuid, reason: &str) {
     match pool.begin().await {
@@ -219,6 +316,13 @@ mod tests {
         assert_eq!(order_side("buy"), None);
         assert_eq!(order_side("HOLD"), None);
         assert_eq!(order_side(""), None);
+    }
+
+    #[test]
+    fn flips_execution_side() {
+        assert_eq!(opposite_side("buy"), Some(Side::Sell));
+        assert_eq!(opposite_side("sell"), Some(Side::Buy));
+        assert_eq!(opposite_side("hold"), None);
     }
 
     #[test]
