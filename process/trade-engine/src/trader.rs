@@ -85,8 +85,14 @@ pub async fn execute(
         }
     };
     let Some(data) = res.data else {
-        fail_order(pool, order.id, "empty order response").await;
-        return Err(ProcessError::Internal("empty order response".into()));
+        let reason = format!(
+            "order rejected (code={}, msg={})",
+            res.code,
+            res.msg.as_deref().unwrap_or("<none>")
+        );
+        warn!("[TRADE] {} {}", c.ticker, reason);
+        fail_order(pool, order.id, &reason).await;
+        return Err(ProcessError::Internal(reason));
     };
 
     // Move the traded funds (available -> total_traded).
