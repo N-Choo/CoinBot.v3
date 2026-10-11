@@ -14,12 +14,16 @@ use crate::trader;
 /// `contract_id`, `ticker`, and reserved `funds`), then reconciles them one by
 /// one. Fund settlements target the order's own contract.
 pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
-    let Ok(orders) = TradeOrderFilter::new()
+    let orders = match TradeOrderFilter::new()
         .with_status(share::db::trade::Status::Open)
         .execute(&db)
         .await
-    else {
-        return;
+    {
+        Ok(orders) => orders,
+        Err(e) => {
+            log::error!("[SWEEP] open-orders query failed: {e}");
+            return;
+        }
     };
 
     for o in orders {
