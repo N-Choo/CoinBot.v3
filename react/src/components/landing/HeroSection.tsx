@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import LiveTicker from './LiveTicker'
-import DataFlow from './DataFlow'
 import WalletAlert from '../ui/WalletAlert'
 
 export default function HeroSection() {
@@ -26,8 +25,6 @@ export default function HeroSection() {
         style={{ background: 'radial-gradient(circle, rgba(255,87,34,0.15) 0%, transparent 70%)', animation: 'heroGlow 4s ease-in-out infinite alternate' }} />
       <div className="absolute inset-0 opacity-[0.05] sm:opacity-[0.07] pointer-events-none z-0"
         style={{ backgroundImage: 'url("/f1.png")', backgroundSize: 'cover', backgroundPosition: 'center' }} />
-
-      <DataFlow className="absolute right-[-120px] top-1/2 -translate-y-1/2 h-[560px] w-[560px] z-0 hidden lg:block" />
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 max-w-[var(--max-width,1200px)] w-full items-center relative z-[1]">
         <div className="flex flex-col items-start gap-3 sm:gap-5">
