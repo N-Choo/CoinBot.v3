@@ -1,8 +1,8 @@
 <div align="center">
-  <img src="https://capsule-render.vercel.app/api?type=waving&color=gradient&customColorList=2,3&height=180&section=header&text=CoinBot%20x%20KuCoin&fontSize=56&animation=fadeIn&fontAlignY=38" alt="CoinBot x KuCoin" />
+  <img src="react/public/coinbot-lockup.svg" alt="CoinBot" width="300" />
 </div>
 
-<p align="center"><b>Automated crypto trading — signed contracts, on-chain deposits, signal-driven execution.</b></p>
+<p align="center"><b>Trade on autopilot — your wallet, your funds, your rules.</b></p>
 
 <div align="center">
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" />
@@ -22,7 +22,7 @@
 
 <br />
 
-**CoinBot.v3** is an event-driven crypto trading platform that turns user-signed contracts into automated trades on KuCoin. Users authenticate with an Ethereum wallet, deposit USDT on-chain, and sign a contract allocating funds to a strategy; a Rust **trade engine** consumes RSI-divergence signals from a Python **analyzer**, places spot orders, and reconciles fills back to the contract, while an **API gateway** and **deposit worker** handle wallet auth, contract signing, and on-chain deposit verification.
+Math does the watching. Our statistical models read the market around the clock, surface the trades worth taking, and fire them straight to KuCoin before the crowd even blinks.
 
 ## Processes
 
@@ -62,12 +62,12 @@ flowchart TB
     class UI,GW,DW,TE,AN,DB,RD,ETH,KC plain;
 ```
 
-| Process          | Path                     | Role                                                    | Talks to                                      |
-| ---------------- | ------------------------ | ------------------------------------------------------- | --------------------------------------------- |
-| `api_gateway`    | `process/api_gateway`    | HTTP API — auth, contract signing, deposit intake       | React, PostgreSQL, deposit-worker             |
-| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper                | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
-| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | Redis, PostgreSQL, KuCoin |
-| `analyzer`       | `process/analyzer`       | signal engine (Python)                                  | Redis, KuCoin                                 |
+| Process          | Path                     | Role                                                                                       | Talks to                                      |
+| ---------------- | ------------------------ | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
+| `api_gateway`    | `process/api_gateway`    | HTTP API — auth, contract signing, deposit intake                                          | React, PostgreSQL, deposit-worker             |
+| `deposit-worker` | `process/deposit-worker` | gRPC ticket + background deposit sweeper                                                   | api_gateway, PostgreSQL, Ethereum RPC, KuCoin |
+| `trade-engine`   | `process/trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | Redis, PostgreSQL, KuCoin                     |
+| `analyzer`       | `process/analyzer`       | signal engine (Python)                                                                     | Redis, KuCoin                                 |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
 

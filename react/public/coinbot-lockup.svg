@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 300 96" width="300" height="96" fill="none" role="img" aria-label="CoinBot">
+  <defs>
+    <linearGradient id="cbw" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ff8a65"/>
+      <stop offset="1" stop-color="#ff5722"/>
+    </linearGradient>
+  </defs>
+
+  <!-- mark: 4 layer lines -->
+  <g transform="translate(4,12) scale(1.5)" fill="#ff5722">
+    <rect x="4" y="9" width="40" height="6" rx="3"/>
+    <rect x="4" y="17" width="12" height="6" rx="3"/>
+    <rect x="18" y="17" width="24" height="6" rx="3"/>
+    <rect x="4" y="25" width="19" height="6" rx="3"/>
+    <rect x="25" y="25" width="19" height="6" rx="3"/>
+    <rect x="4" y="33" width="8" height="6" rx="3"/>
+  </g>
+
+  <!-- wordmark -->
+  <text x="88" y="65" font-family="'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif" font-size="50" font-weight="800" letter-spacing="-1.5" fill="url(#cbw)">CoinBot</text>
+</svg>
