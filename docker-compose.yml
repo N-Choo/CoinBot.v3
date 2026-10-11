@@ -181,6 +181,7 @@ services:
   # ── Analyzer (prod only) ───────────────────
 
   analyzer:
+    image: ghcr.io/n-choo/coinbot-analyzer:latest
     build:
       context: ./process/analyzer
       dockerfile: Dockerfile

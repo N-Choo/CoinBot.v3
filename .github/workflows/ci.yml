@@ -86,7 +86,15 @@ jobs:
           file: ./react/Dockerfile
           platforms: linux/arm64
           push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:la
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:latest
+      - name: Build & push analyzer
+        uses: docker/build-push-action@v5
+        with:
+          context: ./process/analyzer
+          file: ./process/analyzer/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
 
   # --- Full-stack smoke test (main only) ---
   smoke-test:
