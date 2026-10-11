@@ -48,7 +48,7 @@ export default function Topbar() {
               ))
             ) : (
               <button
-                className="h-9 min-w-[100px] px-5 text-[14px] font-semibold text-text-main bg-transparent border border-border rounded-lg cursor-pointer transition-all flex items-center justify-center hover:border-accent hover:bg-accent/10 hover:text-accent"
+                className="h-9 min-w-[100px] px-5 text-[12px] font-semibold text-text-main bg-transparent border border-border rounded-lg cursor-pointer transition-all flex items-center justify-center hover:border-accent hover:bg-accent/10 hover:text-accent"
                 onClick={handleConnect}
               >
                 CONNECT
