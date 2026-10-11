@@ -27,8 +27,11 @@ headers=$(curl -sI -X OPTIONS \
     -H "Origin: http://127.0.0.1:5173" \
     -H "Access-Control-Request-Method: GET" \
     "$BASE/api/")
-check "OPTIONS /api/ has Access-Control-Allow-Origin" \
-    echo "$headers" | grep -qi "access-control-allow-origin"
+if echo "$headers" | grep -qi "access-control-allow-origin"; then
+    pass "OPTIONS /api/ has Access-Control-Allow-Origin"
+else
+    fail "OPTIONS /api/ has Access-Control-Allow-Origin"
+fi
 
 status=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS \
     -H "Origin: http://127.0.0.1:5173" \
@@ -55,8 +58,11 @@ check "GET /api/nonexistent returns 404" test "$status" = 404
 header "Auth Flow"
 
 auth_resp=$(curl -s "$BASE/api/user/auth?wallet_address=$WALLET")
-check "GET /api/user/auth returns nonce" \
-    echo "$auth_resp" | grep -q '"nonce"'
+if echo "$auth_resp" | grep -q '"nonce"'; then
+    pass "GET /api/user/auth returns nonce"
+else
+    fail "GET /api/user/auth returns nonce"
+fi
 
 NONCE=$(echo "$auth_resp" | python3 -c "import sys,json; print(json.load(sys.stdin)['nonce'])" 2>/dev/null || echo "")
 
