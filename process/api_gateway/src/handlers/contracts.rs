@@ -3,7 +3,7 @@ use uuid::Uuid;
 
 use crate::handlers::authenticate;
 use crate::handlers::user::auth::{AuthController, NonceCache, SessionCache};
-use crate::models::contracts::{BotSettings, MessagePayload, SignRequest};
+use crate::models::contracts::{BotSettings, ContractView, MessagePayload, SignRequest};
 
 /// HTTP handlers for the `/api/contracts` surface.
 ///
@@ -157,6 +157,54 @@ impl Contracts {
 
         log::info!("Contract signed for wallet: {}", wallet);
         HttpResponse::Ok().json(serde_json::json!({ "message": "Contract signed" }))
+    }
+
+    /// List the authenticated caller's contracts.
+    ///
+    /// `GET /api/contracts/me`
+    ///
+    /// Requires a valid session. Resolves the session wallet to a user and
+    /// returns every contract owned by that user as [`ContractView`] (signing
+    /// material omitted). An unknown wallet is not an error: it yields an empty
+    /// JSON array.
+    ///
+    /// Responses:
+    /// - `200 OK` — JSON array of contracts (possibly empty).
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `500 Internal Server Error` — user lookup or contract query failed.
+    pub async fn get_my_contracts(
+        header: actix_web::HttpRequest,
+        session_cache: web::Data<SessionCache>,
+        pool: web::Data<sqlx::PgPool>,
+    ) -> impl Responder {
+        let wallet = match Self::authenticated_wallet(&header, &session_cache).await {
+            Ok(w) => w,
+            Err(resp) => return resp,
+        };
+
+        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return HttpResponse::Ok().json(Vec::<ContractView>::new()),
+            Err(e) => {
+                log::error!("get_my_contracts: find_by_wallet failed: {}", e);
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        match share::db::contracts::ContractFilter::new()
+            .with_user(user.uid)
+            .execute(&pool)
+            .await
+        {
+            Ok(contracts) => {
+                let views: Vec<ContractView> = contracts.iter().map(ContractView::from).collect();
+                HttpResponse::Ok().json(views)
+            }
+            Err(e) => {
+                log::error!("get_my_contracts: query failed for uid={}: {}", user.uid, e);
+                HttpResponse::InternalServerError().finish()
+            }
+        }
     }
 
     /// Authenticate the request, mapping failure to a `401` response.

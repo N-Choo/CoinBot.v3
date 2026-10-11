@@ -41,4 +41,5 @@ fn contract_routes() -> impl HttpServiceFactory {
     web::scope("/contracts")
         .route("/nonce", web::get().to(Contracts::get_nonce))
         .route("/sign", web::post().to(Contracts::sign))
+        .route("/me", web::get().to(Contracts::get_my_contracts))
 }

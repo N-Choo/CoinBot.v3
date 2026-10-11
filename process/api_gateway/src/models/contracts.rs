@@ -40,6 +40,38 @@ pub struct BotSettings {
     pub tp_pct: f32,
 }
 
+/// Browser-facing view of a contract, omitting signing material.
+#[derive(serde::Serialize)]
+pub struct ContractView {
+    pub id: uuid::Uuid,
+    pub ticker: String,
+    pub status: String,
+    pub init_fund: String,
+    pub available_fund: String,
+    pub total_traded_fund: String,
+    pub sl_pct: f32,
+    pub tp_pct: f32,
+    pub created_at: chrono::DateTime<chrono::Utc>,
+    pub updated_at: chrono::DateTime<chrono::Utc>,
+}
+
+impl From<&share::db::contracts::Contract> for ContractView {
+    fn from(c: &share::db::contracts::Contract) -> Self {
+        Self {
+            id: c.id,
+            ticker: c.ticker.clone(),
+            status: c.status.clone(),
+            init_fund: c.init_fund.clone(),
+            available_fund: c.available_fund.clone(),
+            total_traded_fund: c.total_traded_fund.clone(),
+            sl_pct: c.sl_pct,
+            tp_pct: c.tp_pct,
+            created_at: c.created_at,
+            updated_at: c.updated_at,
+        }
+    }
+}
+
 impl BotSettings {
     /// Parse [`BotSettings`] from the signed JSON `settings` value.
     ///

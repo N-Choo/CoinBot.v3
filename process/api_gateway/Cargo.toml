@@ -7,6 +7,7 @@ edition = "2024"
 share = { path = "../../lib/share" }
 actix-web.workspace = true
 uuid.workspace = true
+chrono.workspace = true
 serde.workspace = true
 log.workspace = true
 

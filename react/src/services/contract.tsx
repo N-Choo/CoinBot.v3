@@ -50,3 +50,21 @@ export async function signContract(settings: BotSettings): Promise<SignContractR
 
   return { success: true, message: 'Contract signed successfully!' }
 }
+
+export interface ContractItem {
+  id: string
+  ticker: string
+  status: string
+  init_fund: string
+  available_fund: string
+  total_traded_fund: string
+  sl_pct: number
+  tp_pct: number
+  created_at: string
+  updated_at: string
+}
+
+export async function getMyContracts(): Promise<ContractItem[]> {
+  const res = await axios.get('/api/contracts/me')
+  return res.data
+}

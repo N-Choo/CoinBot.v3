@@ -342,6 +342,7 @@ dependencies = [
  "actix-governor",
  "actix-http",
  "actix-web",
+ "chrono",
  "dotenvy",
  "ethers",
  "log",

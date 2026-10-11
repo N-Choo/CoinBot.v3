@@ -6,6 +6,11 @@ vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({ isAuthenticated: false, login: vi.fn(), logout: vi.fn() }),
 }))
 
+vi.mock('../services/contract', () => ({
+  getMyContracts: vi.fn().mockResolvedValue([]),
+  signContract: vi.fn(),
+}))
+
 describe('TradingPage', () => {
   it('renders the TradingView chart container', async () => {
     const { default: Trading } = await import('./tradingPage')
