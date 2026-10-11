@@ -1,12 +1,12 @@
 const MOCK_TRADES = [
-  { type: 'BUY', pair: 'BTC/USDT', price: '$68,210', pnl: '+$312.50' },
-  { type: 'SELL', pair: 'ETH/USDT', price: '$3,490', pnl: '+$89.20' },
+  { type: 'BUY', pair: 'BTC/USDT', price: '$83,086.50', pnl: '+$512.50' },
+  { type: 'SELL', pair: 'ETH/USDT', price: '$2,517.14', pnl: '+$189.20' },
   { type: 'STAKE', pair: 'ETH → Lido', price: '3.2% APY', pnl: '' },
-  { type: 'BUY', pair: 'SOL/USDT', price: '$140.20', pnl: '+$2.60' },
+  { type: 'BUY', pair: 'SOL/USDT', price: '$110.54', pnl: '+$62.60' },
   { type: 'SELL', pair: 'AVAX/USDT', price: '$35.40', pnl: '+$14.80' },
   { type: 'BUY', pair: 'LINK/USDT', price: '$18.90', pnl: '+$5.70' },
   { type: 'STAKE', pair: 'USDC → Aave', price: '5.1% APY', pnl: '' },
-  { type: 'SELL', pair: 'DOGE/USDT', price: '$0.12', pnl: '+$1.50' },
+  { type: 'SELL', pair: 'DOGE/USDT', price: '$0.145', pnl: '+$1.50' },
   { type: 'BUY', pair: 'OP/USDT', price: '$3.15', pnl: '+$8.40' },
   { type: 'SELL', pair: 'MATIC/USDT', price: '$0.72', pnl: '+$3.20' },
 ]

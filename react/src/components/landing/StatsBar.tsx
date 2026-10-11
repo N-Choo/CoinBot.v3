@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from 'react'
 
 const STATS = [
-  { label: 'Trading Volume', value: '$450M+' },
+  { label: 'P&L Today', value: '$127K' },
   { label: 'Uptime', value: '99.9%' },
   { label: 'Active Users', value: '10K+' },
   { label: 'Liquidation Risk', value: '0.0%' },

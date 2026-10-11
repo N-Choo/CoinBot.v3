@@ -33,7 +33,7 @@ describe('CoinBot (homePage)', () => {
 
   test('renders stats section', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('Trading Volume')).toBeInTheDocument()
+    expect(screen.getByText('P&L Today')).toBeInTheDocument()
     expect(screen.getByText('Uptime')).toBeInTheDocument()
     expect(screen.getByText('Active Users')).toBeInTheDocument()
     expect(screen.getByText('Liquidation Risk')).toBeInTheDocument()
@@ -41,9 +41,9 @@ describe('CoinBot (homePage)', () => {
 
   test('renders feature cards', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('Buy Low, Sell High')).toBeInTheDocument()
-    expect(screen.getByText('Auto-Stake')).toBeInTheDocument()
-    expect(screen.getByText('Zero Effort')).toBeInTheDocument()
+    expect(screen.getByText('Wallet Accounts')).toBeInTheDocument()
+    expect(screen.getByText('Trading Service')).toBeInTheDocument()
+    expect(screen.getByText('Automated Deposits')).toBeInTheDocument()
   })
 
   test('renders CTA buttons', () => {

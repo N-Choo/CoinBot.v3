@@ -28,19 +28,15 @@ export default function HeroSection() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 max-w-[var(--max-width,1200px)] w-full items-center relative z-[1]">
         <div className="flex flex-col items-center lg:items-start gap-3 sm:gap-5">
-          <div className="inline-flex items-center gap-2 text-xs font-bold text-accent border border-border-light px-4 py-1.5 rounded-full bg-accent/5 sm:text-[12px]">
-            <span className="w-1.5 h-1.5 rounded-full bg-accent shadow-[0_0_8px_var(--color-accent)] animate-pulse" />
-            Bot Online — $127K P&L Today
-          </div>
-
           <h1 className="text-[34px] sm:text-[52px] font-extrabold leading-[1.06] tracking-[-1.5px] m-0 text-center lg:text-left text-balance">
             Your wealth.<br />
             <span className="bg-gradient-to-r from-accent to-[#ff8a65] bg-clip-text text-transparent">Automated.</span>
           </h1>
 
           <p className="text-[13px] sm:text-[15px] text-text-muted leading-[1.7] m-0 max-w-[480px] text-center lg:text-left">
-            CoinBot scans the market 24/7 — buying low, selling high, and staking idle
-            capital for passive yield. No keys, no manual trades, zero hands-on effort.
+            Math does the watching. Our statistical models read the market around the
+            clock, surface the trades worth taking, and fire them straight to KuCoin
+            before the crowd even blinks.
           </p>
 
           <div className="flex flex-wrap gap-3 mt-0 sm:mt-1 justify-center lg:justify-start w-full sm:w-auto">
