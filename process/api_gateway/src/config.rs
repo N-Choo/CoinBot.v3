@@ -55,10 +55,11 @@ impl AppConfig {
     /// Build the CORS policy applied to every response.
     ///
     /// Allows the configured origin, `GET`/`POST`/`OPTIONS`, credentials, and
-    /// the authorization/accept/content-type headers.
+    /// the authorization/accept/content-type headers. A configured origin of
+    /// `*` allows any origin (the request origin is echoed back, which is
+    /// required since credentials are supported).
     pub fn get_cors(&self) -> Cors {
-        Cors::default()
-            .allowed_origin(&self.allowed_origin)
+        let cors = Cors::default()
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
             .allowed_headers(vec![
                 http::header::AUTHORIZATION,
@@ -66,6 +67,83 @@ impl AppConfig {
                 http::header::CONTENT_TYPE,
             ])
             .supports_credentials()
-            .max_age(3600)
+            .max_age(3600);
+
+        if self.allowed_origin.trim() == "*" {
+            cors.allow_any_origin()
+        } else {
+            cors.allowed_origin(&self.allowed_origin)
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use actix_web::http::header;
+    use actix_web::{App, http, test, web};
+
+    fn config_with_origin(origin: &str) -> AppConfig {
+        AppConfig {
+            ip: "0.0.0.0".to_string(),
+            port: 8080,
+            n_worker: 1,
+            n_queue: 1,
+            db_url: String::new(),
+            session_redis_url: String::new(),
+            nonce_redis_url: String::new(),
+            grpc_deposit: String::new(),
+            allowed_origin: origin.to_string(),
+        }
+    }
+
+    fn preflight(origin: &str) -> actix_http::Request {
+        test::TestRequest::with_uri("/")
+            .method(http::Method::OPTIONS)
+            .insert_header((header::ORIGIN, origin))
+            .insert_header(("Access-Control-Request-Method", "GET"))
+            .to_request()
+    }
+
+    /// A `*` origin must not error the middleware and should echo the request origin.
+    #[actix_web::test]
+    async fn wildcard_origin_allows_any_and_reflects() {
+        let app = test::init_service(
+            App::new()
+                .wrap(config_with_origin("*").get_cors())
+                .route("/", web::get().to(|| async { "ok" })),
+        )
+        .await;
+
+        let resp = test::call_service(&app, preflight("http://127.0.0.1:5173")).await;
+
+        assert_eq!(resp.status(), http::StatusCode::OK);
+        let allow_origin = resp
+            .headers()
+            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+            .expect("wildcard origin must echo Access-Control-Allow-Origin");
+        assert_eq!(allow_origin.to_str().unwrap(), "http://127.0.0.1:5173");
+    }
+
+    /// A non-wildcard origin only allows that exact origin.
+    #[actix_web::test]
+    async fn specific_origin_restricts() {
+        let app = test::init_service(
+            App::new()
+                .wrap(config_with_origin("http://example.com").get_cors())
+                .route("/", web::get().to(|| async { "ok" })),
+        )
+        .await;
+
+        let allowed = test::call_service(&app, preflight("http://example.com")).await;
+        assert_eq!(allowed.status(), http::StatusCode::OK);
+
+        let denied = test::call_service(&app, preflight("http://evil.com")).await;
+        assert!(
+            denied
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
     }
 }
