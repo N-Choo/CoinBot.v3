@@ -4,6 +4,9 @@ use uuid::Uuid;
 
 use crate::erc20::Erc20;
 
+/// USDT has 6 base-10 decimals on every supported chain.
+const USDT_DECIMALS: u32 = 6;
+
 /// A verified on-chain USDT deposit.
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct Deposit {
@@ -36,7 +39,8 @@ pub struct Deposit {
 impl Deposit {
     /// Insert a new `pending` deposit from an on-chain transaction.
     ///
-    /// The amount is decoded from the ERC-20 transfer calldata.
+    /// The amount is decoded from the ERC-20 transfer calldata and scaled to
+    /// human units (USDT, 6 decimals).
     pub async fn create_pending(
         pool: &PgPool,
         user_uid: Uuid,
@@ -54,7 +58,7 @@ impl Deposit {
         .bind(format!("0x{:x}", tx.from))
         .bind(format!("0x{:x}", tx.to.unwrap_or_default()))
         .bind(ticker)
-        .bind(Erc20::decode_amount(&tx.input))
+        .bind(Erc20::decode_amount_scaled(&tx.input, USDT_DECIMALS))
         .fetch_one(pool)
         .await
     }

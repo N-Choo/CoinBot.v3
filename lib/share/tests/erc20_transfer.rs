@@ -108,3 +108,42 @@ fn test_recipient_wrong_selector() {
 fn test_recipient_too_short() {
     assert_eq!(Erc20::decode_recipient(&[0xa9, 0x05]), None);
 }
+
+/// Amounts scale to human units by the token's decimals (USDT = 6).
+#[test]
+fn test_amount_scaled_usdt() {
+    assert_eq!(
+        Erc20::decode_amount_scaled(&build_input(&platform(), 9_900_000), 6),
+        "9.9"
+    );
+    assert_eq!(
+        Erc20::decode_amount_scaled(&build_input(&platform(), 1_000_000), 6),
+        "1"
+    );
+    assert_eq!(
+        Erc20::decode_amount_scaled(&build_input(&platform(), 500), 6),
+        "0.0005"
+    );
+    assert_eq!(
+        Erc20::decode_amount_scaled(&build_input(&platform(), 0), 6),
+        "0"
+    );
+}
+
+/// Zero decimals leaves the raw amount unchanged.
+#[test]
+fn test_amount_scaled_no_decimals() {
+    assert_eq!(
+        Erc20::decode_amount_scaled(&build_input(&platform(), 42), 0),
+        "42"
+    );
+}
+
+/// A wrong selector scales to `"0"`.
+#[test]
+fn test_amount_scaled_wrong_selector() {
+    assert_eq!(
+        Erc20::decode_amount_scaled(&[0x00, 0x01, 0x02, 0x03, 0xff], 6),
+        "0"
+    );
+}

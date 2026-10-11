@@ -24,6 +24,23 @@ impl Erc20 {
         }
     }
 
+    /// Decode the transferred amount, scaled by `decimals`, as a trimmed decimal
+    /// string (e.g. raw `9900000` with `6` decimals -> `"9.9"`).
+    ///
+    /// Returns `"0"` when the selector is missing or the calldata is malformed.
+    pub fn decode_amount_scaled(input: &[u8], decimals: u32) -> String {
+        const TRANSFER_SELECTOR: [u8; 4] = [0xa9, 0x05, 0x9c, 0xbb];
+
+        if input.len() < 4 || input[..4] != TRANSFER_SELECTOR {
+            return "0".into();
+        }
+
+        match Self::decode_transfer(&input[4..]) {
+            Some((_, amount)) => scale_decimal(amount, decimals),
+            None => "0".into(),
+        }
+    }
+
     /// Decode the recipient address as a `0x`-prefixed hex string.
     ///
     /// Returns `None` when the selector is missing or the calldata is malformed.
@@ -48,4 +65,22 @@ impl Erc20 {
             Err(_) => None,
         }
     }
+}
+
+/// Render `raw`, scaled by `10^decimals`, as a trimmed decimal string.
+fn scale_decimal(raw: ethers::types::U256, decimals: u32) -> String {
+    if decimals == 0 {
+        return raw.to_string();
+    }
+
+    let scale = ethers::types::U256::from(10u64).pow(ethers::types::U256::from(decimals as u64));
+    let whole = raw / scale;
+    let frac = raw % scale;
+    if frac.is_zero() {
+        return whole.to_string();
+    }
+
+    let padded = format!("{:0>width$}", frac, width = decimals as usize);
+    let trimmed = padded.trim_end_matches('0');
+    format!("{whole}.{trimmed}")
 }
