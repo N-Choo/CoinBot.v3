@@ -1,6 +1,6 @@
 import HeroSection from '../components/landing/HeroSection'
 import StatsBar from '../components/landing/StatsBar'
-import ActivityFeed from '../components/landing/ActivityFeed'
+import NewsFeed from '../components/landing/NewsFeed'
 import FeaturesSection from '../components/landing/FeaturesSection'
 import FooterSection from '../components/landing/FooterSection'
 
@@ -9,7 +9,7 @@ export default function Landing() {
     <div className="bg-bg-dark text-text-main min-h-screen overflow-x-hidden">
       <HeroSection />
       <StatsBar />
-      <ActivityFeed />
+      <NewsFeed />
       <FeaturesSection />
       <FooterSection />
     </div>

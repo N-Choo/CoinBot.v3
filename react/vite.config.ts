@@ -22,6 +22,15 @@ export default defineConfig({
           })
         },
       },
+      '/news-api': {
+        target: 'https://cointelegraph.com',
+        changeOrigin: true,
+        configure: (proxy) => {
+          proxy.on('proxyReq', (proxyReq) => {
+            proxyReq.path = proxyReq.path.replace('/news-api', '')
+          })
+        },
+      },
     }
   },
   test: {

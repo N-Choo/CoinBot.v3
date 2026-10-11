@@ -711,7 +711,7 @@ th {
 }
 
 .feed-track {
-  animation: scrollFeed 30s linear infinite;
+  animation: scrollFeed 90s linear infinite;
 }
 
 .feed-track:hover {

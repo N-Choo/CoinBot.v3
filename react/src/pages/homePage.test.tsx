@@ -8,6 +8,10 @@ vi.mock('../services/stats', () => ({
   getStats: vi.fn().mockResolvedValue({ accounts: 0, active_contracts: 0, funds_deployed: '0', trades_executed: 0 }),
 }))
 
+vi.mock('../services/news', () => ({
+  fetchNews: vi.fn().mockResolvedValue([]),
+}))
+
 function Wrapper({ children }: { children: React.ReactNode }) {
   return <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}><AuthProvider>{children}</AuthProvider></BrowserRouter>
 }
