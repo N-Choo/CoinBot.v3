@@ -5209,6 +5209,7 @@ dependencies = [
  "share",
  "sqlx",
  "tokio",
+ "uuid 1.23.1",
 ]
 
 [[package]]

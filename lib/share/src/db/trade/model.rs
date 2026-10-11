@@ -19,7 +19,7 @@ pub struct TradeOrder {
     pub side: String,
     /// What the order does to the position: `open` or `close`.
     pub action: String,
-    /// Comment sent to the exchange, linking back to `contract_id`.
+    /// Client order id sent to the exchange (unique per order attempt).
     pub comment: String,
     /// Exchange-assigned order id, once accepted.
     pub exchange_order_id: Option<String>,

@@ -14,6 +14,7 @@ use share::{
     models::signals::TradeSignal,
 };
 use sqlx::PgPool;
+use uuid::Uuid;
 
 /// Execute a verified signal for a contract in KuCoin **spot**.
 pub async fn execute(
@@ -39,8 +40,9 @@ pub async fn execute(
 
     // KuCoin spot symbol ("BTC/USDT" -> "BTC-USDT"); the remark is capped at 20 chars.
     let ticker = c.ticker.replace('/', "-");
-    let comment = c.id.to_string();
-    let remark: String = comment.chars().take(20).collect();
+    // One unique client order id per attempt; the contract link is `contract_id`.
+    let comment = Uuid::new_v4().to_string();
+    let remark: String = c.id.to_string().chars().take(20).collect();
 
     // Size must respect the pair's increment/min-size rules, or KuCoin rejects it.
     let info = fetch_symbol_info(kcc, &ticker).await?;
@@ -59,7 +61,7 @@ pub async fn execute(
     };
     let trade_fund = price * quantity_value;
 
-    // Claim the order slot first: the unique `comment` index rejects a second order.
+    // Record the order (pending) before touching the exchange.
     let order = match TradeOrders::create(
         pool,
         c.id,
@@ -76,14 +78,9 @@ pub async fn execute(
     .await
     {
         Ok(o) => o,
-        Err(sqlx::Error::Database(e)) if e.is_unique_violation() => {
-            warn!("[TRADE] {} already has an order; skipping", c.ticker);
-            return Ok(());
-        }
         Err(e) => return Err(e.into()),
     };
 
-    // Deterministic client id so the exchange rejects a duplicate on retry.
     let mut request = SpotOrderRequest::new(TradeType::Market, &ticker, side).set_remark(&remark);
     request.size = Some(quantity.clone());
     request.client_oid = Some(comment.clone());

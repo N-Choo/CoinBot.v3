@@ -12,3 +12,4 @@ serde_json.workspace = true
 share = { path = "../../lib/share" }
 sqlx.workspace = true
 tokio = { version = "1", features = ["full"] }
+uuid.workspace = true
