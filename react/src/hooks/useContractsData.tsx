@@ -1,3 +1,5 @@
+/* eslint-disable react-refresh/only-export-components */
+
 import { createContext, useContext, useState, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react'
 import { getMyContracts, getContractOrders, type ContractItem, type ContractOrder } from '../services/contract'
 import { fetchTickerPrice } from '../services/kucoin'
@@ -25,7 +27,7 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(false)
   const [ordersByContract, setOrdersByContract] = useState<Record<string, ContractOrder[]>>({})
-  const [ordersReady, setOrdersReady] = useState(false)
+  const [loadedKey, setLoadedKey] = useState<string | null>(null)
   const [prices, setPrices] = useState<Record<string, number>>({})
 
   // Load the user's contracts.
@@ -37,6 +39,13 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
       .finally(() => { if (active) setLoading(false) })
     return () => { active = false }
   }, [])
+
+  // Stable key: the set of contract ids. Status-only changes (e.g. closing a
+  // contract) don't change it, so orders aren't refetched and the sweep isn't
+  // restarted on those updates.
+  const contractIds = contracts.map(c => c.id).join(',')
+  // Derived (not stored): true once the orders for the current id set are in.
+  const ordersReady = contracts.length === 0 || loadedKey === contractIds
 
   // Load the orders for every contract (needed to compute PnL).
   useEffect(() => {
@@ -51,10 +60,11 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     ).then(entries => {
       if (!active) return
       setOrdersByContract(Object.fromEntries(entries))
-      setOrdersReady(true)
+      setLoadedKey(contractIds)
     })
     return () => { active = false }
-  }, [contracts])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractIds])
 
   // Sweep every distinct ticker's price once per second — sequentially, chained
   // so runs never overlap.
@@ -74,7 +84,8 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     }
     sweep()
     return () => { active = false; clearTimeout(timer) }
-  }, [contracts])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [contractIds])
 
   const pnlOf = (o: ContractOrder, ticker: string): number | null => {
     const price = prices[ticker]

@@ -22,12 +22,18 @@ export async function getBalance(): Promise<string> {
   if (!window.ethereum) throw new Error('MetaMask not installed')
 
   const provider = new ethers.BrowserProvider(window.ethereum)
-  await provider.send('eth_requestAccounts', [])
-  const signer = await provider.getSigner()
-  const sender = await signer.getAddress()
+  // Silent read of already-authorized accounts (no prompt); fall back to an
+  // explicit connect request only when there is no authorized account.
+  let accounts = await provider.send('eth_accounts', [])
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    accounts = await provider.send('eth_requestAccounts', [])
+  }
+  if (!Array.isArray(accounts) || accounts.length === 0) {
+    throw new Error('Wallet not connected')
+  }
 
   const contract = new ethers.Contract(USDT_ADDRESS, ERC20_ABI, provider)
-  const balance = await contract.balanceOf(sender)
+  const balance = await contract.balanceOf(accounts[0])
   return ethers.formatUnits(balance, 6)
 }
 

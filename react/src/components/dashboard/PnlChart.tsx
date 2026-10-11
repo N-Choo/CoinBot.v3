@@ -56,9 +56,16 @@ export default function PnlChart() {
   // Cumulative PnL within the selected window (baseline 0 at the window start).
   const series = useMemo(() => {
     const days = RANGES.find(r => r.label === range)!.days
+    // eslint-disable-next-line react-hooks/purity -- the window tracks the current time
     const cutoff = Date.now() - days * 86_400_000
-    let cum = 0
-    return filled.filter(f => f.t >= cutoff).map(f => { cum += f.pnl; return { date: '', value: cum } })
+    let acc = 0
+    const out: { date: string; value: number }[] = []
+    for (const f of filled) {
+      if (f.t < cutoff) continue
+      acc += f.pnl
+      out.push({ date: '', value: acc })
+    }
+    return out
   }, [filled, range])
 
   const sumSince = (ms: number) => filled.filter(f => f.t >= Date.now() - ms).reduce((s, f) => s + f.pnl, 0)
