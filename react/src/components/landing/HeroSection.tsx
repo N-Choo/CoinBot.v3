@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../hooks/useAuth'
 import LiveTicker from './LiveTicker'
+import DataFlow from './DataFlow'
 import WalletAlert from '../ui/WalletAlert'
 
 export default function HeroSection() {
@@ -26,20 +27,22 @@ export default function HeroSection() {
       <div className="absolute inset-0 opacity-[0.05] sm:opacity-[0.07] pointer-events-none z-0"
         style={{ backgroundImage: 'url("/f1.png")', backgroundSize: 'cover', backgroundPosition: 'center' }} />
 
+      <DataFlow className="absolute right-[-120px] top-1/2 -translate-y-1/2 h-[560px] w-[560px] z-0 hidden lg:block" />
+
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 lg:gap-16 max-w-[var(--max-width,1200px)] w-full items-center relative z-[1]">
-        <div className="flex flex-col items-center lg:items-start gap-3 sm:gap-5">
-          <h1 className="text-[34px] sm:text-[52px] font-extrabold leading-[1.06] tracking-[-1.5px] m-0 text-center lg:text-left text-balance">
+        <div className="flex flex-col items-start gap-3 sm:gap-5">
+          <h1 className="text-[34px] sm:text-[52px] font-extrabold leading-[1.06] tracking-[-1.5px] m-0 text-left text-balance">
             Your wealth.<br />
             <span className="bg-gradient-to-r from-accent to-[#ff8a65] bg-clip-text text-transparent">Automated.</span>
           </h1>
 
-          <p className="text-[13px] sm:text-[15px] text-text-muted leading-[1.7] m-0 max-w-[480px] text-center lg:text-left">
+          <p className="text-[13px] sm:text-[15px] text-text-muted leading-[1.7] m-0 max-w-[480px] text-left">
             Math does the watching. Our statistical models read the market around the
             clock, surface the trades worth taking, and fire them straight to KuCoin
             before the crowd even blinks.
           </p>
 
-          <div className="flex flex-wrap gap-3 mt-0 sm:mt-1 justify-center lg:justify-start w-full sm:w-auto">
+          <div className="flex flex-wrap gap-3 mt-0 sm:mt-1 justify-start w-full sm:w-auto">
             <button className="bg-gradient-to-r from-accent to-[#e64a19] text-white border-none px-5 sm:px-9 py-3 sm:py-3.5 text-[14px] sm:text-[15px] font-bold cursor-pointer rounded-lg transition-all hover:-translate-y-0.5 hover:shadow-[0_4px_20px_var(--color-accent-glow,rgba(255,87,34,0.15))] w-full sm:w-auto" onClick={handleStart}>
               Start Trading
             </button>
