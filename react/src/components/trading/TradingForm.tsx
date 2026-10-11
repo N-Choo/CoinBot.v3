@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import toast from 'react-hot-toast'
 import type { BotSettings } from './types'
 import { signContract } from '../../services/contract'
-import { getBalance } from '../../services/transaction'
+import { getUserStats } from '../../services/stats'
 import { useAuth } from '../../hooks/useAuth'
 import DepositModal from '../dashboard/DepositModal'
 
@@ -25,7 +25,7 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
 
   useEffect(() => {
     if (!isAuthenticated) return
-    getBalance().then(v => setBalance(parseFloat(v))).catch(() => {})
+    getUserStats().then(s => setBalance(parseFloat(s.free))).catch(() => {})
   }, [isAuthenticated])
 
   const calcPnl = (amount: string, pct: string) => {
