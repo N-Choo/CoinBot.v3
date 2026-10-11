@@ -1,7 +1,7 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
 import Skeleton from '../ui/Skeleton'
-import { getMyContracts, getContractOrders, type ContractItem, type ContractOrder } from '../../services/contract'
-import { fetchTickerPrice } from '../../services/kucoin'
+import { type ContractItem } from '../../services/contract'
+import { useContractsData } from '../../hooks/useContractsData'
 
 const STATUS_COLOR: Record<string, string> = {
   active: 'text-up',
@@ -50,63 +50,9 @@ const timeAgo = (iso: string): string => {
 }
 
 export default function ActiveContracts() {
-  const [contracts, setContracts] = useState<ContractItem[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  const { contracts, setContracts, loading, error, ordersByContract, ordersReady, pnlOf, contractPnl } = useContractsData()
   const [selected, setSelected] = useState<ContractItem | null>(null)
-  const [ordersByContract, setOrdersByContract] = useState<Record<string, ContractOrder[]>>({})
-  const [ordersReady, setOrdersReady] = useState(false)
   const [ordersFilter, setOrdersFilter] = useState('All')
-  const [prices, setPrices] = useState<Record<string, number>>({})
-
-  // Load the user's contracts.
-  useEffect(() => {
-    let active = true
-    getMyContracts()
-      .then(data => { if (active) setContracts(data) })
-      .catch(() => { if (active) setError(true) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [])
-
-  // Load the orders for every contract (needed to compute PnL).
-  useEffect(() => {
-    if (contracts.length === 0) return
-    let active = true
-    Promise.all(
-      contracts.map(c =>
-        getContractOrders(c.id)
-          .then(o => [c.id, o] as const)
-          .catch(() => [c.id, [] as ContractOrder[]] as const),
-      ),
-    ).then(entries => {
-      if (!active) return
-      setOrdersByContract(Object.fromEntries(entries))
-      setOrdersReady(true)
-    })
-    return () => { active = false }
-  }, [contracts])
-
-  // Poll every distinct ticker's price every 5s (drives live PnL).
-  useEffect(() => {
-    const tickers = Array.from(new Set(contracts.map(c => c.ticker)))
-    if (tickers.length === 0) return
-    let active = true
-    const load = async () => {
-      const entries = await Promise.all(
-        tickers.map(async t => [t, await fetchTickerPrice(t.replace('/', '-'))] as const),
-      )
-      if (!active) return
-      setPrices(prev => {
-        const next = { ...prev }
-        for (const [t, p] of entries) if (p != null) next[t] = p
-        return next
-      })
-    }
-    load()
-    const id = setInterval(load, 5000)
-    return () => { active = false; clearInterval(id) }
-  }, [contracts])
 
   const closeContract = () => {
     if (!selected) return
@@ -114,35 +60,11 @@ export default function ActiveContracts() {
     setSelected(null)
   }
 
-  // Live PnL for a filled order against the current market price.
-  const pnlOf = (o: ContractOrder, ticker: string): number | null => {
-    const price = prices[ticker]
-    if (o.status.toLowerCase() !== 'filled' || price == null) return null
-    const qty = parseFloat(o.filled_qty || o.requested_qty)
-    const fill = parseFloat(o.fill_price ?? '')
-    if (Number.isNaN(qty) || Number.isNaN(fill)) return null
-    const fee = parseFloat(o.fee) || 0
-    const diff = o.side.toLowerCase() === 'buy' ? price - fill : fill - price
-    return diff * qty - fee
-  }
-
-  const contractPnl = (c: ContractItem): number | null => {
-    const os = ordersByContract[c.id]
-    if (!os || os.length === 0) return null
-    let any = false
-    let sum = 0
-    for (const o of os) {
-      const p = pnlOf(o, c.ticker)
-      if (p != null) { any = true; sum += p }
-    }
-    return any ? sum : null
-  }
-
   if (selected) {
     const orders = ordersByContract[selected.id] ?? []
     const filteredOrders = orders.filter(o => ordersFilter === 'All' || o.side.toLowerCase() === ordersFilter.toLowerCase())
-    const boughtQty = orders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty || o.requested_qty) || 0), 0)
-    const soldQty = orders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty || o.requested_qty) || 0), 0)
+    const boughtQty = orders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    const soldQty = orders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
     let totalPnl = 0
     let hasPnl = false
     for (const o of orders) {
@@ -236,7 +158,7 @@ export default function ActiveContracts() {
                         <th className="text-left font-medium px-3 py-1.5 whitespace-nowrap">Time</th>
                         <th className="text-left font-medium px-3 py-1.5">Side</th>
                         <th className="text-right font-medium px-3 py-1.5">Qty</th>
-                        <th className="text-right font-medium px-3 py-1.5">Price</th>
+                        <th className="text-right font-medium px-3 py-1.5 whitespace-nowrap">Filled Price</th>
                         <th className="text-right font-medium px-3 py-1.5">PnL</th>
                         <th className="text-right font-medium px-3 py-1.5">Fee</th>
                         <th className="text-left font-medium px-3 py-1.5">Status</th>
@@ -250,7 +172,7 @@ export default function ActiveContracts() {
                           <tr key={o.id} className="border-b border-border-light last:border-b-0">
                             <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap">{timeAgo(o.created_at)}</td>
                             <td className={`px-3 py-1.5 font-bold ${buy ? 'text-up' : 'text-down'}`}>{o.side.toUpperCase()}</td>
-                            <td className="px-3 py-1.5 text-right font-mono text-text-main">{o.filled_qty || o.requested_qty}</td>
+                            <td className="px-3 py-1.5 text-right font-mono text-text-main">{o.requested_qty || o.filled_qty || '—'}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fill_price ? `$${Number(o.fill_price).toLocaleString()}` : '—'}</td>
                             <td className={`px-3 py-1.5 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fee}</td>

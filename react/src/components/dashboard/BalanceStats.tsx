@@ -1,13 +1,18 @@
 import { useState, useEffect } from 'react'
 import Skeleton from '../ui/Skeleton'
 import { getUserStats, type UserStats } from '../../services/stats'
+import { useContractsData } from '../../hooks/useContractsData'
 
 const fmtUsd = (v: string): string => {
   const n = parseFloat(v)
   return '$' + (Number.isNaN(n) ? 0 : n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
 }
 
+const fmtSigned = (n: number): string =>
+  `${n >= 0 ? '+' : '−'}$${Math.abs(n).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
+
 export default function BalanceStats() {
+  const { totalPnl } = useContractsData()
   const [stats, setStats] = useState<UserStats | null>(null)
 
   useEffect(() => {
@@ -32,10 +37,10 @@ export default function BalanceStats() {
   }
 
   const cards = [
-    { label: 'Total Balance', value: fmtUsd(stats.total), accent: false },
-    { label: 'Free Balance', value: fmtUsd(stats.free), accent: false },
-    { label: 'Locked Balance', value: fmtUsd(stats.locked), accent: false },
-    { label: 'Realized PnL', value: fmtUsd(stats.realized_pnl), accent: true },
+    { label: 'Total Balance', value: fmtUsd(stats.total), cls: 'text-text-main' },
+    { label: 'Free Balance', value: fmtUsd(stats.free), cls: 'text-text-main' },
+    { label: 'Locked Balance', value: fmtUsd(stats.locked), cls: 'text-text-main' },
+    { label: 'Realized PnL', value: fmtSigned(totalPnl), cls: totalPnl >= 0 ? 'text-up-text' : 'text-down-text' },
   ]
 
   return (
@@ -47,7 +52,7 @@ export default function BalanceStats() {
           className="bg-bg-panel border border-border-light rounded-xl p-4 backdrop-blur-xl transition-colors hover:border-accent/40"
         >
           <div className="text-[10px] font-semibold uppercase tracking-[0.16em] text-text-muted">{card.label}</div>
-          <div className={`font-mono text-[22px] sm:text-[24px] font-bold mt-2 leading-tight truncate ${card.accent ? 'text-accent' : 'text-text-main'}`}>
+          <div className={`font-mono text-[22px] sm:text-[24px] font-bold mt-2 leading-tight truncate ${card.cls}`}>
             {card.value}
           </div>
         </div>
