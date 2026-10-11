@@ -47,7 +47,7 @@ help:
 	@echo "  make clean-all    Remove ALL containers, images, and volumes"
 	@echo ""
 	@echo "Seeding"
-	@echo "  make seed         Insert demo data into local DB (3 users, 5 contracts)"
+	@echo "  make seed         Insert demo data into local DB (4 users, 6 contracts, 8 orders)"
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
