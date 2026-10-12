@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import axios from 'axios'
 import { sendUSDT, getBalance } from '../../services/transaction'
 
@@ -42,7 +43,7 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
     }
   }
 
-  return (
+  return createPortal(
     <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={onClose}>
       <div onClick={e => e.stopPropagation()} className="w-full max-w-[420px] p-6 bg-bg-panel border border-border-light rounded-lg">
         <h2 className="m-0 mb-1.5 text-base text-text-main font-bold">Deposit USDT</h2>
@@ -80,6 +81,7 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
           </div>
         </form>
       </div>
-    </div>
+    </div>,
+    document.body,
   )
 }

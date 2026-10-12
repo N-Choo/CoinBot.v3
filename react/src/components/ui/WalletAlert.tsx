@@ -26,7 +26,7 @@ export default function WalletAlert({ onClose }: WalletAlertProps) {
             href="https://metamask.io/download/"
             target="_blank"
             rel="noopener noreferrer"
-            className="block px-6 py-3 bg-gradient-to-r from-neon-teal to-primary-dark text-black border-none rounded-lg text-sm font-bold cursor-pointer no-underline text-center hover:opacity-90"
+            className="block px-6 py-3 bg-gradient-to-r from-neon-teal to-primary-dark text-text-btn! border-none rounded-lg text-sm font-bold cursor-pointer no-underline text-center hover:opacity-90"
           >
             Install MetaMask
           </a>

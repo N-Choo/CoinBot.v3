@@ -1,4 +1,5 @@
 import { useState, useEffect } from 'react'
+import { createPortal } from 'react-dom'
 import axios from 'axios'
 import { getActivity, withdraw } from '../../services/transaction'
 import type { ActivityItem } from '../../services/transaction'
@@ -121,7 +122,7 @@ export default function SidebarActions() {
         </div>
       </div>
 
-      {detail && (
+      {detail && createPortal(
         <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={() => setDetail(null)}>
           <div onClick={e => e.stopPropagation()} className="bg-bg-panel border border-border-light rounded-xl w-[440px] max-w-[calc(100vw-32px)] overflow-hidden">
             <div className="flex items-center justify-between px-6 py-5 border-b border-border-light">
@@ -159,7 +160,8 @@ export default function SidebarActions() {
               Close
             </button>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
 
       {modal === 'deposit' && (
@@ -169,7 +171,7 @@ export default function SidebarActions() {
         />
       )}
 
-      {modal === 'withdraw' && (
+      {modal === 'withdraw' && createPortal(
         <div className="fixed inset-0 bg-[rgba(0,0,0,0.6)] flex items-center justify-center z-[9999]" onClick={close}>
           <div onClick={e => e.stopPropagation()} className="w-full max-w-[420px] p-6 bg-bg-panel border border-border-light rounded-lg">
             <h2 className="m-0 mb-1.5 text-base text-text-main font-bold">Withdraw Assets</h2>
@@ -211,7 +213,8 @@ export default function SidebarActions() {
               </div>
             </form>
           </div>
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   )
