@@ -4,6 +4,7 @@ use kucoin::client::rest::KuCoinClient;
 use share::ProcessError;
 use share::auth::recover_wallet;
 use share::db::contracts::{ContractFilter, Status};
+use share::db::user::User;
 use share::models::signals::TradeSignal;
 use sqlx::{Pool, Postgres};
 
@@ -26,7 +27,7 @@ pub async fn signal_handler(
         .await?;
 
     for c in contracts {
-        let wallet = match share::db::wallet_for_uid(&db, c.user_uid).await {
+        let wallet = match User::wallet_for_uid(&db, c.user_uid).await {
             Ok(w) => w,
             Err(e) => {
                 log::error!("no wallet for contract {} (uid {}): {e}", c.id, c.user_uid);

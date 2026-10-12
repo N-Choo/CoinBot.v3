@@ -1,6 +1,6 @@
 //! Contract records: model, lifecycle status, and query filters.
 mod filter;
-pub mod model;
+mod model;
 mod status;
 
 pub use filter::ContractFilter;

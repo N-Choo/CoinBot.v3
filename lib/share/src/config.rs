@@ -60,11 +60,6 @@ impl ProcessConfig {
             .unwrap_or(default)
     }
 
-    /// Get a raw env var with a default string fallback.
-    pub fn get_or_str(&self, key: &str, default: &str) -> String {
-        self.get(key).unwrap_or_else(|_| default.to_string())
-    }
-
     /// Get and parse a typed value, failing with a descriptive error.
     pub fn get_parsed<T: std::str::FromStr>(&self, key: &str) -> Result<T, ProcessError> {
         let raw = self.get(key)?;
@@ -142,23 +137,6 @@ mod tests {
         let val: u16 = cfg.get_or("PORT", 8080u16);
         assert_eq!(val, 3000);
         std::env::remove_var("TEST_PORT");
-    }
-
-    #[test]
-    fn get_or_str_returns_default_when_not_set() {
-        let cfg = ProcessConfig::new("test");
-        let val = cfg.get_or_str("HOST", "127.0.0.1");
-        assert_eq!(val, "127.0.0.1");
-    }
-
-    #[test]
-    fn get_or_str_returns_value_when_set() {
-        let _lock = ENV_LOCK.lock();
-        std::env::set_var("TEST_HOST", "0.0.0.0");
-        let cfg = ProcessConfig::new("test");
-        let val = cfg.get_or_str("HOST", "127.0.0.1");
-        assert_eq!(val, "0.0.0.0");
-        std::env::remove_var("TEST_HOST");
     }
 
     #[test]

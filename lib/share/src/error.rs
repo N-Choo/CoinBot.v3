@@ -1,20 +1,3 @@
-/// Errors surfaced by request/response service logic.
-#[derive(Debug, thiserror::Error)]
-pub enum ServiceError {
-    /// The requested resource does not exist.
-    #[error("not found: {0}")]
-    NotFound(String),
-    /// The account lacks funds for the operation.
-    #[error("insufficient funds")]
-    InsufficientFunds,
-    /// The caller supplied an invalid request.
-    #[error("invalid request: {0}")]
-    InvalidRequest(String),
-    /// An unexpected internal failure.
-    #[error("internal: {0}")]
-    Internal(String),
-}
-
 /// Errors surfaced while configuring or running a process.
 #[derive(Debug, thiserror::Error)]
 pub enum ProcessError {

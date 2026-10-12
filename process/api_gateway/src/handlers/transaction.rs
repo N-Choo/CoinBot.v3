@@ -4,11 +4,7 @@ use sqlx::PgPool;
 
 use ethers::types::Address;
 use share::{TicketRequest, deposit_service_client::DepositServiceClient};
-use share::{
-    db::{self, deposit::DepositFilter},
-    erc20::Erc20,
-    rpc::Rpc,
-};
+use share::{db::deposit::DepositFilter, erc20::Erc20, rpc::Rpc};
 use tonic::transport::Channel;
 
 use crate::{
@@ -145,10 +141,10 @@ impl Transaction {
             return HttpResponse::BadRequest().body("Recipient is not platform wallet");
         }
 
-        let user_uid = match db::get_uid(&pool, &wallet).await {
+        let user_uid = match User::uid_for_wallet(&pool, &wallet).await {
             Ok(uid) => uid,
             Err(e) => {
-                log::warn!("get_uid failed for wallet='{}': {}", wallet, e);
+                log::warn!("uid_for_wallet failed for wallet='{}': {}", wallet, e);
                 return HttpResponse::InternalServerError().finish();
             }
         };

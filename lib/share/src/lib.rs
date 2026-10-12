@@ -37,5 +37,5 @@ mod analyzer {
 
 pub use analyzer::*;
 pub use config::{ProcessConfig, ServiceConfig};
-pub use error::{ProcessError, ServiceError};
+pub use error::ProcessError;
 pub use wallet::*;
