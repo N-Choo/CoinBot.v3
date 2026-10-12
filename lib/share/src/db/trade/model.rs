@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use sqlx::FromRow;
+use sqlx::{FromRow, PgPool};
 use uuid::Uuid;
 
 /// Trade-order persistence operations.
@@ -42,6 +42,8 @@ pub struct TradeOrder {
     pub tp_price: Option<Decimal>,
     /// Stop-loss price from the originating signal.
     pub sl_price: Option<Decimal>,
+    /// Entry order this close order exits, when `action = 'close'`.
+    pub parent_order_id: Option<Uuid>,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last update timestamp.
@@ -79,6 +81,55 @@ impl TradeOrders {
         .bind(funds)
         .bind(tp_price)
         .bind(sl_price)
+        .fetch_one(pool)
+        .await
+    }
+
+    /// Load entry orders that are still open positions: filled entries with no
+    /// close (exit) order recorded against them yet.
+    pub async fn held_entries(pool: &PgPool) -> Result<Vec<TradeOrder>, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"SELECT e.* FROM trade_orders e
+               WHERE e.action = 'open' AND e.status = 'filled'
+                 AND NOT EXISTS (
+                     SELECT 1 FROM trade_orders c WHERE c.parent_order_id = e.id
+                 )
+               ORDER BY e.created_at"#,
+        )
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Record an accepted exit order for `entry`, linking it via `parent_order_id`.
+    ///
+    /// The row starts `open` and is reconciled by the contract sweeper once the
+    /// exchange reports the fill.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn record_exit(
+        pool: &PgPool,
+        entry: &TradeOrder,
+        side: &str,
+        comment: &str,
+        exchange_order_id: &str,
+        requested_qty: Decimal,
+        funds: Decimal,
+    ) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"INSERT INTO trade_orders
+                   (contract_id, user_uid, ticker, side, action, comment, status,
+                    requested_qty, funds, parent_order_id, exchange_order_id)
+               VALUES ($1, $2, $3, $4, 'close', $5, 'open', $6, $7, $8, $9)
+               RETURNING *"#,
+        )
+        .bind(entry.contract_id)
+        .bind(entry.user_uid)
+        .bind(&entry.ticker)
+        .bind(side)
+        .bind(comment)
+        .bind(requested_qty)
+        .bind(funds)
+        .bind(entry.id)
+        .bind(exchange_order_id)
         .fetch_one(pool)
         .await
     }

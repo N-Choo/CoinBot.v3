@@ -5,6 +5,7 @@ use tokio::signal;
 mod app_config;
 mod app_state;
 mod contract_sweeper;
+mod order_sweeper;
 mod signals;
 mod trader;
 
@@ -32,6 +33,13 @@ async fn main() -> Result<(), ProcessError> {
             contract_sweeper::sync_contract_status(sweeper_db.clone(), kc_client.clone()).await;
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
+    });
+
+    // Exit open positions once TP/SL is reached.
+    let order_db = db.clone();
+    let order_kc = kcc.clone();
+    tokio::spawn(async move {
+        order_sweeper::run_order_sweeper(order_db, order_kc).await;
     });
 
     // loop signal generator
