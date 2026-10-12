@@ -17,8 +17,8 @@ pub struct NonceCache {
 }
 
 impl SessionCache {
-    /// Session lifetime, in seconds (1 hour).
-    const TTL: u64 = 3600;
+    /// Session lifetime, in seconds (2 hours, matching the cookie).
+    const TTL: u64 = 7200;
 
     /// Connect to the Redis instance at `redis_url`.
     pub async fn new(redis_url: &str) -> Result<Self, redis::RedisError> {

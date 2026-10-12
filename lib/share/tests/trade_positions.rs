@@ -61,28 +61,39 @@ async fn held_entries_tracks_open_positions() {
         .unwrap();
 
     // A filled open entry with a TP/SL.
-    let entry = TradeOrders::create(
-        &pool,
-        contract.id,
-        user.uid,
-        "BTC/USDT",
-        "buy",
-        "open",
-        &format!("c-{}", Uuid::new_v4()),
-        Decimal::from(1),
-        Decimal::from(100),
-        Decimal::from(110),
-        Decimal::from(90),
-    )
-    .await
-    .unwrap();
+    let entry = {
+        let mut tx = pool.begin().await.unwrap();
+        let entry = TradeOrders::create(
+            &mut tx,
+            contract.id,
+            user.uid,
+            "BTC/USDT",
+            "buy",
+            "open",
+            &format!("c-{}", Uuid::new_v4()),
+            Decimal::from(1),
+            Decimal::from(100),
+            Decimal::from(110),
+            Decimal::from(90),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+        entry
+    };
     let mut tx = pool.begin().await.unwrap();
     TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
         .await
         .unwrap();
-    TradeOrders::mark_filled(&mut tx, entry.id, Decimal::from(1), Decimal::from(100), Decimal::ZERO)
-        .await
-        .unwrap();
+    TradeOrders::mark_filled(
+        &mut tx,
+        entry.id,
+        Decimal::from(1),
+        Decimal::from(100),
+        Decimal::ZERO,
+    )
+    .await
+    .unwrap();
     tx.commit().await.unwrap();
 
     let held = TradeOrders::held_entries(&pool).await.unwrap();
@@ -91,23 +102,55 @@ async fn held_entries_tracks_open_positions() {
         "filled entry should be a held position"
     );
 
-    // Record an exit linked to the entry.
-    TradeOrders::record_exit(
+    // Reserve an exit linked to the entry; it now blocks a duplicate exit.
+    let exit = TradeOrders::reserve_exit(
         &pool,
         &entry,
         "sell",
         &format!("x-{}", Uuid::new_v4()),
-        "exch-exit",
+        Decimal::from(1),
+        Decimal::from(110),
+    )
+    .await
+    .unwrap()
+    .expect("fresh exit reserved");
+
+    // A second live exit for the same entry must be rejected.
+    let duplicate = TradeOrders::reserve_exit(
+        &pool,
+        &entry,
+        "sell",
+        &format!("x2-{}", Uuid::new_v4()),
         Decimal::from(1),
         Decimal::from(110),
     )
     .await
     .unwrap();
+    assert!(duplicate.is_none(), "a live exit already exists");
 
     let held = TradeOrders::held_entries(&pool).await.unwrap();
     assert!(
         !held.iter().any(|o| o.id == entry.id),
-        "exited position must not be held again"
+        "position with a live exit must not be held again"
+    );
+
+    let mut tx = pool.begin().await.unwrap();
+    TradeOrders::mark_placed(&mut tx, exit.id, "exch-exit")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    // A failed exit must not permanently de-protect the position.
+    let mut tx = pool.begin().await.unwrap();
+    TradeOrders::mark_failed(&mut tx, exit.id, "boom")
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let held = TradeOrders::held_entries(&pool).await.unwrap();
+    assert!(
+        held.iter().any(|o| o.id == entry.id),
+        "a failed exit should allow a retry"
     );
 
     sqlx::query("DELETE FROM trade_orders WHERE contract_id = $1")

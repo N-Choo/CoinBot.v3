@@ -100,6 +100,7 @@ impl AuthController {
         let session_cookies = Cookie::build("session_token", token.clone())
             .path("/")
             .http_only(true)
+            .secure(!cfg!(debug_assertions))
             .same_site(actix_web::cookie::SameSite::Strict)
             .max_age(actix_web::cookie::time::Duration::hours(2))
             .finish();

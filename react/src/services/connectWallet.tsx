@@ -44,6 +44,9 @@ export async function connectWallet(): Promise<boolean> {
   } catch (error) {
     console.error('Wallet connection or signature failed:', error);
     if (error instanceof Error && error.message === 'NO_WALLET') throw error;
+    // EIP-1193 user rejection. ethers v6 rewrites 4001 to code "ACTION_REJECTED".
+    const code = (error as { code?: string | number })?.code;
+    if (code === 4001 || code === 'ACTION_REJECTED') throw new Error('REJECTED');
     return false;
   }
 }

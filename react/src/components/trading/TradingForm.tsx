@@ -41,6 +41,8 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
       const res = await signContract(botSettings);
       if (res.success) {
         toast.success('Contract signed successfully!')
+        window.dispatchEvent(new Event('contracts:changed'))
+        getUserStats().then(s => setBalance(parseFloat(s.free))).catch(() => {})
       } else if (res.insufficientFunds) {
         toast.error('Insufficient funds — please deposit USDT to continue')
         setShowDeposit(true)
@@ -127,7 +129,10 @@ export default function TradingForm({ selectedPair, botSettings, onSettingChange
       {showDeposit && (
         <DepositModal
           onClose={() => setShowDeposit(false)}
-          onDepositComplete={() => toast.success('Deposit submitted! Try signing the contract again.')}
+          onDepositComplete={() => {
+            toast.success('Deposit submitted — balance updates once confirmed')
+            getUserStats().then(s => setBalance(parseFloat(s.free))).catch(() => {})
+          }}
         />
       )}
     </>

@@ -38,7 +38,7 @@ ALLOW_PYRAMIDING=false
 
 ## Trading pipeline
 
-1. **Trade engine** loads active KuCoin futures contracts from DB
+1. **Trade engine** loads active contracts from the DB
 2. Publishes ticker list to Redis `tickers:analyze`
 3. **Analyzer** fetches daily klines, computes RSI divergences
 4. Applies SMA trend filter (buy only above, sell only below)

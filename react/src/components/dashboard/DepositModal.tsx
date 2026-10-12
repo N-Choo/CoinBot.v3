@@ -28,6 +28,8 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
     setError('')
     try {
       await sendUSDT(amount)
+      // Refresh balances everywhere (BalanceStats/SidebarActions listen for this).
+      window.dispatchEvent(new Event('contracts:changed'))
       onDepositComplete?.()
       onClose()
     } catch (err: unknown) {

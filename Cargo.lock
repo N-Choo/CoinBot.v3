@@ -5267,9 +5267,11 @@ dependencies = [
 name = "trade-engine"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "dotenvy",
  "kucoin",
  "log",
+ "reqwest",
  "rust_decimal",
  "serde",
  "serde_json",

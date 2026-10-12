@@ -16,7 +16,24 @@ loadConfig()
 axios.defaults.withCredentials = true;
 
 axios.defaults.headers.common['Content-Type'] = 'application/json';
+// Sane default; slow endpoints (e.g. deposit intake) set a longer per-request timeout.
 axios.defaults.timeout = 5000;
+
+// On session expiry, bounce protected pages back to the landing page.
+let redirecting = false;
+axios.interceptors.response.use(
+  res => res,
+  err => {
+    if (err?.response?.status === 401 && !redirecting) {
+      const path = window.location.pathname;
+      if (path.startsWith('/dashboard') || path.startsWith('/trading')) {
+        redirecting = true;
+        window.location.assign('/');
+      }
+    }
+    return Promise.reject(err);
+  },
+);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

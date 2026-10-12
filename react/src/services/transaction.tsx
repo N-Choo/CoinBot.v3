@@ -62,7 +62,7 @@ export async function sendUSDT(amount: string): Promise<boolean> {
   const signerContract = contract.connect(signer) as ethers.Contract
   const tx = await signerContract.transfer(PLATFORM_WALLET, amountParsed)
   await tx.wait()
-  await axios.post('/api/transactions/deposit', { tx_hash: tx.hash })
+  await axios.post('/api/transactions/deposit', { tx_hash: tx.hash }, { timeout: 15000 })
 
   return true
 }

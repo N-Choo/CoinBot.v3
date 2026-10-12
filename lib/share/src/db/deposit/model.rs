@@ -33,6 +33,8 @@ pub struct Deposit {
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// When the deposit was confirmed or failed.
     pub processed_at: Option<chrono::DateTime<chrono::Utc>>,
+    /// When the Main -> Trade sweep completed, if it has.
+    pub transferred_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Failure reason, when the deposit failed.
     pub reason: Option<String>,
 }
@@ -105,6 +107,41 @@ impl Deposit {
         .bind(reason)
         .bind(id)
         .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Atomically claim the Main -> Trade sweep for this deposit.
+    ///
+    /// Returns the row only if this caller won the claim (`transferred_at` was
+    /// NULL), so two workers cannot sweep the same deposit.
+    pub async fn claim_transfer(pool: &PgPool, id: Uuid) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as::<_, Self>(
+            r#"UPDATE deposits SET transferred_at = NOW()
+               WHERE id = $1 AND transferred_at IS NULL
+               RETURNING *"#,
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+    }
+
+    /// Release a sweep claim after a failed transfer so it is retried.
+    pub async fn release_transfer(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query("UPDATE deposits SET transferred_at = NULL WHERE id = $1")
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    /// Confirmed deposits whose Main -> Trade sweep has not completed yet.
+    pub async fn unswept(pool: &PgPool) -> Result<Vec<Self>, sqlx::Error> {
+        sqlx::query_as::<_, Self>(
+            r#"SELECT * FROM deposits
+               WHERE status = 'confirmed' AND transferred_at IS NULL
+               ORDER BY created_at"#,
+        )
+        .fetch_all(pool)
         .await
     }
 }

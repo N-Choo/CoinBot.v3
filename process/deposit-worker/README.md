@@ -65,20 +65,23 @@ sequenceDiagram
 
 ## Sweeper
 
-`run_deposit_sweeper` loops every **60s** (40s between batches), loading `pending`
-deposits and finalizing them:
+`run_deposit_sweeper` loops every **60s** with two passes:
 
-1. `kucoin.deposit().by_tx_hash(tx_hash)` — look up the deposit.
-2. If its status is not `Success` → leave it pending.
-3. On success:
-   - transfer USDT `Main → Trade` (internal transfer),
-   - `User::upsert(from_address)` — create the user on first deposit,
-   - `user.add_balance(amount)`,
-   - `Deposit::confirm(...)`,
-   - commit the transaction.
+1. **Finalize pending** — for each `pending` deposit:
+   1. look up the USDT deposit via a currency+status-filtered history lookup;
+   2. if its status is not `Success` → leave it pending;
+   3. on success, **finalize the ledger first** (idempotent): `User::upsert(from_address)`
+      + `add_balance(amount)` + `Deposit::confirm(...)` in one transaction;
+   4. then sweep USDT `Main → Trade` (`sweep_transfer`).
+2. **Retry unswept** — confirmed deposits with `transferred_at IS NULL` retry the sweep.
 
-Failures are logged (`DEPOSIT FINALIZED` / `STILL PENDING` / `FINALIZE FAILED`) and the
-deposit stays `pending` for the next pass.
+The sweep atomically claims the deposit (sets `transferred_at`), transfers with a
+deterministic `clientOid = deposit.id`, and releases the claim on failure so it is retried.
+Crediting **before** sweeping means the user is credited exactly once and a failed sweep
+can never move funds twice (the funds simply sit in Main until a retry succeeds).
+
+Failures are logged (`DEPOSIT FINALIZED` / `STILL PENDING` / `FINALIZE FAILED` /
+`TRANSFER FAILED`).
 
 ## Configuration
 

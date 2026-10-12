@@ -3,7 +3,7 @@ use std::time::Duration;
 use kucoin::{
     client::rest::KuCoinClient,
     types::{
-        deposit::DepositStatus,
+        deposit::{DepositHistoryRequest, DepositStatus},
         transfer::{AccountType, TransferRequest, TransferType},
     },
 };
@@ -20,43 +20,43 @@ pub async fn run_deposit_sweeper(pool: PgPool, kcc: KuCoinClient) {
     const SLEEP_DURATION: u64 = 60;
     loop {
         info!("{:<24}", "RUNNING DEPOSIT SWEEPER");
-        let pending = match DepositFilter::new()
+
+        //Finalize newly-successful deposits (credit the user, then sweep).
+        match DepositFilter::new()
             .with_status(&DStatus::Pending.to_string())
             .execute(&pool)
             .await
         {
-            Ok(list) => list,
-            Err(e) => {
-                error!("{:<24} | ERR {}", "FETCH PENDING DEPOSITS FAILED", e);
-                sleep(Duration::from_secs(SLEEP_DURATION)).await;
-                continue;
+            Ok(pending) => {
+                for deposit in pending {
+                    let tx_hash = deposit.tx_hash.clone();
+                    match check_and_finalize(&pool, &kcc, &deposit).await {
+                        Ok(true) => info!("{:<24} | TX {:<36}", "DEPOSIT FINALIZED", tx_hash),
+                        Ok(false) => {
+                            warn!("{:<24} | TX {:<36}", "DEPOSIT STILL PENDING", tx_hash)
+                        }
+                        Err(e) => {
+                            error!("{:<24} | TX {:<36} | ERR {}", "FINALIZE FAILED", tx_hash, e)
+                        }
+                    }
+                }
             }
-        };
-
-        if pending.is_empty() {
-            info!(
-                "{:<24} | SLEEP {:>4}s",
-                "NO PENDING DEPOSITS", SLEEP_DURATION
-            );
-            sleep(Duration::from_secs(SLEEP_DURATION)).await;
-            continue;
+            Err(e) => error!("{:<24} | ERR {}", "FETCH PENDING DEPOSITS FAILED", e),
         }
 
-        for deposit in pending {
-            let tx_hash = &deposit.tx_hash;
-
-            match check_and_finalize(&pool, &kcc, &deposit).await {
-                Ok(true) => info!("{:<24} | TX {:<36}", "DEPOSIT FINALIZED", tx_hash),
-
-                Ok(false) => warn!("{:<24} | TX {:<36}", "DEPOSIT STILL PENDING", tx_hash),
-
-                Err(e) => error!("{:<24} | TX {:<36} | ERR {}", "FINALIZE FAILED", tx_hash, e),
+        // Retry sweeps that were credited but not yet moved Main -> Trade.
+        match Deposit::unswept(&pool).await {
+            Ok(unswept) => {
+                for d in unswept {
+                    let amount_value = d.amount.to_string().parse::<f64>().unwrap_or(0.0);
+                    sweep_transfer(&pool, &kcc, &d, amount_value).await;
+                }
             }
+            Err(e) => error!("{:<24} | ERR {}", "FETCH UNSWEPT DEPOSITS FAILED", e),
         }
 
-        // Small sleep between batches
-        info!("{:<24} | SLEEP {:>4}s", "BATCH COMPLETE", 40);
-        sleep(Duration::from_secs(40)).await;
+        info!("{:<24} | SLEEP {:>4}s", "BATCH COMPLETE", SLEEP_DURATION);
+        sleep(Duration::from_secs(SLEEP_DURATION)).await;
     }
 }
 
@@ -66,14 +66,22 @@ async fn check_and_finalize(
     kcc: &KuCoinClient,
     deposit: &Deposit,
 ) -> Result<bool, String> {
-    // Fetch a deposit by_tx_hash"
+    // Find the matching USDT deposit on KuCoin. Filter by currency + status and
+    // use a large page so the record is found regardless of history size.
+    let filter = DepositHistoryRequest::new(Some("USDT".to_string()))
+        .set_status(DepositStatus::Success)
+        .set_page_size(500);
     let deposit_log = kcc
         .deposit()
-        .by_tx_hash(&deposit.tx_hash)
+        .history(filter)
         .await
         .map_err(|e| format!("KCC API Error: {}", e))?;
 
-    let Some(record) = deposit_log else {
+    let Some(record) = deposit_log.data.and_then(|d| {
+        d.items
+            .into_iter()
+            .find(|i| i.wallet_tx_id.as_deref() == Some(deposit.tx_hash.as_str()))
+    }) else {
         return Ok(false);
     };
 
@@ -94,27 +102,9 @@ async fn check_and_finalize(
         .parse()
         .map_err(|_| format!("invalid amount: {raw_amount}"))?;
 
-    {
-        let request = TransferRequest::new(
-            "USDT",
-            amount_value,
-            AccountType::Main,
-            AccountType::Trade,
-            TransferType::Internal,
-        );
-
-        if let Err(e) = kcc.transfer().execute(request).await {
-            error!(
-                "{:<24} | USER {:<20} | ERR {}",
-                "TRANSFER FAILED", deposit.id, e
-            );
-            return Err(e.to_string());
-        }
-
-        info!("{:<24} | USER {:<20}", "TRANSFER SUCCESS", deposit.id);
-    }
-
-    // Add user balance.
+    // Finalize the ledger first (idempotent): credit the user and confirm the
+    // deposit. Doing this before the sweep means a sweep failure can never
+    // double-move funds, and the user is credited exactly once.
     {
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
@@ -134,5 +124,71 @@ async fn check_and_finalize(
         tx.commit().await.map_err(|e| e.to_string())?;
     }
 
+    // Sweep Main -> Trade for platform liquidity. Best-effort and idempotent;
+    // on failure the deposit stays confirmed-but-unswept and the retry pass
+    // below re-attempts it. The user is already credited either way.
+    sweep_transfer(pool, kcc, deposit, amount_value).await;
+
     Ok(true)
+}
+
+/// Move `deposit` from the Main to the Trade account and mark it swept.
+///
+/// Idempotent via a deterministic `clientOid` (the deposit id), so a retry after
+/// a partial failure cannot move the funds twice.
+async fn sweep_transfer(pool: &PgPool, kcc: &KuCoinClient, deposit: &Deposit, amount_value: f64) {
+    // Claim the sweep so two workers cannot move the same deposit; released on
+    // failure so a later pass retries.
+    match Deposit::claim_transfer(pool, deposit.id).await {
+        Ok(Some(_)) => {}
+        Ok(None) => return,
+        Err(e) => {
+            error!("{:<24} | ID {:<20} | ERR {}", "CLAIM FAILED", deposit.id, e);
+            return;
+        }
+    }
+
+    let mut request = TransferRequest::new(
+        "USDT",
+        amount_value,
+        AccountType::Main,
+        AccountType::Trade,
+        TransferType::Internal,
+    );
+    request.client_oid = deposit.id.simple().to_string();
+
+    match kcc.transfer().execute(request).await {
+        // KuCoin returns HTTP 200 with `code != 200000` / `data: null` for
+        // business failures, so success must be checked at the envelope level.
+        Ok(res) if res.code == "200000" && res.data.is_some() => {
+            info!("{:<24} | USER {:<20}", "TRANSFER SUCCESS", deposit.id);
+        }
+        Ok(res) => {
+            error!(
+                "{:<24} | USER {:<20} | code={} msg={}",
+                "TRANSFER FAILED",
+                deposit.id,
+                res.code,
+                res.msg.as_deref().unwrap_or("<none>")
+            );
+            if let Err(e) = Deposit::release_transfer(pool, deposit.id).await {
+                error!(
+                    "{:<24} | ID {:<20} | ERR {}",
+                    "RELEASE FAILED", deposit.id, e
+                );
+            }
+        }
+        Err(e) => {
+            error!(
+                "{:<24} | USER {:<20} | ERR {}",
+                "TRANSFER FAILED", deposit.id, e
+            );
+            if let Err(e) = Deposit::release_transfer(pool, deposit.id).await {
+                error!(
+                    "{:<24} | ID {:<20} | ERR {}",
+                    "RELEASE FAILED", deposit.id, e
+                );
+            }
+        }
+    }
 }

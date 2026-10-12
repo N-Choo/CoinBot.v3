@@ -17,10 +17,14 @@ export default function BalanceStats() {
 
   useEffect(() => {
     let active = true
-    getUserStats()
-      .then(d => { if (active) setStats(d) })
-      .catch(() => {})
-    return () => { active = false }
+    const load = () => {
+      getUserStats()
+        .then(d => { if (active) setStats(d) })
+        .catch(() => {})
+    }
+    load()
+    window.addEventListener('contracts:changed', load)
+    return () => { active = false; window.removeEventListener('contracts:changed', load) }
   }, [])
 
   if (!stats) {
@@ -40,7 +44,7 @@ export default function BalanceStats() {
     { label: 'Total Balance', value: fmtUsd(stats.total), cls: 'text-text-main' },
     { label: 'Free Balance', value: fmtUsd(stats.free), cls: 'text-text-main' },
     { label: 'Locked Balance', value: fmtUsd(stats.locked), cls: 'text-text-main' },
-    { label: 'Realized PnL', value: fmtSigned(totalPnl), cls: totalPnl >= 0 ? 'text-up-text' : 'text-down-text' },
+    { label: 'Unrealized PnL', value: fmtSigned(totalPnl), cls: totalPnl >= 0 ? 'text-up-text' : 'text-down-text' },
   ]
 
   return (

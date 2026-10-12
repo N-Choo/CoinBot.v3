@@ -17,10 +17,7 @@ and client compile from the same file.
 message TicketRequest {
   string tx_hash = 1;
   string uid = 2;
-  string from = 3;
-  string to = 4;
   string ticker = 5;
-  string amount = 6;
 }
 message TicketResponse {
   string ticket_id = 1;
@@ -113,27 +110,27 @@ message TicketRequest {
 | `repeated T` | `Vec<T>` |
 | `message Nested` | `struct Nested` |
 
-## How `common` ties it together
+## How `share` ties it together
 
 ```
 proto/wallet.proto            ← single source of truth
         │
- common/build.rs              ← tonic-build compiles proto at compile time
+ share/build.rs               ← tonic-build compiles proto at compile time
         │
- common/src/lib.rs            ← re-exports generated types + traits
+ share/src/lib.rs             ← re-exports generated types + traits
         │
         ├── deposit-worker    ← implements DepositService trait (server)
         └── api_gateway       ← calls via DepositServiceClient (client)
 
-share/                       ← DB models, Ethereum RPC, ABI decoding
+share/src/db/                 ← DB models, Ethereum RPC, ABI decoding
         │
         ├── deposit-worker    ← Deposit::create_pending, Rpc::get_transaction
-        └── api_gateway       ← db::get_uid, Rpc::get_transaction
+        └── api_gateway       ← User::uid_for_wallet, Rpc::get_transaction
 ```
 
-`common` holds the **contract** — proto types and traits that all services agree on.
-`share` holds the **implementation** — DB queries, blockchain calls.
-If the proto changes, `common` recompiles and every crate consuming it must follow.
+`share` holds the proto **contract** (types + traits) and the shared implementation
+(DB queries, blockchain calls) in one crate. If the proto changes, `share` recompiles and
+every consuming service must follow.
 
 ## Proto service organization
 
@@ -160,8 +157,8 @@ both deposit and withdrawal logic.
 
 Enforced by:
 
-1. **Crate boundaries** — no crate imports another service's internals
-2. **Database isolation** — each service has its own DB credentials
+1. **Crate boundaries** — services depend only on the shared `share` crate, never on each other
+2. **Schema ownership** — each service owns its own tables (`deposits` vs `users`/`contracts`)
 3. **gRPC contracts** — services only expose what the proto defines
 
 ## Ethical Walls
@@ -183,15 +180,15 @@ In this architecture, the wall is **inherent in the process boundaries**:
 ```
 
 `api_gateway` never touches deposit data directly. It calls `CreateTicket0`
-through gRPC and gets a controlled response. No shared database, no shared
-memory, no shared secrets.
+through gRPC and gets a controlled response. The two services share infrastructure
+(one PostgreSQL, one Redis) but not each other's code or tables.
 
 **Three layers of enforcement:**
 
 | Layer | Mechanism |
 |---|---|
-| Rust compiler | Crates only import `common` — no cross-service imports |
-| Network | Docker — each container isolated, no DB cross-connect |
+| Rust compiler | Services import only the shared `share` crate — no cross-service imports |
+| Schema | Each service touches only its own tables |
 | Proto | Services only expose what the `.proto` allows |
 
 ## Adding a new RPC
@@ -216,54 +213,30 @@ cargo run -p api-gateway
 
 ## Redis Communication
 
-gRPC handles sync calls (request-response). Redis handles async messages (events, signals).
-Two Redis patterns are used:
+gRPC handles synchronous calls (request/response); Redis handles asynchronous messaging
+and shared state:
 
-### Redis Streams — persistent, replayable messages
+### Pub/Sub — the signal pipeline
 
-Best for: transaction events, trade signals (must not lose data).
-
-```
-deposit-worker ──▶ "tx:deposits" stream ──▶ api_gateway consumes → push to UI
-```
-
-Streams persist until explicitly trimmed. If a consumer disconnects, it can resume
-from where it left off — unlike pub/sub.
-
-**Message format** (JSON — easy cross-language):
-
-```json
-{
-  "type": "deposit",
-  "user_id": "user_abc",
-  "amount": "500.00",
-  "currency": "USDT",
-  "tx_id": "dep-tx-001",
-  "timestamp": 1718000000
-}
-```
-
-### Redis Pub/Sub — fire-and-forget
-
-Best for: live dashboard updates, status notifications (ok to lose).
+The engine and analyzer talk over two fire-and-forget channels:
 
 ```
-deposit-worker ──▶ "status:updates" pub ──▶ api_gateway → WebSocket → React
+trade-engine ──PUB "tickers:analyze"──▶ analyzer
+analyzer     ──PUB "signals:result" ──▶ trade-engine
 ```
 
-If no one is listening, the message disappears. That's fine for live updates —
-the next one will arrive.
+| Channel | Direction | Payload |
+|---|---|---|
+| `tickers:analyze` | engine → analyzer | `["BTC/USDT", …]` |
+| `signals:result`  | analyzer → engine | `[{ ticker, action, confidence, entry_price, sl_price, tp_price, reason }]` |
 
-### Key naming conventions
+If no consumer is listening the message is lost — acceptable for the periodic ticker
+refresh and signal fan-out.
 
-| Pattern | Example |
-|---|---|
-| `tx:<type>` | `tx:deposits`, `tx:withdrawals` |
-| `trade:<topic>` | `trade:signals` |
-| `status:<service>` | `status:deposit`, `status:withdrawal` |
+### Key/value — sessions and nonces
 
-All services share the same Redis instance but use different key prefixes.
-Enforcement: a service only has permission for its own key prefix (Docker network policy).
+The `api_gateway` uses Redis (via `share::cache::Cache`) for the login **nonce** cache and
+the **session** cache, each on its own Redis database.
 
 ## Further reading
 

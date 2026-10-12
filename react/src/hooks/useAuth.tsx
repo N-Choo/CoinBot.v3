@@ -48,10 +48,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         toast.success('Wallet connected')
         return true
       }
+      toast.error('Failed to connect wallet')
     } catch (err: unknown) {
-      const msg = err instanceof Error && err.message === 'NO_WALLET'
+      const code = err instanceof Error ? err.message : ''
+      const msg = code === 'NO_WALLET'
         ? 'No Web3 wallet detected'
-        : 'Failed to connect wallet'
+        : code === 'REJECTED'
+          ? 'Request rejected in your wallet'
+          : 'Failed to connect wallet'
       toast.error(msg)
     } finally {
       setIsLoading(false)

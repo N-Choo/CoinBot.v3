@@ -2,6 +2,11 @@
    BASE — Reset, scrollbar, typography, utilities
    ═══════════════════════════════════════════ */
 
+/* Declare the cascade order explicitly (this file is imported before
+   index.css, so without this the first-seen layer wins and `components` would
+   end up below Tailwind's `base`/preflight). */
+@layer theme, base, components, utilities;
+
 /* ── Scrollbar ── */
 ::-webkit-scrollbar {
   width: 8px;
@@ -50,23 +55,26 @@ a:hover {
 }
 
 button {
-  font-family: inherit;
   cursor: pointer;
 }
 
-input, select {
-  font-family: inherit;
-  background: var(--bg-input);
-  border: 1px solid var(--bg-hover);
-  color: var(--text-main);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  outline: none;
-  transition: border-color 0.2s;
+@layer components {
+  input, select {
+    font-family: inherit;
+    background: var(--bg-input);
+    border: 1px solid var(--bg-hover);
+    color: var(--text-main);
+    border-radius: 6px;
+    padding: 0.5rem 0.75rem;
+    transition: border-color 0.2s;
+  }
 }
 
-input:focus, select:focus {
-  border-color: var(--color-primary);
+/* Visible keyboard focus. Unlayered so it wins over the `outline-none` utility
+   the inputs set (a layered rule would lose to the utilities layer). */
+input:focus-visible, select:focus-visible {
+  outline: 2px solid var(--color-primary);
+  outline-offset: 1px;
 }
 
 /* ── Glitch text ── */
@@ -385,20 +393,22 @@ input:focus, select:focus {
 }
 
 /* ── Table base ── */
-table {
-  width: 100%;
-  border-collapse: collapse;
-}
+@layer components {
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
 
-th, td {
-  padding: 0.75rem;
-  text-align: left;
-  border-bottom: 1px solid var(--bg-hover);
-}
+  th, td {
+    padding: 0.75rem;
+    text-align: left;
+    border-bottom: 1px solid var(--bg-hover);
+  }
 
-th {
-  font-weight: 600;
-  color: var(--text-muted);
+  th {
+    font-weight: 600;
+    color: var(--text-muted);
+  }
 }
 
 /* ── Price colors ── */

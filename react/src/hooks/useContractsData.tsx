@@ -40,6 +40,15 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     return () => { active = false }
   }, [])
 
+  // Refetch when a contract is created elsewhere (e.g. after signing).
+  useEffect(() => {
+    const handler = () => {
+      getMyContracts().then(setContracts).catch(() => {})
+    }
+    window.addEventListener('contracts:changed', handler)
+    return () => window.removeEventListener('contracts:changed', handler)
+  }, [])
+
   // Stable key: the set of contract ids. Status-only changes (e.g. closing a
   // contract) don't change it, so orders aren't refetched and the sweep isn't
   // restarted on those updates.

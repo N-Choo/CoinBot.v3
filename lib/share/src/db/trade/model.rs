@@ -51,10 +51,13 @@ pub struct TradeOrder {
 }
 
 impl TradeOrders {
-    /// Record a new order in `pending` status.
+    /// Record a new order in `pending` status within `tx`.
+    ///
+    /// Callers reserve the order's fund in the *same* transaction, so a committed
+    /// `pending` row always has its fund reserved.
     #[allow(clippy::too_many_arguments)]
     pub async fn create(
-        pool: &sqlx::PgPool,
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         contract_id: Uuid,
         user_uid: Uuid,
         ticker: &str,
@@ -81,18 +84,27 @@ impl TradeOrders {
         .bind(funds)
         .bind(tp_price)
         .bind(sl_price)
-        .fetch_one(pool)
+        .fetch_one(&mut **tx)
         .await
     }
 
     /// Load entry orders that are still open positions: filled entries with no
-    /// close (exit) order recorded against them yet.
+    /// live close (exit) order against them.
+    ///
+    /// A close order blocks a re-exit only while it is `open`/`filled`, or
+    /// `pending` and recent (a crash between reserving and placing self-heals
+    /// after the grace window). Failed/cancelled exits therefore retry.
     pub async fn held_entries(pool: &PgPool) -> Result<Vec<TradeOrder>, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"SELECT e.* FROM trade_orders e
                WHERE e.action = 'open' AND e.status = 'filled'
                  AND NOT EXISTS (
-                     SELECT 1 FROM trade_orders c WHERE c.parent_order_id = e.id
+                     SELECT 1 FROM trade_orders c
+                     WHERE c.parent_order_id = e.id
+                       AND (
+                           c.status IN ('open', 'filled')
+                           OR (c.status = 'pending' AND c.created_at > NOW() - INTERVAL '5 minutes')
+                       )
                  )
                ORDER BY e.created_at"#,
         )
@@ -100,25 +112,26 @@ impl TradeOrders {
         .await
     }
 
-    /// Record an accepted exit order for `entry`, linking it via `parent_order_id`.
+    /// Reserve an exit for `entry` *before* it is sent to the exchange.
     ///
-    /// The row starts `open` and is reconciled by the contract sweeper once the
-    /// exchange reports the fill.
-    #[allow(clippy::too_many_arguments)]
-    pub async fn record_exit(
+    /// Inserts a `pending` close row linked via `parent_order_id`, so a crash or
+    /// retry cannot place a second exit for the same position (the partial
+    /// unique index rejects a second live exit). Returns `None` when a live
+    /// exit already exists. The caller marks it placed or failed.
+    pub async fn reserve_exit(
         pool: &PgPool,
         entry: &TradeOrder,
         side: &str,
         comment: &str,
-        exchange_order_id: &str,
         requested_qty: Decimal,
         funds: Decimal,
-    ) -> Result<TradeOrder, sqlx::Error> {
+    ) -> Result<Option<TradeOrder>, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"INSERT INTO trade_orders
                    (contract_id, user_uid, ticker, side, action, comment, status,
-                    requested_qty, funds, parent_order_id, exchange_order_id)
-               VALUES ($1, $2, $3, $4, 'close', $5, 'open', $6, $7, $8, $9)
+                    requested_qty, funds, parent_order_id)
+               VALUES ($1, $2, $3, $4, 'close', $5, 'pending', $6, $7, $8)
+               ON CONFLICT DO NOTHING
                RETURNING *"#,
         )
         .bind(entry.contract_id)
@@ -129,8 +142,21 @@ impl TradeOrders {
         .bind(requested_qty)
         .bind(funds)
         .bind(entry.id)
-        .bind(exchange_order_id)
-        .fetch_one(pool)
+        .fetch_optional(pool)
+        .await
+    }
+
+    /// Orders reserved but not yet confirmed placed (no exchange order id).
+    ///
+    /// Used to reconcile placements whose outcome is unknown (crash, transport
+    /// error): look them up by `comment` (clientOid) on the exchange.
+    pub async fn pending_orders(pool: &PgPool) -> Result<Vec<TradeOrder>, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"SELECT * FROM trade_orders
+               WHERE status = 'pending' AND exchange_order_id IS NULL
+               ORDER BY created_at"#,
+        )
+        .fetch_all(pool)
         .await
     }
 
@@ -143,7 +169,7 @@ impl TradeOrders {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
                SET exchange_order_id = $1, status = 'open', updated_at = NOW()
-               WHERE id = $2
+               WHERE id = $2 AND status = 'pending'
                RETURNING *"#,
         )
         .bind(exchange_order_id)
@@ -163,7 +189,7 @@ impl TradeOrders {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
                SET filled_qty = $1, fill_price = $2, fee = $3, status = 'filled', updated_at = NOW()
-               WHERE id = $4
+               WHERE id = $4 AND status = 'open'
                RETURNING *"#,
         )
         .bind(filled_qty)
@@ -183,7 +209,7 @@ impl TradeOrders {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
                SET status = 'cancelled', reason = $1, updated_at = NOW()
-               WHERE id = $2
+               WHERE id = $2 AND status = 'open'
                RETURNING *"#,
         )
         .bind(reason)

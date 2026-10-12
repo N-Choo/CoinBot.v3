@@ -66,7 +66,7 @@ flowchart TB
 | ---------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                          | [README](process/api_gateway/README.md)    |
 | `deposit-worker` | gRPC ticket + background deposit sweeper                                                   | [README](process/deposit-worker/README.md) |
-| `trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders | [README](process/trade-engine/README.md)   |
+| `trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders, and exits positions on TP/SL | [README](process/trade-engine/README.md)   |
 | `analyzer`       | signal engine (Python)                                                                     | [README](process/analyzer/README.md)       |
 | `frontend`       | React SPA                                                                                  | [README](react/README.md)                  |
 

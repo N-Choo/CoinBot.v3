@@ -142,7 +142,7 @@ settings, user, and funds; then lock `init_fund` and insert the contract.
 - **Body** — `{ "nonce": string, "message": string, "signature": "0x…" }`
 - **`message`** — JSON: `{ "nonce": "…", "settings": { "Ticker", "Amount", "StopLoss", "TakeProfit" } }`
 - **200** — `{ "message": "Contract signed" }`
-- **400** — malformed message · nonce mismatch · bad settings · unknown user · insufficient funds
+- **400** — malformed message · nonce mismatch · nonce not issued to this wallet · bad settings · unknown user · insufficient funds
 - **401** — no session · wallet mismatch · bad signature
 - **409** — nonce already used
 
@@ -195,12 +195,20 @@ The user's deposits, newest first.
 src/
   main.rs        server bootstrap (state, CORS, rate limit, routes)
   routes.rs      /api route tree
-  constants.rs   GET /api/config
-  state.rs       shared state (db pool, caches, clients)
+  constants.rs   platform wallet / USDT address literals
+  state.rs       shared state (db pool, caches, gRPC channel)
+  auth/
+    cache.rs     Redis session + nonce caches
+    session.rs   authenticate() — resolve the session cookie to a wallet
   handlers/
-    user/auth/   challenge, login, logout, verify
+    auth.rs      challenge, login, logout, verify
+    config.rs    GET /api/config
     contracts.rs nonce, sign, me, {id}/orders
     transaction.rs deposit, list
     stats.rs     /api/stats, /api/user/stats
   models/        request/response DTOs
+  tests/         route/integration tests
 ```
+
+Session cookies are `HttpOnly`, `SameSite=Strict`, and `Secure` in release builds; the
+Redis session TTL matches the 2h cookie.

@@ -32,7 +32,10 @@ pub async fn execute(
     };
 
     let price = signal.entry_price;
-    let available = c.available_fund.to_f64().unwrap_or(0.0);
+    // Budget each order at half of the contract's initial fund; the caller
+    // already verified the available fund covers it.
+    let budget = order_budget(c.init_fund);
+    let budget_f = budget.to_f64().unwrap_or(0.0);
 
     // KuCoin spot symbol ("BTC/USDT" -> "BTC-USDT"); the remark is capped at 20 chars.
     let ticker = c.ticker.replace('/', "-");
@@ -43,10 +46,10 @@ pub async fn execute(
     // Size must respect the pair's increment/min-size rules, or KuCoin rejects it.
     let info = fetch_symbol_info(kcc, &ticker).await?;
     let Some(quantity) =
-        compute_quantity(available, price, &info.base_increment, &info.base_min_size)
+        compute_quantity(budget_f, price, &info.base_increment, &info.base_min_size)
     else {
         warn!(
-            "[TRADE] {} skipped | price={price} available={available} inc={} min={}",
+            "[TRADE] {} skipped | price={price} budget={budget} inc={} min={}",
             c.ticker, info.base_increment, info.base_min_size
         );
         return Ok(());
@@ -56,24 +59,35 @@ pub async fn execute(
     let tp_dec = Decimal::from_f64(signal.tp_price).unwrap_or_default();
     let sl_dec = Decimal::from_f64(signal.sl_price).unwrap_or_default();
 
-    // Record the order (pending) before touching the exchange.
-    let order = match TradeOrders::create(
-        pool,
-        c.id,
-        c.user_uid,
-        &c.ticker,
-        side_str,
-        "open",
-        &comment,
-        quantity_dec,
-        trade_fund,
-        tp_dec,
-        sl_dec,
-    )
-    .await
-    {
-        Ok(o) => o,
-        Err(e) => return Err(e.into()),
+    // Record the order and reserve its fund in ONE transaction, so a committed
+    // `pending` row always has its fund reserved (the reconciler relies on this
+    // to release only what was actually reserved).
+    let order = {
+        let mut tx = pool.begin().await?;
+        let order = match TradeOrders::create(
+            &mut tx,
+            c.id,
+            c.user_uid,
+            &c.ticker,
+            side_str,
+            "open",
+            &comment,
+            quantity_dec,
+            trade_fund,
+            tp_dec,
+            sl_dec,
+        )
+        .await
+        {
+            Ok(o) => o,
+            Err(e) => return Err(e.into()),
+        };
+        if let Err(e) = Contracts::consume_fund(&mut tx, c.id, trade_fund).await {
+            // Roll back both the row and the reservation.
+            return Err(e.into());
+        }
+        tx.commit().await?;
+        order
     };
 
     let mut request = SpotOrderRequest::new(TradeType::Market, &ticker, side).set_remark(&remark);
@@ -83,7 +97,10 @@ pub async fn execute(
     let res = match kcc.spot().place_order(request).await {
         Ok(r) => r,
         Err(e) => {
-            fail_order(pool, order.id, &format!("place_order failed: {e}")).await;
+            // Ambiguous transport error: the exchange may have accepted the
+            // order. Leave the row pending (funds stay reserved); the reconciler
+            // resolves it by clientOid and releases the fund only if the order
+            // was never placed.
             return Err(ProcessError::Network(format!("place_order failed: {e}")));
         }
     };
@@ -94,14 +111,10 @@ pub async fn execute(
             res.msg.as_deref().unwrap_or("<none>")
         );
         warn!("[TRADE] {} {}", c.ticker, reason);
+        release_fund(pool, c.id, trade_fund).await;
         fail_order(pool, order.id, &reason).await;
         return Err(ProcessError::Internal(reason));
     };
-
-    // Move the traded funds (available -> total_traded).
-    let mut tx = pool.begin().await?;
-    Contracts::consume_fund(&mut tx, c.id, trade_fund).await?;
-    tx.commit().await?;
 
     let mut tx = pool.begin().await?;
     TradeOrders::mark_placed(&mut tx, order.id, &data.order_id).await?;
@@ -112,6 +125,27 @@ pub async fn execute(
         c.ticker, side_str, data.order_id
     );
     Ok(())
+}
+
+/// Best-effort: return a reserved fund to the contract after a failed placement.
+async fn release_fund(pool: &PgPool, contract_id: Uuid, amount: Decimal) {
+    match pool.begin().await {
+        Ok(mut tx) => {
+            if let Err(e) = Contracts::release_fund(&mut tx, contract_id, amount).await {
+                warn!("[TRADE] failed to release fund for contract {contract_id}: {e}");
+            }
+            let _ = tx.commit().await;
+        }
+        Err(e) => warn!("[TRADE] could not open tx to release fund: {e}"),
+    }
+}
+
+/// Divisor applied to a contract's initial fund to get the per-order budget.
+const ORDER_FUND_DIVISOR: u32 = 2;
+
+/// Budget for a single order: `init_fund / ORDER_FUND_DIVISOR` (half).
+pub fn order_budget(init_fund: Decimal) -> Decimal {
+    init_fund / Decimal::from(ORDER_FUND_DIVISOR)
 }
 
 /// Map an already-uppercased signal action to a KuCoin side and its wire string.

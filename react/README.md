@@ -117,3 +117,15 @@ flowchart LR
 | `useAuth`          | `hooks/useAuth.tsx`             | session state, `login`, `logout`                                                                |
 | `useContractsData` | `hooks/useContractsData.tsx`    | contracts, orders, prices, `pnlOf` / `contractPnl` / `totalPnl`; effects key on the contract-id set |
 | `useTheme`         | `hooks/useTheme.tsx`            | light / dark                                                                                    |
+
+## Cross-cutting behavior
+
+- **Session expiry** — a global axios `401` response interceptor (`main.tsx`) bounces
+  `/dashboard` and `/trading` back to `/`; `AuthGuard` also redirects unauthenticated routes.
+- **Refresh on change** — after signing a contract or a completed deposit the app dispatches
+  a `contracts:changed` window event; `useContractsData`, `BalanceStats`, and
+  `SidebarActions` listen and refetch. Balances are also refreshed after deposit/withdraw.
+- **Money** — the API returns amounts as decimal **strings**, already in human units; format
+  them as-is (no `÷ 1e6` scaling).
+- **Withdraw (pending)** — the UI exposes "Withdraw Assets" but the endpoint is not
+  implemented yet (`POST /api/transactions/withdraw` → 404).

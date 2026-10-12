@@ -85,6 +85,13 @@ impl Contracts {
             return resp;
         }
 
+        // The nonce must be one this wallet was issued (replay protection),
+        // not just equal to the one echoed inside the signed message.
+        match nonce_cache.get(&payload.nonce).await {
+            Some(bound) if bound == wallet => {}
+            _ => return HttpResponse::BadRequest().body("Invalid or expired nonce"),
+        }
+
         let settings = match BotSettings::from_message(msg_payload.settings) {
             Ok(s) => s,
             Err(msg) => return HttpResponse::BadRequest().body(msg),

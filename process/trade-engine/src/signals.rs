@@ -51,8 +51,9 @@ pub async fn signal_handler(
             continue;
         }
 
-        // Only trade while at least a quarter of the initial fund remains.
-        if c.available_fund >= c.init_fund / rust_decimal::Decimal::from(4)
+        // Only trade when the available fund covers the per-order budget
+        // (half of the initial fund).
+        if c.available_fund >= trader::order_budget(c.init_fund)
             && let Err(e) = trader::execute(&kcc, &db, signal, &c).await
         {
             log::error!("trade execution failed on contract {}: {e}", c.id);

@@ -1,12 +1,13 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
 import { getActivity, withdraw } from '../../services/transaction'
 import type { ActivityItem } from '../../services/transaction'
+import { getUserStats } from '../../services/stats'
 import DepositModal from './DepositModal'
 
 function formatUSDT(raw: string): string {
-  const num = Number(raw) / 1_000_000
+  const num = Number(raw)
   if (num === 0) return '0'
   return num.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 6 })
 }
@@ -20,12 +21,24 @@ export default function SidebarActions() {
   const [detail, setDetail] = useState<ActivityItem | null>(null)
 
   const [platformWallet, setPlatformWallet] = useState('')
+  const [available, setAvailable] = useState('—')
+
+  const refreshStats = useCallback(() => {
+    getUserStats()
+      .then(s => setAvailable(
+        `${Number(s.free).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} USDT`,
+      ))
+      .catch(() => setAvailable('—'))
+  }, [])
 
   useEffect(() => {
     axios.get('/api/config').then(res => {
       setPlatformWallet(res.data.platform_wallet)
     }).catch(() => {})
-  }, [])
+    refreshStats()
+    window.addEventListener('contracts:changed', refreshStats)
+    return () => window.removeEventListener('contracts:changed', refreshStats)
+  }, [refreshStats])
 
   const close = () => { setModal(null); setAmount(''); setError('') }
 
@@ -44,6 +57,7 @@ export default function SidebarActions() {
     try {
       if (modal === 'withdraw') {
         await withdraw(amount)
+        refreshStats()
       }
       close()
     } catch (err: unknown) {
@@ -60,7 +74,7 @@ export default function SidebarActions() {
   }
 
   const user = {
-    available: '$48,230.15',
+    available,
     wallet: platformWallet || 'Loading...',
     dailyLimit: '$10,000.00',
   }
@@ -112,7 +126,7 @@ export default function SidebarActions() {
                 <div className="text-[10px] text-text-muted">{t.tx_hash.slice(0, 10)}...</div>
               </div>
               <div className="text-right">
-                <div className={`text-[11px] font-semibold ${t.status === 'confirmed' ? 'text-up' : 'text-text-main'}`}>
+                <div className={`text-[11px] font-semibold ${t.status === 'confirmed' ? 'text-up' : t.status === 'failed' ? 'text-down' : 'text-text-main'}`}>
                   {formatUSDT(t.amount)}
                 </div>
                 <div className="text-[10px] text-text-muted">{new Date(t.created_at).toLocaleString()}</div>
@@ -130,9 +144,9 @@ export default function SidebarActions() {
                 <div className="text-[11px] text-text-muted font-semibold uppercase tracking-[0.3px] mb-1">Deposit</div>
                 <div className="text-xl font-bold text-text-main">USDT — {formatUSDT(detail.amount)}</div>
               </div>
-              <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded ${detail.status === 'confirmed' ? 'text-up' : 'text-[#ffb700]'}`}
-                style={{ background: detail.status === 'confirmed' ? 'rgba(255,87,34,0.1)' : 'rgba(255,183,0,0.1)' }}>
-                {detail.status === 'confirmed' ? '✓ Confirmed' : '◷ Pending'}
+              <span className={`text-[11px] font-bold font-mono px-2.5 py-1 rounded ${detail.status === 'confirmed' ? 'text-up' : detail.status === 'failed' ? 'text-down' : 'text-[#ffb700]'}`}
+                style={{ background: detail.status === 'confirmed' ? 'rgba(255,87,34,0.1)' : detail.status === 'failed' ? 'rgba(239,68,68,0.1)' : 'rgba(255,183,0,0.1)' }}>
+                {detail.status === 'confirmed' ? '✓ Confirmed' : detail.status === 'failed' ? '✕ Failed' : '◷ Pending'}
               </span>
             </div>
 
@@ -166,8 +180,8 @@ export default function SidebarActions() {
 
       {modal === 'deposit' && (
         <DepositModal
-          onClose={() => { close(); getActivity().then(setActivities).catch(() => {}) }}
-          onDepositComplete={() => getActivity().then(setActivities).catch(() => {})}
+          onClose={close}
+          onDepositComplete={() => { getActivity().then(setActivities).catch(() => {}); refreshStats() }}
         />
       )}
 
