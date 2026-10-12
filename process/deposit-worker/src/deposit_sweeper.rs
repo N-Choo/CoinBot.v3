@@ -81,18 +81,21 @@ async fn check_and_finalize(
         return Ok(false);
     }
 
+    // Use KuCoin's credited amount (human units): it is what actually sits in
+    // the Main account, so it is what we sweep and credit.
+    let amount = record
+        .amount
+        .as_deref()
+        .ok_or_else(|| "missing amount".to_string())?;
+
     {
-        let raw_amount = record
-            .amount
-            .as_deref()
-            .ok_or_else(|| "missing amount".to_string())?;
-        let amount: f64 = raw_amount
+        let amount_value: f64 = amount
             .parse()
-            .map_err(|_| format!("invalid amount: {}", raw_amount))?;
+            .map_err(|_| format!("invalid amount: {amount}"))?;
 
         let request = TransferRequest::new(
             "USDT",
-            amount,
+            amount_value,
             AccountType::Main,
             AccountType::Trade,
             TransferType::Internal,
@@ -118,11 +121,11 @@ async fn check_and_finalize(
             .await
             .map_err(|e| format!("Failed to upsert user: {}", e))?;
 
-        if let Err(e) = user.add_balance(&mut tx, &deposit.amount).await {
+        if let Err(e) = user.add_balance(&mut tx, amount).await {
             return Err(e.to_string());
         }
 
-        if let Err(e) = Deposit::confirm(&mut tx, deposit.id, &deposit.amount, None).await {
+        if let Err(e) = Deposit::confirm(&mut tx, deposit.id, amount, None).await {
             return Err(e.to_string());
         }
 
