@@ -30,7 +30,7 @@ async fn new_wallet_gets_an_account() {
     tx.commit().await.unwrap();
 
     assert_eq!(user.wallet_address, wallet);
-    assert_eq!(user.balance, "0");
+    assert_eq!(user.balance, rust_decimal::Decimal::ZERO);
     assert!(User::find_by_wallet(&pool, &wallet)
         .await
         .unwrap()

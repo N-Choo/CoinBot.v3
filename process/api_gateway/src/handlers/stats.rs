@@ -42,10 +42,10 @@ impl Stats {
         match user_stats(&pool, &wallet).await {
             Ok(Some(stats)) => HttpResponse::Ok().json(stats),
             Ok(None) => HttpResponse::Ok().json(stats::UserStats {
-                total: "0".into(),
-                free: "0".into(),
-                locked: "0".into(),
-                realized_pnl: "0".into(),
+                total: rust_decimal::Decimal::ZERO,
+                free: rust_decimal::Decimal::ZERO,
+                locked: rust_decimal::Decimal::ZERO,
+                realized_pnl: rust_decimal::Decimal::ZERO,
             }),
             Err(e) => {
                 log::error!("user stats: query failed: {e}");

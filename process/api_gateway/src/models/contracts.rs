@@ -32,8 +32,8 @@ struct SignedSettings {
 pub struct BotSettings {
     /// Trading pair, e.g. `BTC/USDT`.
     pub ticker: String,
-    /// Initial fund allocated to the contract, as a decimal string.
-    pub init_fund: String,
+    /// Initial fund allocated to the contract.
+    pub init_fund: rust_decimal::Decimal,
     /// Stop-loss distance, in percent.
     pub sl_pct: f32,
     /// Take-profit distance, in percent.
@@ -46,9 +46,9 @@ pub struct ContractView {
     pub id: uuid::Uuid,
     pub ticker: String,
     pub status: String,
-    pub init_fund: String,
-    pub available_fund: String,
-    pub total_traded_fund: String,
+    pub init_fund: rust_decimal::Decimal,
+    pub available_fund: rust_decimal::Decimal,
+    pub total_traded_fund: rust_decimal::Decimal,
     pub sl_pct: f32,
     pub tp_pct: f32,
     pub created_at: chrono::DateTime<chrono::Utc>,
@@ -61,9 +61,9 @@ impl From<&share::db::contracts::Contract> for ContractView {
             id: c.id,
             ticker: c.ticker.clone(),
             status: c.status.clone(),
-            init_fund: c.init_fund.clone(),
-            available_fund: c.available_fund.clone(),
-            total_traded_fund: c.total_traded_fund.clone(),
+            init_fund: c.init_fund,
+            available_fund: c.available_fund,
+            total_traded_fund: c.total_traded_fund,
             sl_pct: c.sl_pct,
             tp_pct: c.tp_pct,
             created_at: c.created_at,
@@ -82,7 +82,10 @@ impl BotSettings {
             .map_err(|_| "Invalid bot settings in signed message")?;
         Ok(Self {
             ticker: signed.ticker,
-            init_fund: signed.amount,
+            init_fund: signed
+                .amount
+                .parse()
+                .map_err(|_| "Amount must be a number")?,
             sl_pct: signed
                 .stop_loss
                 .parse()
@@ -99,12 +102,7 @@ impl BotSettings {
     /// Requires a positive amount, SL/TP within 0–100, SL strictly below TP,
     /// and a `/USDT` pair. Returns a static error message otherwise.
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self
-            .init_fund
-            .parse::<f64>()
-            .map_err(|_| "Amount must be a number")?
-            <= 0.0
-        {
+        if self.init_fund <= rust_decimal::Decimal::ZERO {
             return Err("Amount must be a positive number");
         }
         if !(0.0..=100.0).contains(&self.sl_pct) {

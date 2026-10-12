@@ -21,7 +21,9 @@ rand.workspace = true
 serde_json.workspace = true
 tokio.workspace = true
 actix-governor.workspace = true
+rust_decimal.workspace = true
 tonic = "0.12"
 
 [dev-dependencies]
 actix-http.workspace = true
+

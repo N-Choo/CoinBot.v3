@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -25,22 +26,22 @@ pub struct TradeOrder {
     pub exchange_order_id: Option<String>,
     /// Lifecycle status (see [`Status`](super::Status)).
     pub status: String,
-    /// Requested quantity as a decimal string.
-    pub requested_qty: String,
-    /// Reserved fund for this order (quote amount), as a decimal string.
-    pub funds: String,
-    /// Filled quantity as a decimal string.
-    pub filled_qty: String,
-    /// Execution price as a decimal string, once filled.
-    pub fill_price: Option<String>,
-    /// Fee paid as a decimal string.
-    pub fee: String,
+    /// Requested quantity.
+    pub requested_qty: Decimal,
+    /// Reserved fund for this order (quote amount).
+    pub funds: Decimal,
+    /// Filled quantity.
+    pub filled_qty: Decimal,
+    /// Execution price, once filled.
+    pub fill_price: Option<Decimal>,
+    /// Fee paid.
+    pub fee: Decimal,
     /// Failure reason, when the order failed.
     pub reason: Option<String>,
-    /// Take-profit price from the originating signal, as a decimal string.
-    pub tp_price: Option<String>,
-    /// Stop-loss price from the originating signal, as a decimal string.
-    pub sl_price: Option<String>,
+    /// Take-profit price from the originating signal.
+    pub tp_price: Option<Decimal>,
+    /// Stop-loss price from the originating signal.
+    pub sl_price: Option<Decimal>,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last update timestamp.
@@ -58,10 +59,10 @@ impl TradeOrders {
         side: &str,
         action: &str,
         comment: &str,
-        requested_qty: &str,
-        funds: &str,
-        tp_price: &str,
-        sl_price: &str,
+        requested_qty: Decimal,
+        funds: Decimal,
+        tp_price: Decimal,
+        sl_price: Decimal,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds, tp_price, sl_price)
@@ -104,9 +105,9 @@ impl TradeOrders {
     pub async fn mark_filled(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
-        filled_qty: &str,
-        fill_price: &str,
-        fee: &str,
+        filled_qty: Decimal,
+        fill_price: Decimal,
+        fee: Decimal,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders

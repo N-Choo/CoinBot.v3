@@ -13,7 +13,14 @@
 // Address encoding: 12 zero bytes + 20 address bytes (left-padded)
 // Amount encoding:  32 byte big-endian uint256
 
+use rust_decimal::Decimal;
 use share::erc20::Erc20;
+use std::str::FromStr;
+
+/// Parse a decimal literal for assertions.
+fn dec(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap()
+}
 
 /// Encode `transfer(recipient, amount)` calldata.
 fn build_input(recipient: &[u8; 20], amount_raw: u64) -> Vec<u8> {
@@ -114,19 +121,19 @@ fn test_recipient_too_short() {
 fn test_amount_scaled_usdt() {
     assert_eq!(
         Erc20::decode_amount_scaled(&build_input(&platform(), 9_900_000), 6),
-        "9.9"
+        dec("9.9")
     );
     assert_eq!(
         Erc20::decode_amount_scaled(&build_input(&platform(), 1_000_000), 6),
-        "1"
+        dec("1")
     );
     assert_eq!(
         Erc20::decode_amount_scaled(&build_input(&platform(), 500), 6),
-        "0.0005"
+        dec("0.0005")
     );
     assert_eq!(
         Erc20::decode_amount_scaled(&build_input(&platform(), 0), 6),
-        "0"
+        Decimal::ZERO
     );
 }
 
@@ -135,15 +142,15 @@ fn test_amount_scaled_usdt() {
 fn test_amount_scaled_no_decimals() {
     assert_eq!(
         Erc20::decode_amount_scaled(&build_input(&platform(), 42), 0),
-        "42"
+        dec("42")
     );
 }
 
-/// A wrong selector scales to `"0"`.
+/// A wrong selector scales to `0`.
 #[test]
 fn test_amount_scaled_wrong_selector() {
     assert_eq!(
         Erc20::decode_amount_scaled(&[0x00, 0x01, 0x02, 0x03, 0xff], 6),
-        "0"
+        Decimal::ZERO
     );
 }

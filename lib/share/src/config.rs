@@ -124,6 +124,8 @@ mod tests {
 
     #[test]
     fn get_or_returns_default_when_not_set() {
+        let _lock = ENV_LOCK.lock();
+        std::env::remove_var("TEST_PORT");
         let cfg = ProcessConfig::new("test");
         let val: u32 = cfg.get_or("PORT", 8080u32);
         assert_eq!(val, 8080);

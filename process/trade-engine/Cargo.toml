@@ -13,3 +13,5 @@ share = { path = "../../lib/share" }
 sqlx.workspace = true
 tokio = { version = "1", features = ["full"] }
 uuid.workspace = true
+
+rust_decimal.workspace = true

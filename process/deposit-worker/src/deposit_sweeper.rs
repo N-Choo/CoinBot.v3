@@ -83,16 +83,18 @@ async fn check_and_finalize(
 
     // Use KuCoin's credited amount (human units): it is what actually sits in
     // the Main account, so it is what we sweep and credit.
-    let amount = record
+    let raw_amount = record
         .amount
         .as_deref()
         .ok_or_else(|| "missing amount".to_string())?;
+    let amount: rust_decimal::Decimal = raw_amount
+        .parse()
+        .map_err(|_| format!("invalid amount: {raw_amount}"))?;
+    let amount_value: f64 = raw_amount
+        .parse()
+        .map_err(|_| format!("invalid amount: {raw_amount}"))?;
 
     {
-        let amount_value: f64 = amount
-            .parse()
-            .map_err(|_| format!("invalid amount: {amount}"))?;
-
         let request = TransferRequest::new(
             "USDT",
             amount_value,

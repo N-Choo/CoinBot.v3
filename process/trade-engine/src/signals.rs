@@ -51,20 +51,8 @@ pub async fn signal_handler(
             continue;
         }
 
-        let Ok(init_fund) = c.init_fund.parse::<f64>() else {
-            log::warn!("contract {} has invalid init_fund '{}'", c.id, c.init_fund);
-            continue;
-        };
-        let Ok(available) = c.available_fund.parse::<f64>() else {
-            log::warn!(
-                "contract {} has invalid available_fund '{}'",
-                c.id,
-                c.available_fund
-            );
-            continue;
-        };
-
-        if available >= init_fund / 4.0
+        // Only trade while at least a quarter of the initial fund remains.
+        if c.available_fund >= c.init_fund / rust_decimal::Decimal::from(4)
             && let Err(e) = trader::execute(&kcc, &db, signal, &c).await
         {
             log::error!("trade execution failed on contract {}: {e}", c.id);

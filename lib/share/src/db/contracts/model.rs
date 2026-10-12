@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use sqlx::FromRow;
 use uuid::Uuid;
 
@@ -19,14 +20,12 @@ pub struct Contract {
     pub nonce: String,
     /// Trading pair, upper-cased.
     pub ticker: String,
-    /// Balance snapshot at signing time, as a decimal string.
-    pub snap_balance: String,
-    /// Initial fund allocated to this contract, as a decimal string.
-    pub init_fund: String,
-    /// Funds still available to use, as a decimal string.
-    pub available_fund: String,
-    /// Cumulative funds traded on this contract, as a decimal string.
-    pub total_traded_fund: String,
+    /// Initial fund allocated to this contract.
+    pub init_fund: Decimal,
+    /// Funds still available to use.
+    pub available_fund: Decimal,
+    /// Cumulative funds traded on this contract.
+    pub total_traded_fund: Decimal,
     /// Stop-loss distance, in percent.
     pub sl_pct: f32,
     /// Take-profit distance, in percent.
@@ -53,23 +52,21 @@ impl Contracts {
         message: &str,
         nonce: &str,
         ticker: &str,
-        snap_balance: &str,
-        init_fund: &str,
-        available_fund: &str,
-        total_traded_fund: &str,
+        init_fund: Decimal,
+        available_fund: Decimal,
+        total_traded_fund: Decimal,
         sl_pct: f32,
         tp_pct: f32,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"INSERT INTO contracts (user_uid, signature, message, nonce, ticker, snap_balance, init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, 'active')"#,
+            r#"INSERT INTO contracts (user_uid, signature, message, nonce, ticker, init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active')"#,
         )
         .bind(user_uid)
         .bind(signature)
         .bind(message)
         .bind(nonce)
         .bind(ticker.to_uppercase())
-        .bind(snap_balance)
         .bind(init_fund)
         .bind(available_fund)
         .bind(total_traded_fund)
@@ -87,14 +84,14 @@ impl Contracts {
     pub async fn consume_fund(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
-        amount: &str,
+        amount: Decimal,
     ) -> Result<Contract, sqlx::Error> {
         sqlx::query_as::<_, Contract>(
             r#"UPDATE contracts
-               SET available_fund    = available_fund::numeric - $1::numeric,
-                   total_traded_fund = total_traded_fund::numeric + $1::numeric,
+               SET available_fund    = available_fund - $1,
+                   total_traded_fund = total_traded_fund + $1,
                    updated_at        = NOW()
-               WHERE id = $2 AND available_fund::numeric >= $1::numeric
+               WHERE id = $2 AND available_fund >= $1
                RETURNING *"#,
         )
         .bind(amount)
@@ -107,11 +104,11 @@ impl Contracts {
     pub async fn add_fund(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
-        amount: &str,
+        amount: Decimal,
     ) -> Result<Contract, sqlx::Error> {
         sqlx::query_as::<_, Contract>(
             r#"UPDATE contracts
-               SET available_fund = available_fund::numeric + $1::numeric,
+               SET available_fund = available_fund + $1,
                    updated_at     = NOW()
                WHERE id = $2
                RETURNING *"#,
@@ -129,14 +126,14 @@ impl Contracts {
     pub async fn release_fund(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
-        amount: &str,
+        amount: Decimal,
     ) -> Result<Contract, sqlx::Error> {
         sqlx::query_as::<_, Contract>(
             r#"UPDATE contracts
-               SET available_fund    = available_fund::numeric + $1::numeric,
-                   total_traded_fund = total_traded_fund::numeric - $1::numeric,
+               SET available_fund    = available_fund + $1,
+                   total_traded_fund = total_traded_fund - $1,
                    updated_at        = NOW()
-               WHERE id = $2 AND total_traded_fund::numeric >= $1::numeric
+               WHERE id = $2 AND total_traded_fund >= $1
                RETURNING *"#,
         )
         .bind(amount)

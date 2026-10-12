@@ -1,3 +1,4 @@
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Transaction};
 use uuid::Uuid;
 
@@ -8,10 +9,10 @@ pub struct User {
     pub wallet_address: String,
     /// Stable internal identifier.
     pub uid: Uuid,
-    /// Available balance, stored as a decimal string.
-    pub balance: String,
-    /// Balance reserved by open contracts, stored as a decimal string.
-    pub locked_balance: String,
+    /// Available balance.
+    pub balance: Decimal,
+    /// Balance reserved by open contracts.
+    pub locked_balance: Decimal,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
 }
@@ -65,11 +66,11 @@ impl User {
     pub async fn add_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,
-        amount: &str,
+        amount: Decimal,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(
             r#"UPDATE users
-               SET balance = balance::numeric + $1::numeric
+               SET balance = balance + $1
                WHERE wallet_address = $2
                RETURNING *"#,
         )
@@ -85,13 +86,13 @@ impl User {
     pub async fn lock_balance(
         &self,
         tx: &mut Transaction<'_, sqlx::Postgres>,
-        amount: &str,
+        amount: Decimal,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(
             r#"UPDATE users
-               SET balance = balance::numeric - $1::numeric,
-                   locked_balance = locked_balance::numeric + $1::numeric
-               WHERE wallet_address = $2 AND balance::numeric >= $1::numeric
+               SET balance = balance - $1,
+                   locked_balance = locked_balance + $1
+               WHERE wallet_address = $2 AND balance >= $1
                RETURNING *"#,
         )
         .bind(amount)

@@ -6,6 +6,8 @@ use kucoin::{
     types::spot::{Side, SpotOrderRequest, TradeType},
 };
 use log::{info, warn};
+use rust_decimal::Decimal;
+use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
 use serde::Deserialize;
 use share::{
     ProcessError,
@@ -30,13 +32,7 @@ pub async fn execute(
     };
 
     let price = signal.entry_price;
-    let Ok(available) = c.available_fund.parse::<f64>() else {
-        warn!(
-            "[TRADE] {} invalid available_fund '{}'",
-            c.ticker, c.available_fund
-        );
-        return Ok(());
-    };
+    let available = c.available_fund.to_f64().unwrap_or(0.0);
 
     // KuCoin spot symbol ("BTC/USDT" -> "BTC-USDT"); the remark is capped at 20 chars.
     let ticker = c.ticker.replace('/', "-");
@@ -55,11 +51,10 @@ pub async fn execute(
         );
         return Ok(());
     };
-    let Ok(quantity_value) = quantity.parse::<f64>() else {
-        warn!("[TRADE] {} invalid computed qty '{}'", c.ticker, quantity);
-        return Ok(());
-    };
-    let trade_fund = price * quantity_value;
+    let quantity_dec: Decimal = quantity.parse().unwrap_or_default();
+    let trade_fund = Decimal::from_f64(price).unwrap_or_default() * quantity_dec;
+    let tp_dec = Decimal::from_f64(signal.tp_price).unwrap_or_default();
+    let sl_dec = Decimal::from_f64(signal.sl_price).unwrap_or_default();
 
     // Record the order (pending) before touching the exchange.
     let order = match TradeOrders::create(
@@ -70,10 +65,10 @@ pub async fn execute(
         side_str,
         "open",
         &comment,
-        &quantity,
-        &trade_fund.to_string(),
-        &signal.tp_price.to_string(),
-        &signal.sl_price.to_string(),
+        quantity_dec,
+        trade_fund,
+        tp_dec,
+        sl_dec,
     )
     .await
     {
@@ -105,7 +100,7 @@ pub async fn execute(
 
     // Move the traded funds (available -> total_traded).
     let mut tx = pool.begin().await?;
-    Contracts::consume_fund(&mut tx, c.id, &trade_fund.to_string()).await?;
+    Contracts::consume_fund(&mut tx, c.id, trade_fund).await?;
     tx.commit().await?;
 
     let mut tx = pool.begin().await?;

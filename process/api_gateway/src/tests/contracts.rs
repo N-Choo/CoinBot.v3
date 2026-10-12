@@ -145,9 +145,9 @@ async fn test_me_returns_only_owners_contracts() {
     ] {
         sqlx::query(
             r#"INSERT INTO contracts
-                   (user_uid, signature, message, nonce, ticker, snap_balance,
+                   (user_uid, signature, message, nonce, ticker,
                     init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status)
-                   VALUES ($1, '0xsig', $2, $3, $4, '1000', '1000', '1000', '0', 2.0, 5.0, 'active')
+                   VALUES ($1, '0xsig', $2, $3, $4, '1000', '1000', '0', 2.0, 5.0, 'active')
                    ON CONFLICT (nonce) DO NOTHING"#,
         )
         .bind(uid)
@@ -195,7 +195,6 @@ async fn test_me_returns_only_owners_contracts() {
         assert_eq!(row["available_fund"].as_str().unwrap(), "1000");
         assert_eq!(row["sl_pct"].as_f64().unwrap(), 2.0);
         assert!(row.get("user_uid").is_none());
-        assert!(row.get("snap_balance").is_none());
     }
 
     for nonce in [owner_nonces[0], owner_nonces[1], other_nonce] {

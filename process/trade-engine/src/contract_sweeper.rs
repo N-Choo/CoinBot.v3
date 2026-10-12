@@ -3,6 +3,8 @@
 
 use kucoin::client::rest::KuCoinClient;
 use kucoin::types::KuCoinResponse;
+use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 use serde::Deserialize;
 use share::ProcessError;
 use share::db::contracts::Contracts;
@@ -59,7 +61,7 @@ pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
 
                                 // Return the reserved funds to the contract.
                                 if let Err(e) =
-                                    Contracts::release_fund(&mut tx, o.contract_id, &o.funds).await
+                                    Contracts::release_fund(&mut tx, o.contract_id, o.funds).await
                                 {
                                     log::error!(
                                         "[SWEEP] release_fund failed for contract {}: {e}",
@@ -84,9 +86,9 @@ pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
                                 if let Err(e) = TradeOrders::mark_filled(
                                     &mut tx,
                                     o.id,
-                                    &data.deal_size,
-                                    &avg.to_string(),
-                                    &data.fee,
+                                    data.deal_size.parse::<Decimal>().unwrap_or_default(),
+                                    Decimal::from_f64(avg).unwrap_or_default(),
+                                    data.fee.parse::<Decimal>().unwrap_or_default(),
                                 )
                                 .await
                                 {
@@ -98,9 +100,12 @@ pub async fn sync_contract_status(db: Pool<Postgres>, kcc: KuCoinClient) {
                                 }
 
                                 // Credit the filled proceeds back to the contract.
-                                if let Err(e) =
-                                    Contracts::add_fund(&mut tx, o.contract_id, &data.deal_funds)
-                                        .await
+                                if let Err(e) = Contracts::add_fund(
+                                    &mut tx,
+                                    o.contract_id,
+                                    data.deal_funds.parse::<Decimal>().unwrap_or_default(),
+                                )
+                                .await
                                 {
                                     log::error!(
                                         "[SWEEP] add_fund failed for contract {}: {e}",

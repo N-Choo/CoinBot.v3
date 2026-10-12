@@ -1,4 +1,5 @@
 use ethers::types::Transaction as EthTx;
+use rust_decimal::Decimal;
 use sqlx::{PgPool, Transaction};
 use uuid::Uuid;
 
@@ -18,8 +19,8 @@ pub struct Deposit {
     pub tx_hash: String,
     /// Deposited ticker (e.g. `USDT`).
     pub ticker: String,
-    /// Deposited amount as a decimal string.
-    pub amount: String,
+    /// Deposited amount.
+    pub amount: Decimal,
     /// Sender address.
     pub from_address: String,
     /// Recipient address.
@@ -69,7 +70,7 @@ impl Deposit {
     pub async fn confirm(
         tx: &mut Transaction<'_, sqlx::Postgres>,
         id: Uuid,
-        amount: &str,
+        amount: Decimal,
         block_nr: Option<i64>,
     ) -> Result<Self, sqlx::Error> {
         sqlx::query_as::<_, Self>(

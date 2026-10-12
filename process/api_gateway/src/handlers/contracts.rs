@@ -103,8 +103,6 @@ impl Contracts {
             }
         };
 
-        let snap_balance = user.balance.clone();
-
         let mut tx = match pool.begin().await {
             Ok(t) => t,
             Err(e) => {
@@ -113,7 +111,7 @@ impl Contracts {
             }
         };
 
-        if let Err(e) = user.lock_balance(&mut tx, &settings.init_fund).await {
+        if let Err(e) = user.lock_balance(&mut tx, settings.init_fund).await {
             return match e {
                 sqlx::Error::RowNotFound => HttpResponse::BadRequest().body("Insufficient funds"),
                 other => {
@@ -132,10 +130,9 @@ impl Contracts {
             &payload.message,
             &payload.nonce,
             &settings.ticker,
-            &snap_balance,
-            &settings.init_fund,
-            &settings.init_fund,
-            "0",
+            settings.init_fund,
+            settings.init_fund,
+            rust_decimal::Decimal::ZERO,
             settings.sl_pct,
             settings.tp_pct,
         )

@@ -15,7 +15,7 @@ uuid = { version = "1.19.0", features = ["v4", "serde"] }
 serde = { version = "1.0.228", features = ["derive"] }
 log = "0.4.29"
 moka = { version = "0.12.15", features = ["future"] }
-sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio-native-tls", "uuid", "bigdecimal", "chrono", "runtime-tokio", "tls-native-tls", "macros"] }
+sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio-native-tls", "uuid", "bigdecimal", "rust_decimal", "chrono", "runtime-tokio", "tls-native-tls", "macros"] }
 ethers = "2.0.14"
 thiserror = "2.0.18"
 kucoin = "0.7.6"
@@ -23,6 +23,7 @@ dotenvy = "0.15.7"
 actix-cors = "0.7.1"
 rand = "0.10.1"
 serde_json = "1.0.149"
+rust_decimal = { version = "1", features = ["serde"] }
 tokio = "1.52.1"
 actix-governor = "0.6.0"
 chrono = { version = "0.4.42", features = ["serde"] }
