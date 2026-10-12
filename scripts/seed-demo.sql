@@ -76,11 +76,11 @@ FROM users u WHERE u.wallet_address = '0x2300dc555ba1dda773935a2fac059e3c8f1d14a
 -- the sweeper leaves them alone.
 INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, status, requested_qty, filled_qty, fill_price, fee, funds, created_at, updated_at)
 SELECT c.id, c.user_uid, c.ticker, v.side, v.action, v.comment, v.status,
-       v.qty,
-       CASE WHEN v.status = 'filled' THEN v.qty    ELSE '0'  END,
-       CASE WHEN v.status = 'filled' THEN v.price  ELSE NULL END,
-       CASE WHEN v.status = 'filled' THEN v.fee    ELSE '0'  END,
-       v.funds, NOW() - v.age, NOW() - v.age
+       v.qty::numeric,
+       (CASE WHEN v.status = 'filled' THEN v.qty   ELSE '0'  END)::numeric,
+       (CASE WHEN v.status = 'filled' THEN v.price ELSE NULL END)::numeric,
+       (CASE WHEN v.status = 'filled' THEN v.fee   ELSE '0'  END)::numeric,
+       v.funds::numeric, NOW() - v.age, NOW() - v.age
 FROM contracts c
 JOIN (VALUES
     ('a1b2c3d4-e5f6-7890-abcd-ef1234567890', 'buy',  'open',  'seed-order-1', 'filled', '0.0600', '82500', '1.20', '4950', INTERVAL '3 days'),
