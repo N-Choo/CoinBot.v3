@@ -1,8 +1,8 @@
 use actix_web::{HttpResponse, Responder, web};
+use share::auth::recover_wallet;
 use uuid::Uuid;
 
-use crate::handlers::authenticate;
-use crate::handlers::user::auth::{AuthController, NonceCache, SessionCache};
+use crate::auth::{NonceCache, SessionCache, authenticate};
 use crate::models::contracts::{BotSettings, ContractView, MessagePayload, SignRequest};
 
 /// HTTP handlers for the `/api/contracts` surface.
@@ -273,7 +273,7 @@ impl Contracts {
         message: &str,
         expected_wallet: &str,
     ) -> Result<(), HttpResponse> {
-        match AuthController::get_wallet(signature, message) {
+        match recover_wallet(signature, message) {
             Ok(recovered) if recovered == *expected_wallet => Ok(()),
             Ok(_) => Err(HttpResponse::Unauthorized().body("Wallet mismatch")),
             Err(_) => Err(HttpResponse::Unauthorized().body("Invalid signature")),

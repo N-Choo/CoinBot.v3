@@ -1,0 +1,112 @@
+//! Unit tests for the ERC-20 deposit decoding rules used by
+//! [`Transaction::deposit`](crate::handlers::transaction::Transaction::deposit).
+
+use ethers::types::{Address, Bytes, Transaction as EthTx, TxHash, U256};
+
+/// The platform deposit wallet under test.
+fn platform_wallet() -> Address {
+    "0x1cbabcafbfea9aa787b186d3c52a2c81c945ed4c"
+        .parse()
+        .unwrap()
+}
+
+/// The USDT contract address under test.
+fn usdt_contract() -> Address {
+    "0xdac17f958d2ee523a2206206994597c13d831ec7"
+        .parse()
+        .unwrap()
+}
+
+/// An arbitrary non-platform address.
+fn random_wallet() -> Address {
+    "0xdead000000000000000000000000000000000000"
+        .parse()
+        .unwrap()
+}
+
+/// A zeroed transaction hash for synthetic transactions.
+fn dummy_tx_hash() -> TxHash {
+    [0u8; 32].into()
+}
+
+/// Build ERC-20 `transfer(address,uint256)` calldata.
+fn erc20_transfer_input(recipient: Address, amount: U256) -> Bytes {
+    let selector = [0xa9u8, 0x05, 0x9c, 0xbb];
+    let mut data = Vec::with_capacity(4 + 64);
+    data.extend_from_slice(&selector);
+
+    let mut addr_bytes = [0u8; 32];
+    addr_bytes[12..].copy_from_slice(recipient.as_ref());
+    data.extend_from_slice(&addr_bytes);
+
+    let mut amount_bytes = [0u8; 32];
+    amount.to_big_endian(&mut amount_bytes);
+    data.extend_from_slice(&amount_bytes);
+    data.into()
+}
+
+/// A transfer to the platform wallet decodes to that recipient.
+#[test]
+fn test_usdt_to_platform_wallet_is_accepted() {
+    let tx = EthTx {
+        hash: dummy_tx_hash(),
+        from: random_wallet(),
+        to: Some(usdt_contract()),
+        input: erc20_transfer_input(platform_wallet(), U256::from(1_000_000_000u64)),
+        ..Default::default()
+    };
+    assert_eq!(tx.to, Some(usdt_contract()));
+
+    let recipient = share::erc20::Erc20::decode_recipient(&tx.input);
+    assert!(recipient.is_some());
+    assert_eq!(
+        recipient.unwrap().parse::<Address>().ok(),
+        Some(platform_wallet())
+    );
+}
+
+/// A transfer to any other address does not match the platform wallet.
+#[test]
+fn test_wrong_recipient_is_rejected() {
+    let tx = EthTx {
+        hash: dummy_tx_hash(),
+        from: random_wallet(),
+        to: Some(usdt_contract()),
+        input: erc20_transfer_input(random_wallet(), U256::from(1_000_000_000u64)),
+        ..Default::default()
+    };
+
+    let recipient = share::erc20::Erc20::decode_recipient(&tx.input);
+    assert!(recipient.is_some());
+    assert_ne!(
+        recipient.unwrap().parse::<Address>().ok(),
+        Some(platform_wallet())
+    );
+}
+
+/// A transaction whose `to` is not the USDT contract is rejected.
+#[test]
+fn test_non_usdt_contract_is_rejected() {
+    let tx = EthTx {
+        hash: dummy_tx_hash(),
+        from: random_wallet(),
+        to: Some(random_wallet()),
+        input: erc20_transfer_input(platform_wallet(), U256::from(1_000_000_000u64)),
+        ..Default::default()
+    };
+    assert_ne!(tx.to, Some(usdt_contract()));
+}
+
+/// Short calldata yields no recipient and a zero amount.
+#[test]
+fn test_malformed_input_decodes_to_none() {
+    let tx = EthTx {
+        hash: dummy_tx_hash(),
+        from: random_wallet(),
+        to: Some(usdt_contract()),
+        input: Bytes::from(vec![0x00, 0x01, 0x02]),
+        ..Default::default()
+    };
+    assert!(share::erc20::Erc20::decode_recipient(&tx.input).is_none());
+    assert_eq!(share::erc20::Erc20::decode_amount(&tx.input), "0");
+}

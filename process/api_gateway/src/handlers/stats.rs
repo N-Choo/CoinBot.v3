@@ -1,8 +1,8 @@
 use actix_web::{HttpResponse, Responder, web};
+use share::db::stats::{self, system_stats, user_stats};
 use sqlx::PgPool;
 
-use crate::handlers::authenticate;
-use crate::handlers::user::auth::SessionCache;
+use crate::auth::{SessionCache, authenticate};
 
 /// Public platform metrics handler.
 pub struct Stats;
@@ -14,7 +14,7 @@ impl Stats {
     /// - `200 OK` — JSON [`share::db::stats::SystemStats`].
     /// - `500 Internal Server Error` — query failed.
     pub async fn get(pool: web::Data<PgPool>) -> impl Responder {
-        match share::db::stats::system_stats(&pool).await {
+        match system_stats(&pool).await {
             Ok(stats) => HttpResponse::Ok().json(stats),
             Err(e) => {
                 log::error!("stats: query failed: {e}");
@@ -39,9 +39,9 @@ impl Stats {
             None => return HttpResponse::Unauthorized().finish(),
         };
 
-        match share::db::stats::user_stats(&pool, &wallet).await {
+        match user_stats(&pool, &wallet).await {
             Ok(Some(stats)) => HttpResponse::Ok().json(stats),
-            Ok(None) => HttpResponse::Ok().json(share::db::stats::UserStats {
+            Ok(None) => HttpResponse::Ok().json(stats::UserStats {
                 total: "0".into(),
                 free: "0".into(),
                 locked: "0".into(),

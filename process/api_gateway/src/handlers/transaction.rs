@@ -1,4 +1,5 @@
 use actix_web::{HttpResponse, Responder, web};
+use share::db::user::User;
 use sqlx::PgPool;
 
 use ethers::types::Address;
@@ -11,8 +12,8 @@ use share::{
 use tonic::transport::Channel;
 
 use crate::{
+    auth::{SessionCache, authenticate},
     constants::{PLATFORM_WALLET, USDT_CONTRACT},
-    handlers::{authenticate, user::auth::SessionCache},
     models::transaction::DepositPayloadRequest,
 };
 
@@ -46,7 +47,7 @@ impl Transaction {
             None => return HttpResponse::Unauthorized().finish(),
         };
 
-        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+        let user = match User::find_by_wallet(&pool, &wallet).await {
             Ok(Some(u)) => u,
             Ok(None) => return HttpResponse::Ok().json(Vec::<serde_json::Value>::new()),
             Err(e) => {

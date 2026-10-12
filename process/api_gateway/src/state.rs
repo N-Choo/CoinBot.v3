@@ -2,8 +2,8 @@ use share::ProcessError;
 use sqlx::{PgPool, migrate};
 use tonic::transport::Channel;
 
+use crate::auth::{NonceCache, SessionCache};
 use crate::config::AppConfig;
-use crate::handlers::user::auth::{NonceCache, SessionCache};
 
 /// Shared, cloneable application state handed to handlers via `web::Data`.
 #[derive(Clone)]

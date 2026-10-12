@@ -1,20 +1,13 @@
 //! Wallet-based authentication: challenge/response login, sessions, and logout.
-pub mod cache;
-
-pub use cache::{NonceCache, SessionCache};
-
-use std::str::FromStr;
-
 use actix_web::{HttpResponse, Responder, cookie::Cookie, web};
-use ethers::types::Signature;
-use ethers::utils::hash_message;
-use log::{error, info, warn};
+use log::error;
+use share::auth::recover_wallet;
 use share::db::user::User;
 use sqlx::PgPool;
 use uuid::Uuid;
 
-use crate::models::auth::{ChallengeQuery, ChallengeResponse, VerifySignaturRequest};
-use crate::models::err::AppError;
+use crate::auth::{NonceCache, SessionCache};
+use crate::models::auth::{ChallengeQuery, ChallengeResponse, VerifySignatureRequest};
 
 /// Wallet authentication handlers.
 pub struct AuthController;
@@ -57,12 +50,12 @@ impl AuthController {
     /// - `401 Unauthorized` — signature could not be recovered.
     /// - `500 Internal Server Error` — session could not be stored.
     pub async fn login(
-        payload: web::Json<VerifySignaturRequest>,
+        payload: web::Json<VerifySignatureRequest>,
         nonce_cache: web::Data<NonceCache>,
         session_cache: web::Data<SessionCache>,
         pool: web::Data<PgPool>,
     ) -> impl Responder {
-        let wallet = match Self::get_wallet(&payload.signature, &payload.msg) {
+        let wallet = match recover_wallet(&payload.signature, &payload.msg) {
             Ok(w) => w,
             Err(_) => return HttpResponse::Unauthorized().body("Invalid signature"),
         };
@@ -154,30 +147,5 @@ impl AuthController {
         } else {
             HttpResponse::BadRequest().body("No session cookie found")
         }
-    }
-
-    /// Recover the signer address from a signature over `msg`.
-    ///
-    /// Returns the lowercased `0x`-prefixed wallet address, or an
-    /// [`AppError::Input`] when the signature is malformed or cannot be
-    /// recovered.
-    pub fn get_wallet(s: &str, msg: &str) -> Result<String, AppError> {
-        let signature = match Signature::from_str(s) {
-            Ok(sig) => sig,
-            Err(_) => return Err(AppError::Input("Invalid signature format".to_string())),
-        };
-
-        let msg_hash = hash_message(msg);
-        let wallet_addr = match signature.recover(msg_hash) {
-            Ok(addr) => addr,
-            Err(e) => {
-                warn!("Signature recovery failed: {:?}", e);
-                return Err(AppError::Input(" Invalid signature ".to_string()));
-            }
-        };
-
-        info!("Recovered wallet: {:?}", wallet_addr);
-        let full_address = format!("0x{:x}", wallet_addr);
-        Ok(full_address.to_lowercase())
     }
 }
