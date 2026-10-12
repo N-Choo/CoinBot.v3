@@ -41,8 +41,6 @@ pub struct TradeOrder {
     pub tp_price: Option<String>,
     /// Stop-loss price from the originating signal, as a decimal string.
     pub sl_price: Option<String>,
-    /// Exchange order id of the protective OCO exit, once placed.
-    pub exit_order_id: Option<String>,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last update timestamp.
@@ -97,24 +95,6 @@ impl TradeOrders {
                RETURNING *"#,
         )
         .bind(exchange_order_id)
-        .bind(id)
-        .fetch_one(&mut **tx)
-        .await
-    }
-
-    /// Record the exchange order id of the protective OCO exit.
-    pub async fn mark_exit_order(
-        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-        id: Uuid,
-        exit_order_id: &str,
-    ) -> Result<TradeOrder, sqlx::Error> {
-        sqlx::query_as::<_, TradeOrder>(
-            r#"UPDATE trade_orders
-               SET exit_order_id = $1, updated_at = NOW()
-               WHERE id = $2
-               RETURNING *"#,
-        )
-        .bind(exit_order_id)
         .bind(id)
         .fetch_one(&mut **tx)
         .await
