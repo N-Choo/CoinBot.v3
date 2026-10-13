@@ -98,13 +98,18 @@ Settlement is **action-aware**:
 
 ## Order sweeper (TP/SL exit)
 
-Every **8s**, `order_sweeper` loads held positions (`action='open'`, `status='filled'`, no
-live exit), fetches every market's last price in one call
-(`GET /api/v1/market/allTickers`), and for any position whose price has reached its stored
-TP or SL it **reserves an exit then places a market order** on the opposite side:
+Every **12s**, `order_sweeper` loads held positions (`action='open'`, `status='filled'`, no
+live exit), fetches the last price for each held symbol
+(`GET /api/v1/market/orderbook/level1`, one light request per symbol), and for any position
+whose price has reached its stored TP or SL it **reserves an exit then places a market
+order** on the opposite side:
 
 - entry `buy` → exit `sell` when `last ≥ tp` (TP) or `last ≤ sl` (SL);
 - entry `sell` → inverted.
+
+If KuCoin answers `429 Too Many Requests`, the sweep is skipped and the poll interval backs
+off exponentially (30s → 300s, reset on the next successful sweep) instead of retrying on
+the normal cadence.
 
 The exit is recorded as a `close` row linked to its entry via `parent_order_id`; a partial
 unique index allows only one live exit per position, and `contract_sweeper` reconciles the

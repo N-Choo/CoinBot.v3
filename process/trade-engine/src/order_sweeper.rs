@@ -20,8 +20,29 @@ use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
-/// How often the sweeper polls, in seconds.
-const POLL_SECS: u64 = 8;
+///  Sweep the orders pause time, in seconds.
+const POLL_SECS: u64 = 12;
+
+/// Backoff applied after KuCoin answers `429 Too Many Requests`, in seconds.
+const BASE_BACKOFF_SECS: u64 = 30;
+
+/// Upper bound for the 429 backoff, in seconds.
+const MAX_BACKOFF_SECS: u64 = 300;
+
+/// Error from a sweep pass; distinguishes throttling so the loop can back off.
+enum SweepError {
+    /// KuCoin answered 429: stop sweeping and wait before retrying so we don't
+    /// keep hammering a limit we're already exceeding.
+    RateLimited,
+    /// Any other failure.
+    Other(String),
+}
+
+impl From<String> for SweepError {
+    fn from(e: String) -> Self {
+        SweepError::Other(e)
+    }
+}
 
 /// Which protective level a position hit.
 #[derive(Debug, PartialEq, Eq)]
@@ -41,17 +62,30 @@ impl ExitReason {
 }
 
 /// Poll open positions forever and exit any whose TP or SL has been reached.
+///
+/// On a 429 the interval is stretched with exponential backoff (reset as soon as
+/// a sweep succeeds) instead of retrying on the normal cadence.
 pub async fn run_order_sweeper(pool: Pool<Postgres>, kcc: KuCoinClient) {
+    let mut backoff = 0u64;
     loop {
-        if let Err(e) = sweep_once(&pool, &kcc).await {
-            error!("[ORDER-SWEEP] {e}");
+        match sweep_once(&pool, &kcc).await {
+            Ok(()) => backoff = 0,
+            Err(SweepError::RateLimited) => {
+                backoff = if backoff == 0 {
+                    BASE_BACKOFF_SECS
+                } else {
+                    (backoff * 2).min(MAX_BACKOFF_SECS)
+                };
+                warn!("[ORDER-SWEEP] rate limited by KuCoin; backing off {backoff}s");
+            }
+            Err(SweepError::Other(e)) => error!("[ORDER-SWEEP] {e}"),
         }
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(POLL_SECS.max(backoff))).await;
     }
 }
 
 /// Run a single sweep pass.
-async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), String> {
+async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), SweepError> {
     let positions = TradeOrders::held_entries(pool)
         .await
         .map_err(|e| format!("held-entries query failed: {e}"))?;
@@ -59,7 +93,11 @@ async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), Str
         return Ok(());
     }
 
-    let prices = fetch_last_prices(kcc).await?;
+    let mut symbols: Vec<String> = positions.iter().map(|e| spot_symbol(&e.ticker)).collect();
+    symbols.sort();
+    symbols.dedup();
+
+    let prices = fetch_last_prices(kcc, &symbols).await?;
 
     for entry in positions {
         let (Some(tp), Some(sl)) = (entry.tp_price, entry.sl_price) else {
@@ -114,25 +152,37 @@ fn spot_symbol(ticker: &str) -> String {
     ticker.replace('/', "-")
 }
 
-/// Fetch `symbol -> last price` for every KuCoin market in one request.
-async fn fetch_last_prices(kcc: &KuCoinClient) -> Result<HashMap<String, Decimal>, String> {
-    let res = kcc
-        .send::<KuCoinResponse<AllTickers>>("GET", "", "/api/v1/market/allTickers")
-        .await
-        .map_err(|e| format!("allTickers request failed: {e}"))?;
+/// Fetch `symbol -> last price` for the given spot symbols.
+///
+/// Uses one light `GET /api/v1/market/orderbook/level1` request per held symbol
+/// (weight 1) instead of the heavy `allTickers` endpoint, so we only pay for the
+/// symbols actually held and avoid tripping KuCoin's per-IP rate limit.
+async fn fetch_last_prices(
+    kcc: &KuCoinClient,
+    symbols: &[String],
+) -> Result<HashMap<String, Decimal>, SweepError> {
+    let mut prices = HashMap::with_capacity(symbols.len());
+    for symbol in symbols {
+        let endpoint = format!("/api/v1/market/orderbook/level1?symbol={symbol}");
+        let res = kcc
+            .send::<KuCoinResponse<Level1>>("GET", "", &endpoint)
+            .await
+            .map_err(|e| {
+                if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
+                    SweepError::RateLimited
+                } else {
+                    SweepError::Other(format!("level1 request failed for {symbol}: {e}"))
+                }
+            })?;
 
-    let data = res
-        .data
-        .ok_or_else(|| "allTickers returned no data".to_string())?;
-
-    Ok(data
-        .ticker
-        .into_iter()
-        .filter_map(|t| {
-            let last = t.last.and_then(|l| Decimal::from_str(&l).ok())?;
-            Some((t.symbol, last))
-        })
-        .collect())
+        let Some(data) = res.data else {
+            continue;
+        };
+        if let Ok(last) = Decimal::from_str(&data.price) {
+            prices.insert(symbol.clone(), last);
+        }
+    }
+    Ok(prices)
 }
 
 /// Place a market exit for `entry` and record it as a linked `close` order.
@@ -209,24 +259,16 @@ async fn exit_position(
     Ok(())
 }
 
-/// `/api/v1/market/allTickers` payload.
+/// `/api/v1/market/orderbook/level1` payload; only `price` (last) is needed.
 #[derive(Debug, Deserialize)]
-struct AllTickers {
-    ticker: Vec<Ticker>,
-}
-
-/// One entry of the `allTickers` list; only `symbol` and `last` are needed.
-#[derive(Debug, Deserialize)]
-struct Ticker {
-    symbol: String,
-    last: Option<String>,
+struct Level1 {
+    price: String,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use rust_decimal::Decimal;
-    use std::collections::HashMap;
     use std::str::FromStr;
 
     fn dec(s: &str) -> Decimal {
@@ -277,31 +319,22 @@ mod tests {
     }
 
     #[test]
-    fn parses_all_tickers_last_prices() {
+    fn parses_level1_last_price() {
         let json = r#"{
             "code": "200000",
             "data": {
-                "time": 1700000000000,
-                "ticker": [
-                    { "symbol": "BTC-USDT", "last": "83600.5" },
-                    { "symbol": "SOL-USDT", "last": "112.15" },
-                    { "symbol": "BAD-USDT", "last": null }
-                ]
+                "sequence": "1",
+                "price": "83600.5",
+                "size": "0.1",
+                "bestAsk": "83601",
+                "bestAskSize": "0.5",
+                "bestBid": "83600",
+                "bestBidSize": "0.4",
+                "time": 1700000000000
             }
         }"#;
-        let res: KuCoinResponse<AllTickers> = serde_json::from_str(json).unwrap();
+        let res: KuCoinResponse<Level1> = serde_json::from_str(json).unwrap();
         let data = res.data.unwrap();
-        assert_eq!(data.ticker.len(), 3);
-        let parsed: HashMap<String, Decimal> = data
-            .ticker
-            .into_iter()
-            .filter_map(|t| {
-                let last = t.last.and_then(|l| Decimal::from_str(&l).ok())?;
-                Some((t.symbol, last))
-            })
-            .collect();
-        assert_eq!(parsed.get("BTC-USDT"), Some(&dec("83600.5")));
-        assert_eq!(parsed.get("SOL-USDT"), Some(&dec("112.15")));
-        assert!(!parsed.contains_key("BAD-USDT"));
+        assert_eq!(dec(&data.price), dec("83600.5"));
     }
 }
