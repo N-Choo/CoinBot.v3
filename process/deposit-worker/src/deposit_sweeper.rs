@@ -152,7 +152,7 @@ async fn sweep_transfer(pool: &PgPool, kcc: &KuCoinClient, deposit: &Deposit, am
         "USDT",
         amount_value,
         AccountType::Main,
-        AccountType::Trade,
+        AccountType::MarginV2,
         TransferType::Internal,
     );
     request.client_oid = deposit.id.simple().to_string();
