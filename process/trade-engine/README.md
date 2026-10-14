@@ -90,9 +90,13 @@ Settlement is **action-aware**:
 
 - **cancel** (finished, no fill) → `release_fund` returns the reserved funds, but only for
   an `open` **entry** (a cancelled exit reserved nothing).
-- **fill** → `fill_price = deal_funds / deal_size` (VWAP). `add_fund(deal_funds)` credits
-  proceeds **only for a `close` exit** — a filled entry's fund already became the held
-  asset, so crediting it back would inflate the ledger.
+- **fill** → `fill_price = deal_funds / deal_size` (VWAP). The exit credit is
+  **direction-aware** and applied **only for a `close`**: a **long** (entry side `buy`) is
+  credited its sale proceeds `deal_funds` (`C`), while a **short** (entry side `sell`) is
+  credited its committed capital plus short P&L, `2E − C` where `E` is the entry notional
+  (the committed capital already reserved via `consume_fund`). A negative credit is floored
+  at 0. A filled entry itself credits nothing — its fund already became the held asset, so
+  crediting it back would inflate the ledger.
 - Amounts are parsed as `Decimal`; a malformed field aborts the settle (retried), and a
   status precondition (`open`) makes settlement idempotent.
 
@@ -113,7 +117,7 @@ the normal cadence.
 
 The exit is recorded as a `close` row linked to its entry via `parent_order_id`; a partial
 unique index allows only one live exit per position, and `contract_sweeper` reconciles the
-fill (crediting proceeds).
+fill (crediting direction-aware proceeds).
 
 ## Fund accounting
 
@@ -124,7 +128,7 @@ move as orders run:
 | ------------------------- | --------------------------------------------------------------------- |
 | entry open (on placement) | `available_fund −= trade_fund`, `total_traded_fund += trade_fund`     |
 | entry fill                | no credit — the consumed fund became the held asset; `fill_price` set |
-| exit (close) fill         | `available_fund += deal_funds` (proceeds returned); `fill_price` set  |
+| exit (close) fill         | `available_fund += credit` — long: proceeds `C`; short: `2E − C` (floored 0) |
 | cancel (entry)            | `available_fund += funds`, `total_traded_fund −= funds`               |
 
 So a rounded-trip leaves `available_fund ≈ init_fund ± PnL`, and `total_traded_fund` is

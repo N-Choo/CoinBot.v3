@@ -40,7 +40,7 @@ ALLOW_PYRAMIDING=false
 
 1. **Trade engine** loads active contracts from the DB
 2. Publishes ticker list to Redis `tickers:analyze`
-3. **Analyzer** fetches daily klines, computes RSI divergences
+3. **Analyzer** fetches daily klines (KuCoin's shared spot/margin candles — margin exposes no separate price feed), computes RSI divergences
 4. Applies SMA trend filter (buy only above, sell only below)
 5. Sizes SL/TP via ATR with volatility scaling and max-loss cap
 6. Publishes the single most recent signal to `signals:result`

@@ -1,14 +1,14 @@
-//! Trade execution: turn a verified signal into a KuCoin spot order and record it.
+//! Trade execution: turn a verified signal into a KuCoin margin order and record it.
 
 use kucoin::{
     client::rest::KuCoinClient,
-    types::KuCoinResponse,
-    types::spot::{Side, SpotOrderRequest, TradeType},
+    types::margin::MarginOrderRequest,
+    types::market::SymbolInfo,
+    types::spot::{Side, TradeType},
 };
 use log::{info, warn};
 use rust_decimal::Decimal;
 use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
-use serde::Deserialize;
 use share::{
     ProcessError,
     db::contracts::{Contract, Contracts},
@@ -18,7 +18,37 @@ use share::{
 use sqlx::PgPool;
 use uuid::Uuid;
 
-/// Execute a verified signal for a contract in KuCoin **spot**.
+/// Whether a margin order opens a new position or closes an existing one.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OrderIntent {
+    Open,
+    Close,
+}
+
+/// Build a cross-margin market order.
+///
+/// `size` is the base-asset quantity. Only short positions borrow/repay: a
+/// short entry (`sell`) borrows the base asset (and is set to repay); a short
+/// close (`buy`) repays it. Long orders never borrow or repay.
+pub fn margin_market_order(
+    ticker: &str,
+    side: Side,
+    size: String,
+    client_oid: &str,
+    intent: OrderIntent,
+) -> MarginOrderRequest {
+    let short_open = intent == OrderIntent::Open && side == Side::Sell;
+    let short_close = intent == OrderIntent::Close && side == Side::Buy;
+
+    let mut request = MarginOrderRequest::new(TradeType::Market, ticker, side);
+    request.size = Some(size);
+    request.client_oid = client_oid.to_string();
+    request.auto_borrow = Some(short_open);
+    request.auto_repay = Some(short_open || short_close);
+    request
+}
+
+/// Execute a verified signal for a contract in KuCoin **margin**.
 pub async fn execute(
     kcc: &KuCoinClient,
     pool: &PgPool,
@@ -37,11 +67,10 @@ pub async fn execute(
     let budget = order_budget(c.init_fund);
     let budget_f = budget.to_f64().unwrap_or(0.0);
 
-    // KuCoin spot symbol ("BTC/USDT" -> "BTC-USDT"); the remark is capped at 20 chars.
+    // KuCoin symbol ("BTC/USDT" -> "BTC-USDT").
     let ticker = c.ticker.replace('/', "-");
     // One unique client order id per attempt; the contract link is `contract_id`.
     let comment = Uuid::new_v4().to_string();
-    let remark: String = c.id.to_string().chars().take(20).collect();
 
     // Size must respect the pair's increment/min-size rules, or KuCoin rejects it.
     let info = fetch_symbol_info(kcc, &ticker).await?;
@@ -90,11 +119,10 @@ pub async fn execute(
         order
     };
 
-    let mut request = SpotOrderRequest::new(TradeType::Market, &ticker, side).set_remark(&remark);
-    request.size = Some(quantity.clone());
-    request.client_oid = Some(comment.clone());
+    // Signal entries always open a position.
+    let request = margin_market_order(&ticker, side, quantity.clone(), &comment, OrderIntent::Open);
 
-    let res = match kcc.spot().place_order(request).await {
+    let res = match kcc.margin().place_order(request).await {
         Ok(r) => r,
         Err(e) => {
             // Ambiguous transport error: the exchange may have accepted the
@@ -157,27 +185,12 @@ fn order_side(action: &str) -> Option<(Side, &'static str)> {
     }
 }
 
-/// Minimal KuCoin symbol metadata needed to size a market order.
-#[derive(Debug, Clone, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct SymbolInfo {
-    /// Trading pair, e.g. `BTC-USDT`.
-    symbol: String,
-    /// Minimum size step for the base asset, as a decimal string.
-    base_increment: String,
-    /// Minimum order size for the base asset, as a decimal string.
-    base_min_size: String,
-}
-
 /// Fetch `symbol`'s increment metadata from KuCoin's `/api/v1/symbols`.
 async fn fetch_symbol_info(kcc: &KuCoinClient, symbol: &str) -> Result<SymbolInfo, ProcessError> {
-    let res = kcc
-        .send::<KuCoinResponse<Vec<SymbolInfo>>>("GET", "", "/api/v1/symbols")
+    kcc.market()
+        .get_symbol(symbol)
         .await
-        .map_err(|e| ProcessError::Network(format!("symbols fetch failed: {e}")))?;
-
-    res.data
-        .and_then(|symbols| symbols.into_iter().find(|s| s.symbol == symbol))
+        .map_err(|e| ProcessError::Network(format!("symbols fetch failed: {e}")))?
         .ok_or_else(|| ProcessError::Internal(format!("symbol {symbol} not found")))
 }
 
@@ -281,6 +294,64 @@ mod tests {
         assert_eq!(compute_quantity(10.0, -1.0, "0.1", "0.1"), None);
         assert_eq!(compute_quantity(10.0, 100.0, "not-a-number", "0.1"), None);
         assert_eq!(compute_quantity(10.0, 100.0, "0", "0.1"), None);
+    }
+
+    #[test]
+    fn short_open_borrows_and_repays() {
+        let req = margin_market_order(
+            "XRP-USDT",
+            Side::Sell,
+            "15.9".to_string(),
+            "cid-1",
+            OrderIntent::Open,
+        );
+        assert_eq!(req.symbol, "XRP-USDT");
+        assert_eq!(req.client_oid, "cid-1");
+        assert_eq!(req.size.as_deref(), Some("15.9"));
+        assert_eq!(req.side, Side::Sell);
+        assert!(matches!(req.order_type, TradeType::Market));
+        assert_eq!(req.auto_borrow, Some(true));
+        assert_eq!(req.auto_repay, Some(true));
+    }
+
+    #[test]
+    fn long_open_does_not_borrow_or_repay() {
+        let req = margin_market_order(
+            "XRP-USDT",
+            Side::Buy,
+            "10".to_string(),
+            "cid-2",
+            OrderIntent::Open,
+        );
+        assert_eq!(req.side, Side::Buy);
+        assert_eq!(req.auto_borrow, Some(false));
+        assert_eq!(req.auto_repay, Some(false));
+    }
+
+    #[test]
+    fn short_close_repays_but_does_not_borrow() {
+        let req = margin_market_order(
+            "XRP-USDT",
+            Side::Buy,
+            "10".to_string(),
+            "cid-3",
+            OrderIntent::Close,
+        );
+        assert_eq!(req.auto_borrow, Some(false));
+        assert_eq!(req.auto_repay, Some(true));
+    }
+
+    #[test]
+    fn long_close_does_not_borrow_or_repay() {
+        let req = margin_market_order(
+            "XRP-USDT",
+            Side::Sell,
+            "10".to_string(),
+            "cid-4",
+            OrderIntent::Close,
+        );
+        assert_eq!(req.auto_borrow, Some(false));
+        assert_eq!(req.auto_repay, Some(false));
     }
 
     #[test]

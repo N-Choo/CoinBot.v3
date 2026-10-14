@@ -3,9 +3,8 @@
 
 use chrono::{Duration, Utc};
 use kucoin::client::rest::KuCoinClient;
-use kucoin::types::KuCoinResponse;
+use kucoin::types::margin::{MarginOrderId, MarginOrderStatus};
 use rust_decimal::Decimal;
-use serde::Deserialize;
 use share::ProcessError;
 use share::db::contracts::Contracts;
 use share::db::trade::{TradeOrder, TradeOrderFilter, TradeOrders};
@@ -39,7 +38,7 @@ async fn reconcile_pending(db: &Pool<Postgres>, kcc: &KuCoinClient) {
     };
 
     for o in pending {
-        let symbol = spot_symbol(&o.ticker);
+        let symbol = margin_symbol(&o.ticker);
         match fetch_by_client_oid(kcc, &o.comment, &symbol).await {
             Ok(Some(data)) => {
                 if let Err(e) = place_pending(db, o.id, &data.id).await {
@@ -127,7 +126,7 @@ async fn settle_open_orders(db: &Pool<Postgres>, kcc: &KuCoinClient) {
         let Some(order_id) = o.exchange_order_id.as_deref() else {
             continue;
         };
-        let symbol = spot_symbol(&o.ticker);
+        let symbol = margin_symbol(&o.ticker);
 
         match fetch_order(kcc, order_id, &symbol).await {
             Ok(Some(data)) => match classify_order(data.active, &data.deal_size) {
@@ -172,9 +171,26 @@ async fn settle_cancelled(db: &Pool<Postgres>, o: &TradeOrder) {
     }
 }
 
+/// Credit returned to a contract when a close order fills.
+///
+/// A long committed `entry_funds` (`E`) to buy the asset, so closing returns the
+/// sale proceeds (`deal_funds`, `C`). A short committed `E` as collateral and
+/// profited by `E - C`, so closing returns `E + (E - C) = 2*E - C`.
+fn close_credit(entry_side: &str, entry_funds: Decimal, deal_funds: Decimal) -> Decimal {
+    match entry_side {
+        "sell" => Decimal::TWO * entry_funds - deal_funds,
+        _ => deal_funds,
+    }
+}
+
 /// Settle a filled order. Amounts are parsed strictly; a malformed field aborts
 /// the settle (retried next cycle) rather than committing a bogus 0 credit.
-async fn settle_filled(db: &Pool<Postgres>, o: &TradeOrder, symbol: &str, data: &OrderStatus) {
+async fn settle_filled(
+    db: &Pool<Postgres>,
+    o: &TradeOrder,
+    symbol: &str,
+    data: &MarginOrderStatus,
+) {
     let (Ok(deal_size), Ok(deal_funds), Ok(fee)) = (
         data.deal_size.parse::<Decimal>(),
         data.deal_funds.parse::<Decimal>(),
@@ -189,6 +205,29 @@ async fn settle_filled(db: &Pool<Postgres>, o: &TradeOrder, symbol: &str, data: 
         deal_funds / deal_size
     };
 
+    // Compute the exit credit before opening the transaction, so the parent
+    // lookup does not borrow a second pool connection while the tx holds one.
+    let credit = if o.action == "close" {
+        match o.parent_order_id {
+            Some(pid) => match TradeOrders::find(db, pid).await {
+                Ok(entry) => close_credit(&entry.side, entry.funds, deal_funds),
+                Err(e) => {
+                    log::error!("[SWEEP] parent lookup failed for close {}: {e}", o.id);
+                    return; // retry next cycle
+                }
+            },
+            None => deal_funds,
+        }
+    } else {
+        Decimal::ZERO
+    };
+    if credit < Decimal::ZERO {
+        log::warn!(
+            "[SWEEP] close {} credit {credit} < 0 (loss exceeds committed capital); crediting 0",
+            o.id
+        );
+    }
+
     let mut tx = match db.begin().await {
         Ok(t) => t,
         Err(e) => {
@@ -200,10 +239,9 @@ async fn settle_filled(db: &Pool<Postgres>, o: &TradeOrder, symbol: &str, data: 
         log::error!("[SWEEP] mark_filled failed for order {}: {e}", o.id);
         return;
     }
-    // Only an exit returns cash: a filled entry converted its already-consumed
-    // fund into the held asset, so crediting it back would inflate the ledger.
+    // Only an exit returns cash.
     if o.action == "close"
-        && let Err(e) = Contracts::add_fund(&mut tx, o.contract_id, deal_funds).await
+        && let Err(e) = Contracts::add_fund(&mut tx, o.contract_id, credit.max(Decimal::ZERO)).await
     {
         log::error!(
             "[SWEEP] add_fund failed for contract {}: {e}",
@@ -222,37 +260,15 @@ async fn settle_filled(db: &Pool<Postgres>, o: &TradeOrder, symbol: &str, data: 
     );
 }
 
-/// Subset of a KuCoin order status needed for reconciliation.
-///
-/// Deliberately lenient: only `active` is required; the rest default, so a
-/// `null` in any other response field cannot fail decoding.
-#[derive(Debug, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct OrderStatus {
-    active: bool,
-    #[serde(default)]
-    deal_size: String,
-    #[serde(default)]
-    deal_funds: String,
-    #[serde(default)]
-    fee: String,
-}
-
-/// Minimal clientOid lookup response.
-#[derive(Debug, Deserialize)]
-struct ClientOrder {
-    id: String,
-}
-
-/// Fetch an order by its exchange id, ignoring unrelated (often `null`) fields.
+/// Fetch an order by its exchange id via the margin HF endpoint.
 async fn fetch_order(
     kcc: &KuCoinClient,
     order_id: &str,
     symbol: &str,
-) -> Result<Option<OrderStatus>, ProcessError> {
-    let endpoint = format!("/api/v1/hf/orders/{order_id}?symbol={symbol}");
+) -> Result<Option<MarginOrderStatus>, ProcessError> {
     let res = kcc
-        .send::<KuCoinResponse<OrderStatus>>("GET", "", &endpoint)
+        .margin()
+        .get_order(order_id, symbol)
         .await
         .map_err(|e| ProcessError::Network(format!("get_order failed: {e}")))?;
     Ok(res.data)
@@ -260,27 +276,28 @@ async fn fetch_order(
 
 /// Fetch an order by the clientOid we assigned (`comment`). A 404 means the
 /// order was never placed, which we surface as `Ok(None)` (not an error) so the
-/// short grace window applies.
+/// short grace window applies. KuCoin returns this for a missing margin order
+/// (`code:126043`, HTTP 404).
 async fn fetch_by_client_oid(
     kcc: &KuCoinClient,
     client_oid: &str,
     symbol: &str,
-) -> Result<Option<ClientOrder>, ProcessError> {
-    let endpoint = format!("/api/v1/hf/orders/client-order/{client_oid}?symbol={symbol}");
+) -> Result<Option<MarginOrderId>, ProcessError> {
     match kcc
-        .send::<KuCoinResponse<ClientOrder>>("GET", "", &endpoint)
+        .margin()
+        .get_order_by_client_oid(client_oid, symbol)
         .await
     {
         Ok(res) => Ok(res.data),
-        Err(e) if e.status() == Some(reqwest::StatusCode::NOT_FOUND) => Ok(None),
+        Err(e) if e.is_not_found() => Ok(None),
         Err(e) => Err(ProcessError::Network(format!(
             "client-order lookup failed: {e}"
         ))),
     }
 }
 
-/// KuCoin spot symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
-fn spot_symbol(ticker: &str) -> String {
+/// KuCoin margin symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
+fn margin_symbol(ticker: &str) -> String {
     ticker.replace('/', "-")
 }
 
@@ -313,39 +330,35 @@ fn classify_order(active: bool, deal_size: &str) -> OrderOutcome {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use rust_decimal::Decimal;
+    use std::str::FromStr;
 
-    #[test]
-    fn builds_spot_symbol() {
-        assert_eq!(spot_symbol("BTC/USDT"), "BTC-USDT");
-        assert_eq!(spot_symbol("BTC-USDT"), "BTC-USDT");
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
     }
 
     #[test]
-    fn tolerates_null_unrelated_fields() {
-        let json = r#"{
-            "active": false,
-            "dealSize": "0.072",
-            "dealFunds": "7.95",
-            "fee": "0.008",
-            "visibleSize": null,
-            "tax": null,
-            "channel": null,
-            "clientOid": null
-        }"#;
-        let status: OrderStatus = serde_json::from_str(json).expect("lenient decode");
-        assert!(!status.active);
-        assert_eq!(status.deal_size, "0.072");
-        assert_eq!(status.deal_funds, "7.95");
-        assert_eq!(status.fee, "0.008");
+    fn close_credit_is_proceeds_for_a_long() {
+        assert_eq!(close_credit("buy", dec("100"), dec("120")), dec("120"));
+        assert_eq!(close_credit("buy", dec("100"), dec("80")), dec("80"));
     }
 
     #[test]
-    fn defaults_missing_reconcile_fields() {
-        let status: OrderStatus = serde_json::from_str(r#"{"active": true}"#).unwrap();
-        assert!(status.active);
-        assert_eq!(status.deal_size, "");
-        assert_eq!(status.deal_funds, "");
-        assert_eq!(status.fee, "");
+    fn close_credit_is_collateral_plus_short_pnl() {
+        assert_eq!(close_credit("sell", dec("100"), dec("80")), dec("120"));
+        assert_eq!(close_credit("sell", dec("100"), dec("120")), dec("80"));
+    }
+
+    #[test]
+    fn close_credit_can_go_negative_when_a_short_loses_more_than_capital() {
+        // Short: commit 100, cover for 250 -> 2*100 - 250 = -50 (floor to 0 at call site).
+        assert_eq!(close_credit("sell", dec("100"), dec("250")), dec("-50"));
+    }
+
+    #[test]
+    fn builds_margin_symbol() {
+        assert_eq!(margin_symbol("BTC/USDT"), "BTC-USDT");
+        assert_eq!(margin_symbol("BTC-USDT"), "BTC-USDT");
     }
 
     #[test]

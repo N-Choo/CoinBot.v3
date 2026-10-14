@@ -88,6 +88,14 @@ impl TradeOrders {
         .await
     }
 
+    /// Fetch a single order by id.
+    pub async fn find(pool: &PgPool, id: Uuid) -> Result<TradeOrder, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>("SELECT * FROM trade_orders WHERE id = $1")
+            .bind(id)
+            .fetch_one(pool)
+            .await
+    }
+
     /// Load entry orders that are still open positions: filled entries with no
     /// live close (exit) order against them.
     ///

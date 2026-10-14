@@ -11,11 +11,9 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use kucoin::client::rest::KuCoinClient;
-use kucoin::types::KuCoinResponse;
-use kucoin::types::spot::{Side, SpotOrderRequest, TradeType};
+use kucoin::types::spot::Side;
 use log::{error, info, warn};
 use rust_decimal::Decimal;
-use serde::Deserialize;
 use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
@@ -93,7 +91,7 @@ async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), Swe
         return Ok(());
     }
 
-    let mut symbols: Vec<String> = positions.iter().map(|e| spot_symbol(&e.ticker)).collect();
+    let mut symbols: Vec<String> = positions.iter().map(|e| margin_symbol(&e.ticker)).collect();
     symbols.sort();
     symbols.dedup();
 
@@ -103,7 +101,7 @@ async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), Swe
         let (Some(tp), Some(sl)) = (entry.tp_price, entry.sl_price) else {
             continue;
         };
-        let symbol = spot_symbol(&entry.ticker);
+        let symbol = margin_symbol(&entry.ticker);
         let Some(&last) = prices.get(&symbol) else {
             warn!("[ORDER-SWEEP] no price for {}", entry.ticker);
             continue;
@@ -147,33 +145,32 @@ fn evaluate_exit(side: &str, last: Decimal, tp: Decimal, sl: Decimal) -> Option<
     }
 }
 
-/// KuCoin spot symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
-fn spot_symbol(ticker: &str) -> String {
+/// KuCoin margin symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
+fn margin_symbol(ticker: &str) -> String {
     ticker.replace('/', "-")
 }
 
-/// Fetch `symbol -> last price` for the given spot symbols.
+/// Fetch `symbol -> last price` for the given margin symbols.
 ///
-/// Uses one light `GET /api/v1/market/orderbook/level1` request per held symbol
-/// (weight 1) instead of the heavy `allTickers` endpoint, so we only pay for the
-/// symbols actually held and avoid tripping KuCoin's per-IP rate limit.
+/// KuCoin margin has no last-price endpoint of its own (its mark-price feed is
+/// BTC-denominated and BTC-pairs only) — margin trades on the same order book as
+/// spot, so this uses the shared market-data endpoint. One light
+/// `GET /api/v1/market/orderbook/level1` request per held symbol (weight 1)
+/// instead of the heavy `allTickers` endpoint, so we only pay for the symbols
+/// actually held and avoid tripping KuCoin's per-IP rate limit.
 async fn fetch_last_prices(
     kcc: &KuCoinClient,
     symbols: &[String],
 ) -> Result<HashMap<String, Decimal>, SweepError> {
     let mut prices = HashMap::with_capacity(symbols.len());
     for symbol in symbols {
-        let endpoint = format!("/api/v1/market/orderbook/level1?symbol={symbol}");
-        let res = kcc
-            .send::<KuCoinResponse<Level1>>("GET", "", &endpoint)
-            .await
-            .map_err(|e| {
-                if e.status() == Some(reqwest::StatusCode::TOO_MANY_REQUESTS) {
-                    SweepError::RateLimited
-                } else {
-                    SweepError::Other(format!("level1 request failed for {symbol}: {e}"))
-                }
-            })?;
+        let res = kcc.market().get_last_price(symbol).await.map_err(|e| {
+            if e.is_rate_limited() {
+                SweepError::RateLimited
+            } else {
+                SweepError::Other(format!("level1 request failed for {symbol}: {e}"))
+            }
+        })?;
 
         let Some(data) = res.data else {
             continue;
@@ -199,7 +196,7 @@ async fn exit_position(
         other => return Err(format!("unknown entry side '{other}'")),
     };
 
-    let symbol = spot_symbol(&entry.ticker);
+    let symbol = margin_symbol(&entry.ticker);
     let comment = Uuid::new_v4().to_string();
 
     // Reserve the exit first so a crash or retry cannot place a second one.
@@ -218,11 +215,15 @@ async fn exit_position(
         return Ok(());
     };
 
-    let mut request = SpotOrderRequest::new(TradeType::Market, &symbol, exit_side);
-    request.size = Some(entry.filled_qty.to_string());
-    request.client_oid = Some(comment.clone());
+    let request = crate::trader::margin_market_order(
+        &symbol,
+        exit_side,
+        entry.filled_qty.to_string(),
+        &comment,
+        crate::trader::OrderIntent::Close,
+    );
 
-    let res = match kcc.spot().place_order(request).await {
+    let res = match kcc.margin().place_order(request).await {
         Ok(r) => r,
         Err(e) => {
             // Ambiguous: the exchange may have accepted the order. Leave the
@@ -259,12 +260,6 @@ async fn exit_position(
     Ok(())
 }
 
-/// `/api/v1/market/orderbook/level1` payload; only `price` (last) is needed.
-#[derive(Debug, Deserialize)]
-struct Level1 {
-    price: String,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,9 +271,9 @@ mod tests {
     }
 
     #[test]
-    fn builds_spot_symbol() {
-        assert_eq!(spot_symbol("BTC/USDT"), "BTC-USDT");
-        assert_eq!(spot_symbol("BTC-USDT"), "BTC-USDT");
+    fn builds_margin_symbol() {
+        assert_eq!(margin_symbol("BTC/USDT"), "BTC-USDT");
+        assert_eq!(margin_symbol("BTC-USDT"), "BTC-USDT");
     }
 
     #[test]
@@ -316,25 +311,5 @@ mod tests {
     #[test]
     fn unknown_side_never_exits() {
         assert_eq!(evaluate_exit("hold", dec("999"), dec("1"), dec("2")), None);
-    }
-
-    #[test]
-    fn parses_level1_last_price() {
-        let json = r#"{
-            "code": "200000",
-            "data": {
-                "sequence": "1",
-                "price": "83600.5",
-                "size": "0.1",
-                "bestAsk": "83601",
-                "bestAskSize": "0.5",
-                "bestBid": "83600",
-                "bestBidSize": "0.4",
-                "time": 1700000000000
-            }
-        }"#;
-        let res: KuCoinResponse<Level1> = serde_json::from_str(json).unwrap();
-        let data = res.data.unwrap();
-        assert_eq!(dec(&data.price), dec("83600.5"));
     }
 }

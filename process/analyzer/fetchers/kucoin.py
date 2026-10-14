@@ -44,8 +44,12 @@ def fetch_klines(
 ) -> pd.DataFrame:
     """Fetch OHLCV klines from KuCoin REST API.
 
+    These candles are the shared spot/margin market data: KuCoin margin trades
+    on the same order book as spot and exposes no separate margin kline feed, so
+    the positions we open in margin are analyzed from this feed.
+
     Args:
-        symbol: e.g. "BTC-USDT"
+        symbol: KuCoin margin pair, e.g. "BTC-USDT"
         timeframe: "1min", "3min", "5min", "15min", "30min", "1hour",
                    "2hour", "4hour", "6hour", "8hour", "12hour",
                    "1day", "1week"

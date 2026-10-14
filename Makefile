@@ -60,7 +60,7 @@ fmt-fix:
 	cargo fmt $(addprefix -p ,$(PACKAGES))
 
 clippy:
-	cargo clippy $(addprefix -p ,$(PACKAGES)) -- -D warnings
+	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
 
 test:
 	@[ -f .env ] || cp .env.ci .env; \
