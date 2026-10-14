@@ -3,9 +3,11 @@ resolver = "2"
 members = [
     "process/api_gateway",
     "lib/share",
-    "lib/kucoin",
     "process/deposit-worker", "process/trade-engine",
 ]
+# The forked kucoin crate lives here as its own repo/workspace; keep cargo from
+# treating it as a member of this workspace.
+exclude = ["lib/kucoin"]
 
 [workspace.dependencies]
 actix-web = "4.13.0"
@@ -19,7 +21,7 @@ moka = { version = "0.12.15", features = ["future"] }
 sqlx = { version = "0.8.6", features = ["postgres", "runtime-tokio-native-tls", "uuid", "bigdecimal", "rust_decimal", "chrono", "runtime-tokio", "tls-native-tls", "macros"] }
 ethers = "2.0.14"
 thiserror = "2.0.18"
-kucoin = { path = "lib/kucoin" }
+kucoin = "0.8.1"
 dotenvy = "0.15.7"
 actix-cors = "0.7.1"
 rand = "0.10.1"

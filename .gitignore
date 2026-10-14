@@ -1,4 +1,5 @@
 docs/*
+kucoin/
 .env
 *.log
 .opencode/
