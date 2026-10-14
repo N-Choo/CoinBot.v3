@@ -3,8 +3,8 @@
 //! Polls the exchange for last prices, compares them against each held
 //! position's stored take-profit / stop-loss, and places a market exit order on
 //! the opposite side when one is reached. The exit is recorded as a `close`
-//! row linked to its entry via `parent_order_id`, which the contract sweeper
-//! then reconciles (mark filled + credit proceeds).
+//! row linked to its entry via `parent_order_id`, which the reconciler then
+//! settles (mark filled + credit realized PnL).
 
 use std::collections::HashMap;
 use std::str::FromStr;
@@ -17,6 +17,8 @@ use rust_decimal::Decimal;
 use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
+
+use crate::symbol::margin_symbol;
 
 ///  Sweep the orders pause time, in seconds.
 const POLL_SECS: u64 = 12;
@@ -145,11 +147,6 @@ fn evaluate_exit(side: &str, last: Decimal, tp: Decimal, sl: Decimal) -> Option<
     }
 }
 
-/// KuCoin margin symbol: `"BTC/USDT"` -> `"BTC-USDT"`.
-fn margin_symbol(ticker: &str) -> String {
-    ticker.replace('/', "-")
-}
-
 /// Fetch `symbol -> last price` for the given margin symbols.
 ///
 /// KuCoin margin has no last-price endpoint of its own (its mark-price feed is
@@ -268,12 +265,6 @@ mod tests {
 
     fn dec(s: &str) -> Decimal {
         Decimal::from_str(s).unwrap()
-    }
-
-    #[test]
-    fn builds_margin_symbol() {
-        assert_eq!(margin_symbol("BTC/USDT"), "BTC-USDT");
-        assert_eq!(margin_symbol("BTC-USDT"), "BTC-USDT");
     }
 
     #[test]

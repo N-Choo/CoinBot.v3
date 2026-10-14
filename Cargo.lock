@@ -2776,8 +2776,6 @@ checksum = "a4933f3f57a8e9d9da04db23fb153356ecaf00cbd14aee46279c33dc80925c37"
 [[package]]
 name = "kucoin"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0e573a1420a5311aad4ed15fcf32e15cf3a84f1cc979da98b5061172c64ad79b"
 dependencies = [
  "base64 0.22.1",
  "ethers",

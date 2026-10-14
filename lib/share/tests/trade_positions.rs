@@ -91,6 +91,8 @@ async fn held_entries_tracks_open_positions() {
         Decimal::from(1),
         Decimal::from(100),
         Decimal::ZERO,
+        None,
+        None,
     )
     .await
     .unwrap();

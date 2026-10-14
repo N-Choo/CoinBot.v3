@@ -1,7 +1,7 @@
 # Trade Engine
 
-Rust process that turns **analyzer signals** into real KuCoin spot orders and keeps the
-ledger in sync. It is the bridge between the Python analyzer (which only computes
+Rust process that turns **analyzer signals** into real KuCoin cross-margin orders and keeps
+the ledger in sync. It is the bridge between the Python analyzer (which only computes
 signals) and the exchange, and it **re-verifies every contract before acting**
 (fail-closed).
 
@@ -9,9 +9,9 @@ Four concurrent tasks:
 
 - **Signal generator** — publishes the active tickers to Redis, once every 24h.
 - **Signal subscriber** — consumes `signals:result` and executes per contract.
-- **Contract sweeper** — every 30s, reconciles in-flight orders (by clientOid then by
-  exchange id) and settles contract funds, branching on the order's `action`.
-- **Order sweeper** — every 8s, exits held positions when price reaches their TP or SL.
+- **Reconciler** — every 30s, reconciles in-flight orders (by clientOid then by exchange
+  id) and settles contract funds, branching on the order's `action`.
+- **Order sweeper** — every 12s, exits held positions when price reaches their TP or SL.
 
 ## Connections
 
@@ -55,13 +55,13 @@ For each active contract on the signal's ticker:
 3. Require `available_fund ≥ order_budget(init_fund)` (half the initial fund).
 4. `trader::execute` — budget the order at half of `init_fund`, size `qty = budget / price`
    (floored to the pair's base increment), reserve the fund (`consume_fund`) **before**
-   placing, then place a KuCoin **spot market** order and `mark_placed`. A definite
+       placing, then place a KuCoin **cross-margin market** order and `mark_placed`. A definite
    rejection releases the reservation; an ambiguous transport error leaves the row
    `pending` for the reconciler.
 
-## Reconciliation (sweeper)
+## Reconciliation (`reconciler`)
 
-Every **30s**, `sync_contract_status` runs two passes:
+Every **30s**, `reconciler::run` runs two passes:
 
 1. **Pending** — orders reserved but not yet confirmed placed (no exchange id) are looked
    up by their `clientOid`: found → `mark_placed`; absent past a grace window → `mark_failed`
@@ -90,13 +90,13 @@ Settlement is **action-aware**:
 
 - **cancel** (finished, no fill) → `release_fund` returns the reserved funds, but only for
   an `open` **entry** (a cancelled exit reserved nothing).
-- **fill** → `fill_price = deal_funds / deal_size` (VWAP). The exit credit is
-  **direction-aware** and applied **only for a `close`**: a **long** (entry side `buy`) is
-  credited its sale proceeds `deal_funds` (`C`), while a **short** (entry side `sell`) is
-  credited its committed capital plus short P&L, `2E − C` where `E` is the entry notional
-  (the committed capital already reserved via `consume_fund`). A negative credit is floored
-  at 0. A filled entry itself credits nothing — its fund already became the held asset, so
-  crediting it back would inflate the ledger.
+- **fill** → `fill_price = deal_funds / deal_size` (VWAP). For a `close`, realized PnL is
+  computed from the entry's **actual fill basis** `B = filled_qty × fill_price` and **both**
+  legs' fees (each converted to quote via `fee_currency`): long `C − B − fees`, short
+  `B − C − fees` (`C = deal_funds`). The contract is credited `E + pnl` (where `E` is the
+  entry notional reserved via `consume_fund`), a loss is capped at the committed capital,
+  and `pnl` is persisted on the close row. A filled entry itself credits nothing — its fund
+  already became the held asset, so crediting it back would inflate the ledger.
 - Amounts are parsed as `Decimal`; a malformed field aborts the settle (retried), and a
   status precondition (`open`) makes settlement idempotent.
 
@@ -116,8 +116,8 @@ off exponentially (30s → 300s, reset on the next successful sweep) instead of 
 the normal cadence.
 
 The exit is recorded as a `close` row linked to its entry via `parent_order_id`; a partial
-unique index allows only one live exit per position, and `contract_sweeper` reconciles the
-fill (crediting direction-aware proceeds).
+unique index allows only one live exit per position, and the `reconciler` settles the
+fill (crediting fee-aware realized PnL).
 
 ## Fund accounting
 
@@ -128,7 +128,7 @@ move as orders run:
 | ------------------------- | --------------------------------------------------------------------- |
 | entry open (on placement) | `available_fund −= trade_fund`, `total_traded_fund += trade_fund`     |
 | entry fill                | no credit — the consumed fund became the held asset; `fill_price` set |
-| exit (close) fill         | `available_fund += credit` — long: proceeds `C`; short: `2E − C` (floored 0) |
+| exit (close) fill         | `available_fund += E + pnl` — PnL net of both fees, loss capped at `E` |
 | cancel (entry)            | `available_fund += funds`, `total_traded_fund −= funds`               |
 
 So a rounded-trip leaves `available_fund ≈ init_fund ± PnL`, and `total_traded_fund` is
@@ -153,8 +153,14 @@ src/
   app_config.rs       env config (secrets redacted in Debug)
   app_state.rs        db pool + Redis cache + KuCoin client
   signals.rs          signal_generator (tickers) + signal_handler (verify + execute)
-  trader.rs           execute(): budget, reserve fund, place KuCoin spot order
-  contract_sweeper.rs reconcile pending/open orders; settle contract funds (action-aware)
+  trader.rs           execute(): budget, reserve fund, place KuCoin cross-margin order
+  symbol.rs           margin_symbol() shared symbol formatting
+  reconciler/         reconcile pending/open orders; settle funds + realized PnL
+    mod.rs              entry: run() → pending then settle
+    pending.rs          resolve unknown placements by clientOid
+    settle.rs           mark filled/cancelled; credit/release contract funds
+    pnl.rs              pure fee/PnL math
+    exchange.rs         margin order lookups + outcome classification
   order_sweeper.rs    poll prices; exit held positions on TP/SL
 ```
 

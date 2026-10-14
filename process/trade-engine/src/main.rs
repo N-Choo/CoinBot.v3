@@ -4,9 +4,10 @@ use tokio::signal;
 
 mod app_config;
 mod app_state;
-mod contract_sweeper;
 mod order_sweeper;
+mod reconciler;
 mod signals;
+mod symbol;
 mod trader;
 
 use app_config::AppConfig;
@@ -30,7 +31,7 @@ async fn main() -> Result<(), ProcessError> {
     let kc_client = kcc.clone();
     tokio::spawn(async move {
         loop {
-            contract_sweeper::sync_contract_status(sweeper_db.clone(), kc_client.clone()).await;
+            reconciler::run(sweeper_db.clone(), kc_client.clone()).await;
             tokio::time::sleep(std::time::Duration::from_secs(30)).await;
         }
     });

@@ -36,6 +36,12 @@ pub struct TradeOrder {
     pub fill_price: Option<Decimal>,
     /// Fee paid.
     pub fee: Decimal,
+    /// Currency the fee was charged in (e.g. `USDT`), when the exchange reports it.
+    pub fee_currency: Option<String>,
+    /// Realized PnL of the closed round trip (quote currency), net of fees.
+    ///
+    /// Set on close orders only; entries leave it `NULL`.
+    pub pnl: Option<Decimal>,
     /// Failure reason, when the order failed.
     pub reason: Option<String>,
     /// Take-profit price from the originating signal.
@@ -187,22 +193,30 @@ impl TradeOrders {
     }
 
     /// Mark an order as `filled`, recording its execution details.
+    ///
+    /// `fee_currency` records the currency the fee was charged in (for
+    /// quote conversion); `pnl` is set for close orders only.
     pub async fn mark_filled(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         filled_qty: Decimal,
         fill_price: Decimal,
         fee: Decimal,
+        fee_currency: Option<&str>,
+        pnl: Option<Decimal>,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
-               SET filled_qty = $1, fill_price = $2, fee = $3, status = 'filled', updated_at = NOW()
-               WHERE id = $4 AND status = 'open'
+               SET filled_qty = $1, fill_price = $2, fee = $3,
+                   fee_currency = $4, pnl = $5, status = 'filled', updated_at = NOW()
+               WHERE id = $6 AND status = 'open'
                RETURNING *"#,
         )
         .bind(filled_qty)
         .bind(fill_price)
         .bind(fee)
+        .bind(fee_currency)
+        .bind(pnl)
         .bind(id)
         .fetch_one(&mut **tx)
         .await

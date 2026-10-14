@@ -26,7 +26,7 @@ pub async fn system_stats(pool: &PgPool) -> Result<SystemStats, sqlx::Error> {
 
 /// Per-user balance stats for the dashboard.
 ///
-/// `realized_pnl` is a placeholder (`0`) until PnL tracking exists.
+/// `realized_pnl` is the sum of fee-net PnL over the user's closed orders.
 #[derive(Debug, Clone, sqlx::FromRow, serde::Serialize)]
 pub struct UserStats {
     pub total: Decimal,
@@ -39,11 +39,14 @@ pub struct UserStats {
 pub async fn user_stats(pool: &PgPool, wallet: &str) -> Result<Option<UserStats>, sqlx::Error> {
     sqlx::query_as::<_, UserStats>(
         r#"SELECT
-             (balance + locked_balance) AS total,
-             balance                    AS free,
-             locked_balance             AS locked,
-             0::numeric                 AS realized_pnl
-           FROM users WHERE wallet_address = $1"#,
+             (u.balance + u.locked_balance) AS total,
+             u.balance                      AS free,
+             u.locked_balance               AS locked,
+             COALESCE(
+                 (SELECT SUM(t.pnl) FROM trade_orders t WHERE t.user_uid = u.uid),
+                 0
+             )                              AS realized_pnl
+           FROM users u WHERE u.wallet_address = $1"#,
     )
     .bind(wallet)
     .fetch_optional(pool)
