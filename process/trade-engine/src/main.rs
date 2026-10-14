@@ -4,7 +4,7 @@ use tokio::signal;
 
 mod app_config;
 mod app_state;
-mod order_sweeper;
+mod position_exit;
 mod reconciler;
 mod signals;
 mod symbol;
@@ -40,7 +40,7 @@ async fn main() -> Result<(), ProcessError> {
     let order_db = db.clone();
     let order_kc = kcc.clone();
     tokio::spawn(async move {
-        order_sweeper::run_order_sweeper(order_db, order_kc).await;
+        position_exit::run(order_db, order_kc).await;
     });
 
     // loop signal generator

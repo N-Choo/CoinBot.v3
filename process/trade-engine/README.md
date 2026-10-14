@@ -11,7 +11,7 @@ Four concurrent tasks:
 - **Signal subscriber** — consumes `signals:result` and executes per contract.
 - **Reconciler** — every 30s, reconciles in-flight orders (by clientOid then by exchange
   id) and settles contract funds, branching on the order's `action`.
-- **Order sweeper** — every 12s, exits held positions when price reaches their TP or SL.
+- **Position exit** — every 12s, exits held positions when price reaches their TP or SL.
 
 ## Connections
 
@@ -100,9 +100,9 @@ Settlement is **action-aware**:
 - Amounts are parsed as `Decimal`; a malformed field aborts the settle (retried), and a
   status precondition (`open`) makes settlement idempotent.
 
-## Order sweeper (TP/SL exit)
+## Position exit (TP/SL)
 
-Every **12s**, `order_sweeper` loads held positions (`action='open'`, `status='filled'`, no
+Every **12s**, `position_exit::run` loads held positions (`action='open'`, `status='filled'`, no
 live exit), fetches the last price for each held symbol
 (`GET /api/v1/market/orderbook/level1`, one light request per symbol), and for any position
 whose price has reached its stored TP or SL it **reserves an exit then places a market
@@ -149,7 +149,7 @@ name:
 
 ```
 src/
-  main.rs             bootstrap; spawns the sweeper, order sweeper, generator, subscriber
+  main.rs             bootstrap; spawns the reconciler, position exit, generator, subscriber
   app_config.rs       env config (secrets redacted in Debug)
   app_state.rs        db pool + Redis cache + KuCoin client
   signals.rs          signal_generator (tickers) + signal_handler (verify + execute)
@@ -161,7 +161,11 @@ src/
     settle.rs           mark filled/cancelled; credit/release contract funds
     pnl.rs              pure fee/PnL math
     exchange.rs         margin order lookups + outcome classification
-  order_sweeper.rs    poll prices; exit held positions on TP/SL
+  position_exit/      poll prices; exit held positions on TP/SL
+    mod.rs              entry: run() — poll loop + backoff
+    decision.rs         pure TP/SL decision
+    price.rs            held-symbol last-price lookup
+    exit.rs             reserve + place the exit order
 ```
 
 ## Channel names
