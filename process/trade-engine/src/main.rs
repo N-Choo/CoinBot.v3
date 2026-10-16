@@ -4,6 +4,7 @@ use tokio::signal;
 
 mod app_config;
 mod app_state;
+mod ledger;
 mod position_exit;
 mod reconciler;
 mod signals;

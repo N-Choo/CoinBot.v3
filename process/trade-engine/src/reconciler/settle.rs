@@ -1,18 +1,18 @@
 //! Settle orders the exchange reports as final.
 //!
-//! Reads each open order's exchange state and applies the consequence to the
-//! local ledger: mark the order `filled`/`cancelled`, and credit the contract
-//! with the realized PnL (close) or release its reserved fund (cancelled entry).
+//! Reads each open order's exchange state and decides the consequence: a fill
+//! or a cancel. The realized-PnL math lives in `pnl` and the DB writes in
+//! `ledger`.
 
 use kucoin::client::rest::KuCoinClient;
 use kucoin::types::margin::MarginOrderStatus;
 use rust_decimal::Decimal;
-use share::db::contracts::Contracts;
 use share::db::trade::{Status, TradeOrder, TradeOrderFilter, TradeOrders};
 use sqlx::{Pool, Postgres};
 
 use super::exchange::{OrderOutcome, classify_order, fetch_order};
 use super::pnl::{cap_loss, close_credit, fee_in_quote, realized_pnl, split_symbol};
+use crate::ledger::{self, Fill};
 use crate::symbol::margin_symbol;
 
 /// Settle every order the exchange reports as open.
@@ -52,29 +52,8 @@ pub(super) async fn settle_open_orders(db: &Pool<Postgres>, kcc: &KuCoinClient) 
 
 /// Settle an order that finished with no fill.
 async fn settle_cancelled(db: &Pool<Postgres>, o: &TradeOrder) {
-    let mut tx = match db.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            log::error!("[RECONCILE] could not begin tx for order {}: {e}", o.id);
-            return;
-        }
-    };
-    if let Err(e) = TradeOrders::mark_cancelled(&mut tx, o.id, "no fill (cancelled)").await {
-        log::error!("[RECONCILE] mark_cancelled failed for order {}: {e}", o.id);
-        return;
-    }
-    // Only an entry reserved funds at placement; a cancelled exit returns nothing.
-    if o.action == "open"
-        && let Err(e) = Contracts::release_fund(&mut tx, o.contract_id, o.funds).await
-    {
-        log::error!(
-            "[RECONCILE] release_fund failed for contract {}: {e}",
-            o.contract_id
-        );
-        return;
-    }
-    if let Err(e) = tx.commit().await {
-        log::error!("[RECONCILE] commit failed for order {}: {e}", o.id);
+    if let Err(e) = ledger::record_cancelled(db, o).await {
+        log::error!("[RECONCILE] cancel settle failed for order {}: {e}", o.id);
     }
 }
 
@@ -161,39 +140,17 @@ async fn settle_filled(
         (Decimal::ZERO, None)
     };
 
-    let mut tx = match db.begin().await {
-        Ok(t) => t,
-        Err(e) => {
-            log::error!("[RECONCILE] could not begin tx for order {}: {e}", o.id);
-            return;
-        }
-    };
-    if let Err(e) = TradeOrders::mark_filled(
-        &mut tx,
-        o.id,
+    let fill = Fill {
         deal_size,
         fill_price,
         fee,
-        data.fee_currency.as_deref(),
+        fee_currency: data.fee_currency.as_deref(),
         pnl,
-    )
-    .await
-    {
-        log::error!("[RECONCILE] mark_filled failed for order {}: {e}", o.id);
-        return;
-    }
+    };
     // Only an exit returns cash.
-    if o.action == "close"
-        && let Err(e) = Contracts::add_fund(&mut tx, o.contract_id, credit.max(Decimal::ZERO)).await
-    {
-        log::error!(
-            "[RECONCILE] add_fund failed for contract {}: {e}",
-            o.contract_id
-        );
-        return;
-    }
-    if let Err(e) = tx.commit().await {
-        log::error!("[RECONCILE] commit failed for order {}: {e}", o.id);
+    let credit_to_add = (o.action == "close").then(|| credit.max(Decimal::ZERO));
+    if let Err(e) = ledger::record_filled(db, o, &fill, credit_to_add).await {
+        log::error!("[RECONCILE] settle filled failed for order {}: {e}", o.id);
         return;
     }
     log::info!(

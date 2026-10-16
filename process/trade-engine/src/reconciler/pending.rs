@@ -2,16 +2,15 @@
 //!
 //! Looks each up on the exchange by its `clientOid`: found => record the
 //! exchange id; absent past the grace window => mark failed and release any
-//! reserved entry fund.
+//! reserved entry fund. DB writes live in `ledger`.
 
 use chrono::{Duration, Utc};
 use kucoin::client::rest::KuCoinClient;
-use share::db::contracts::Contracts;
 use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
-use uuid::Uuid;
 
 use super::exchange::fetch_by_client_oid;
+use crate::ledger;
 use crate::symbol::margin_symbol;
 
 /// Grace before a `pending` order with no exchange id is treated as unplaced.
@@ -34,7 +33,7 @@ pub(super) async fn reconcile(db: &Pool<Postgres>, kcc: &KuCoinClient) {
         let symbol = margin_symbol(&o.ticker);
         match fetch_by_client_oid(kcc, &o.comment, &symbol).await {
             Ok(Some(data)) => {
-                if let Err(e) = place_pending(db, o.id, &data.id).await {
+                if let Err(e) = ledger::record_placed(db, o.id, &data.id).await {
                     log::error!("[RECONCILE] mark_placed failed for pending {}: {e}", o.id);
                 }
             }
@@ -53,50 +52,20 @@ pub(super) async fn reconcile(db: &Pool<Postgres>, kcc: &KuCoinClient) {
     }
 }
 
-/// Record a reserved order's exchange id once the exchange confirms it exists.
-async fn place_pending(db: &Pool<Postgres>, id: Uuid, order_id: &str) -> Result<(), sqlx::Error> {
-    let mut tx = db.begin().await?;
-    TradeOrders::mark_placed(&mut tx, id, order_id).await?;
-    tx.commit().await
-}
-
 /// Mark a never-placed order failed, then (separately) return a reserved entry
-/// fund. Marking failed in its own transaction first means a release error can
-/// never wedge the row in `pending` forever.
+/// fund. The failure is recorded first, so a release error can never wedge the
+/// row in `pending` forever.
 async fn fail_pending(db: &Pool<Postgres>, o: &TradeOrder) {
-    match db.begin().await {
-        Ok(mut tx) => {
-            if let Err(e) = TradeOrders::mark_failed(&mut tx, o.id, "not placed (reconciled)").await
-            {
-                log::error!("[RECONCILE] mark_failed failed for pending {}: {e}", o.id);
-                return;
-            }
-            if let Err(e) = tx.commit().await {
-                log::error!("[RECONCILE] commit failed for pending {}: {e}", o.id);
-                return;
-            }
-        }
-        Err(e) => {
-            log::error!("[RECONCILE] could not begin tx for pending {}: {e}", o.id);
-            return;
-        }
+    if let Err(e) = ledger::record_failed(db, o.id, "not placed (reconciled)").await {
+        log::error!("[RECONCILE] mark_failed failed for pending {}: {e}", o.id);
+        return;
     }
-
-    if o.action == "open" {
-        match db.begin().await {
-            Ok(mut tx) => {
-                if let Err(e) = Contracts::release_fund(&mut tx, o.contract_id, o.funds).await {
-                    log::error!(
-                        "[RECONCILE] release_fund failed for contract {}: {e}",
-                        o.contract_id
-                    );
-                    return;
-                }
-                if let Err(e) = tx.commit().await {
-                    log::error!("[RECONCILE] commit failed releasing fund for {}: {e}", o.id);
-                }
-            }
-            Err(e) => log::error!("[RECONCILE] could not begin release tx for {}: {e}", o.id),
-        }
+    if o.action == "open"
+        && let Err(e) = ledger::release_reserved(db, o.contract_id, o.funds).await
+    {
+        log::error!(
+            "[RECONCILE] release_fund failed for contract {}: {e}",
+            o.contract_id
+        );
     }
 }
