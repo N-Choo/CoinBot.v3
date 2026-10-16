@@ -1,9 +1,23 @@
 //! Order sizing: per-order budget and exchange-compliant quantity. Pure functions, no I/O.
 
 use rust_decimal::Decimal;
+use rust_decimal::prelude::FromPrimitive;
 
 /// Divisor applied to a contract's initial fund to get the per-order budget.
 const ORDER_FUND_DIVISOR: u32 = 2;
+
+/// Convert an `f64` to `Decimal`, returning `None` for values that cannot be
+/// represented (non-finite NaN/±inf, or out of range) instead of defaulting to
+/// zero. Callers must treat `None` as a reason to skip the order.
+pub(super) fn to_decimal(value: f64) -> Option<Decimal> {
+    Decimal::from_f64(value)
+}
+
+/// Parse a decimal string, returning `None` for malformed input instead of
+/// defaulting to zero.
+pub(super) fn parse_quantity(value: &str) -> Option<Decimal> {
+    value.parse().ok()
+}
 
 /// Budget for a single order: `init_fund / ORDER_FUND_DIVISOR` (half).
 pub fn order_budget(init_fund: Decimal) -> Decimal {
@@ -92,5 +106,27 @@ mod tests {
         assert_eq!(decimal_scale("0.001"), 3);
         assert_eq!(decimal_scale("0.1"), 1);
         assert_eq!(decimal_scale("1"), 0);
+    }
+
+    #[test]
+    fn converts_finite_float_to_decimal() {
+        assert_eq!(to_decimal(1.5), Some(Decimal::new(15, 1)));
+    }
+
+    #[test]
+    fn rejects_non_finite_floats() {
+        assert_eq!(to_decimal(f64::NAN), None);
+        assert_eq!(to_decimal(f64::INFINITY), None);
+        assert_eq!(to_decimal(f64::NEG_INFINITY), None);
+    }
+
+    #[test]
+    fn parses_valid_quantity_string() {
+        assert_eq!(parse_quantity("0.099"), Some(Decimal::new(99, 3)));
+    }
+
+    #[test]
+    fn rejects_non_numeric_quantity_string() {
+        assert_eq!(parse_quantity("not-a-number"), None);
     }
 }

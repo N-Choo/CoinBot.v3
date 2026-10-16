@@ -10,10 +10,9 @@ use crate::ledger;
 use kucoin::{client::rest::KuCoinClient, types::market::SymbolInfo};
 use log::{info, warn};
 use order::order_side;
-use rust_decimal::Decimal;
-use rust_decimal::prelude::{FromPrimitive, ToPrimitive};
+use rust_decimal::prelude::ToPrimitive;
 use share::{ProcessError, db::contracts::Contract, models::signals::TradeSignal};
-use sizing::compute_quantity;
+use sizing::{compute_quantity, parse_quantity, to_decimal};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -41,6 +40,14 @@ pub async fn execute(
     // One unique client order id per attempt; the contract link is `contract_id`.
     let comment = Uuid::new_v4().to_string();
 
+    // Validate the price before it reaches `compute_quantity`: a non-finite
+    // price (NaN/±inf) slips through its `<= 0.0` checks (NaN comparisons are
+    // false) and would yield an unusable size.
+    let Some(price_dec) = to_decimal(price) else {
+        warn!("[TRADE] {} skipped | invalid entry price {price}", c.ticker);
+        return Ok(());
+    };
+
     // Size must respect the pair's increment/min-size rules, or KuCoin rejects it.
     let info = fetch_symbol_info(kcc, &ticker).await?;
     let Some(quantity) =
@@ -52,10 +59,28 @@ pub async fn execute(
         );
         return Ok(());
     };
-    let quantity_dec: Decimal = quantity.parse().unwrap_or_default();
-    let trade_fund = Decimal::from_f64(price).unwrap_or_default() * quantity_dec;
-    let tp_dec = Decimal::from_f64(signal.tp_price).unwrap_or_default();
-    let sl_dec = Decimal::from_f64(signal.sl_price).unwrap_or_default();
+    let Some(quantity_dec) = parse_quantity(&quantity) else {
+        warn!(
+            "[TRADE] {} skipped | unparseable quantity '{quantity}'",
+            c.ticker
+        );
+        return Ok(());
+    };
+    let Some(tp_dec) = to_decimal(signal.tp_price) else {
+        warn!(
+            "[TRADE] {} skipped | invalid tp_price {}",
+            c.ticker, signal.tp_price
+        );
+        return Ok(());
+    };
+    let Some(sl_dec) = to_decimal(signal.sl_price) else {
+        warn!(
+            "[TRADE] {} skipped | invalid sl_price {}",
+            c.ticker, signal.sl_price
+        );
+        return Ok(());
+    };
+    let trade_fund = price_dec * quantity_dec;
 
     let order = ledger::create_pending_open(
         pool,
