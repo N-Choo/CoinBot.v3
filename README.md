@@ -66,13 +66,24 @@ flowchart TB
 | ---------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------ |
 | `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                          | [README](process/api_gateway/README.md)    |
 | `deposit-worker` | gRPC ticket + background deposit sweeper                                                   | [README](process/deposit-worker/README.md) |
-| `trade-engine`   | Publishes tickers, consumes signals, verifies contracts, executes & reconciles spot orders, and exits positions on TP/SL | [README](process/trade-engine/README.md)   |
-| `analyzer`       | signal engine (Python)                                                                     | [README](process/analyzer/README.md)       |
+| `trade-engine`   | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
+| `analyzer`       | RSI divergence signal engine (Python). Runs in prod compose; `make trade` runs it locally. | [README](process/analyzer/README.md)       |
 | `frontend`       | React SPA                                                                                  | [README](react/README.md)                  |
 
-Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`) and **Redis** (pub/sub channels `tickers:analyze`, `signals:result`).
+Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`). **Redis** carries the pub/sub channels `tickers:analyze` and `signals:result` between trade-engine and analyzer, and holds gateway sessions (DB 0) and login nonces (DB 1).
 
-## Flows
+## Repository layout
 
-End-to-end flows spanning multiple services. Single-service flows — wallet auth and
-contract signing — are detailed in the [api_gateway README](process/api_gateway/README.md).
+- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `analyzer`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contract).
+- `lib/share/`: shared Rust crate (config, DB models, Redis, RPC helpers).
+- `react/`: frontend SPA.
+- `docs/`, `scripts/`: project docs, demo seed data, and API smoke tests.
+
+## Quick start
+
+```bash
+make dev     # Postgres + Redis + API + worker + trade-engine + frontend
+make trade   # trade-engine + analyzer live (starts Postgres + Redis)
+make test    # Rust + Python tests
+make ci      # full pipeline: fmt-fix, clippy, test, analyzer tests, frontend lint-fix, frontend tests, build
+```

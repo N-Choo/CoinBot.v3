@@ -116,7 +116,7 @@ dev:
 		docker compose up api_gateway deposit-worker trade-engine frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway frontend-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod
 
 prod:
 	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer redis postgres
