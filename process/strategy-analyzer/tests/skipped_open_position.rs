@@ -28,15 +28,14 @@ fn candle(open_time_ms: i64, open: &str, high: &str, low: &str, close: &str) -> 
 }
 
 /// Same pre-registered sim defaults as the `backtest` CLI (5 bps fee/side, 5 bps entry slip,
-/// 15 bps stop slip, 2 bps/day borrow, 1-tick latency). The skip is a time/ordering property
-/// of pass 2 and does not depend on the cost model.
+/// 15 bps stop slip, 2 bps/day borrow; entry fills at the touching tick). The skip is a
+/// time/ordering property of pass 2 and does not depend on the cost model.
 fn params() -> SimParams {
     SimParams {
         fee_bps: Decimal::from(5),
         entry_slip_bps: Decimal::from(5),
         stop_slip_bps: Decimal::from(15),
         borrow_bps_per_day: Decimal::from(2),
-        latency_ticks: 1,
     }
 }
 

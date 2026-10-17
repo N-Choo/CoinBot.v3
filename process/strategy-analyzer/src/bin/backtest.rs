@@ -93,24 +93,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 /// Pre-registered sim defaults (freeze-lock contents): 5 bps fee/side, 5 bps entry slip,
-/// 15 bps (worse) stop slip, 2 bps/day borrow, 1-tick latency.
+/// 15 bps (worse) stop slip, 2 bps/day borrow. Latency is a fill-model assumption (the touching
+/// tick fills), not a tick index; a live feed would inject a time-based latency model.
 fn default_sim_params() -> SimParams {
     SimParams {
         fee_bps: Decimal::from(5),
         entry_slip_bps: Decimal::from(5),
         stop_slip_bps: Decimal::from(15),
         borrow_bps_per_day: Decimal::from(2),
-        latency_ticks: 1,
     }
 }
 
-fn zero_cost_params(p: SimParams) -> SimParams {
+fn zero_cost_params(_p: SimParams) -> SimParams {
     SimParams {
         fee_bps: Decimal::ZERO,
         entry_slip_bps: Decimal::ZERO,
         stop_slip_bps: Decimal::ZERO,
         borrow_bps_per_day: Decimal::ZERO,
-        latency_ticks: p.latency_ticks,
     }
 }
 
@@ -121,7 +120,6 @@ fn scaled_cost_params(p: SimParams, num: Decimal, den: Decimal) -> SimParams {
         entry_slip_bps: p.entry_slip_bps * num / den,
         stop_slip_bps: p.stop_slip_bps * num / den,
         borrow_bps_per_day: p.borrow_bps_per_day * num / den,
-        latency_ticks: p.latency_ticks,
     }
 }
 
@@ -321,7 +319,8 @@ fn backtest(
         "entry_slip_bps": params.entry_slip_bps.to_string(),
         "stop_slip_bps": params.stop_slip_bps.to_string(),
         "borrow_bps_per_day": params.borrow_bps_per_day.to_string(),
-        "latency_ticks": params.latency_ticks,
+        // Latency is a fill-model assumption (the touching tick fills), not a tick index.
+        "latency": "touching_tick",
         "bootstrap_block_ms": BOOTSTRAP_BLOCK_MS,
         "bootstrap_resamples": 10_000,
         "bootstrap_seed": 42,

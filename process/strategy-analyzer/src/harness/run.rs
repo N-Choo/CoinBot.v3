@@ -65,8 +65,9 @@ pub fn run(
     let mut open_until_ms: Option<i64> = None;
 
     for (sig, idx) in signals {
+        // `ticks[0]` of the simulation is the touching tick, whose flat index is `idx`.
         let entry_ms = flat_ticks
-            .get(idx + params.latency_ticks as usize)
+            .get(idx)
             .map(|t| t.time_ms)
             .unwrap_or(sig.triggered_at_ms);
         if open_until_ms.is_some_and(|x| entry_ms < x) {
@@ -95,6 +96,10 @@ pub fn run(
                     entry_time_ms: res.entry_ms,
                     exit_time_ms: res.exit_ms,
                 });
+            }
+            SimOutcome::Unfillable => {
+                // The entry was already at/beyond the stop or target: no fill, no position, so the
+                // slot stays free for the next signal.
             }
         }
     }
