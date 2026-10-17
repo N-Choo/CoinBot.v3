@@ -1,6 +1,9 @@
 #![deny(clippy::float_arithmetic)]
 
-pub const STATE_SCHEMA_VERSION: u32 = 1;
+/// State schema version. Bumped to 2 when `zones_touched_this_candle` (the candle-close wick
+/// reconciliation ledger, §7.2) was added to `StrategyState`: a v1 snapshot has no such field, so a
+/// v2 reader must not treat the two shapes as interchangeable.
+pub const STATE_SCHEMA_VERSION: u32 = 2;
 
 pub mod config;
 pub mod decimal;

@@ -72,6 +72,21 @@ fn absorb_reasons(counts: &mut BTreeMap<String, usize>, outs: &[Output]) {
     }
 }
 
+/// Count `Consumed(MissedTouch)` zone events in a step's outputs. Missed touches arise from both
+/// tick steps (the first-observation rule, §7.2) and candle steps (the candle-close wick
+/// reconciliation, §7.2), so both must be counted here.
+fn count_missed(outs: &[Output]) -> u64 {
+    outs.iter()
+        .filter(|o| {
+            matches!(
+                o,
+                Output::ZoneEvent(ev)
+                    if ev.reason == Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+            )
+        })
+        .count() as u64
+}
+
 /// Output of the count-only pass (ITEM 6): how many signals were produced and why zones ended, with
 /// no PnL, no trades, and no verdict.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -111,24 +126,16 @@ fn drive_pass1(
             state = ns;
             flat_ticks.push(t);
             for o in &outs {
-                match o {
-                    Output::EntrySignal(s) => signals.push((s.clone(), idx)),
-                    // `missed_touch` only ever arises from tick-step outputs.
-                    Output::ZoneEvent(ev) => {
-                        if matches!(
-                            ev.reason,
-                            Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
-                        ) {
-                            missed_touch += 1;
-                        }
-                    }
-                    Output::StateChange { .. } => {}
+                if let Output::EntrySignal(s) = o {
+                    signals.push((s.clone(), idx));
                 }
             }
+            missed_touch += count_missed(&outs);
             absorb_reasons(&mut reason_counts, &outs);
         }
         let (ns, outs) = step(&state, Input::ClosedCandle(candle), cfg)?;
         state = ns;
+        missed_touch += count_missed(&outs);
         absorb_reasons(&mut reason_counts, &outs);
     }
 

@@ -4,7 +4,9 @@ use crate::strategy::structure::{
     apply_bos, detect_bos, newly_confirmed_high, newly_confirmed_low,
 };
 use crate::strategy::types::*;
-use crate::strategy::zones::{create_zone, invalidate_on_flip, update_lifecycle};
+use crate::strategy::zones::{
+    create_zone, invalidate_on_flip, reconcile_candle_close, update_lifecycle,
+};
 use rust_decimal::Decimal;
 
 pub(crate) const TIMEFRAME_MS: i64 = 4 * 60 * 60 * 1000;
@@ -23,8 +25,27 @@ pub fn step(
     let outputs = match input {
         Input::PriceTick(t) => on_tick(&mut next, t, cfg)?,
         Input::ClosedCandle(c) => on_candle(&mut next, c, cfg)?,
+        Input::Resume => {
+            on_resume(&mut next);
+            Vec::new()
+        }
     };
     Ok((next, outputs))
+}
+
+/// Restart / reconnect / data-gap resume (spec §4, §7.2). Pure: forget the last observed price so
+/// the next tick's approach is unknown, and require every `Active` zone to re-observe its first
+/// tick. A zone the price moved through during downtime is then a `missed_touch`, never a stale
+/// entry. The partial candle's observed-touch ledger is discarded so re-observation starts fresh.
+fn on_resume(state: &mut StrategyState) {
+    state.last_price = None;
+    state.zones_awaiting_first_tick = state
+        .zones
+        .iter()
+        .filter(|z| z.state == ZoneState::Active)
+        .map(|z| z.id.clone())
+        .collect();
+    state.zones_touched_this_candle.clear();
 }
 
 fn on_tick(state: &mut StrategyState, t: Tick, cfg: &Config) -> Result<Vec<Output>, StrategyError> {
@@ -78,6 +99,17 @@ fn on_candle(
         }
     }
     let mut out = Vec::new();
+
+    // Candle-close wick reconciliation (§7.2): a still-`Active` zone whose range this candle reached
+    // but for which no tick touch was observed is consumed as `MissedTouch`. This runs BEFORE this
+    // candle's zone creation (below) so a zone just activated on this candle's close — whose
+    // breakout candle may overlap it — is never reconciled against the candle that created it; per
+    // §4 the ticks inside the breakout candle predate the zone. The observed-touch ledger is taken
+    // (and thus reset) here for the next candle.
+    let touched = std::mem::take(&mut state.zones_touched_this_candle);
+    let reconciled = reconcile_candle_close(&mut state.zones, &c, &touched);
+    state.missed_touch_count += reconciled.len() as u64;
+    out.extend(reconciled.into_iter().map(Output::ZoneEvent));
 
     // ATR through the PREVIOUS candle is the no-look-ahead value used for BOS/zone `A`.
     let atr_before = state.atr;
@@ -148,9 +180,12 @@ fn on_candle(
                 match create_zone(&state.window, kind, atr_b, &state.symbol.clone(), cfg) {
                     Ok(mut z) => {
                         z.activated_at_index = state.candle_count - 1;
-                        state.zones_awaiting_first_tick.push(z.id.clone());
+                        let zone_id = z.id.clone();
+                        // A freshly created zone has no observed touch this candle (§7.2 reset).
+                        state.zones_touched_this_candle.retain(|id| id != &zone_id);
+                        state.zones_awaiting_first_tick.push(zone_id.clone());
                         out.push(Output::ZoneEvent(ZoneEvent {
-                            zone_id: z.id.clone(),
+                            zone_id: zone_id.clone(),
                             kind: ZoneEventKind::Created,
                             reason: None,
                         }));

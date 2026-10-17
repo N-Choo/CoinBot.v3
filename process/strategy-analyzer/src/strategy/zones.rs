@@ -282,7 +282,8 @@ mod tests {
 }
 
 use crate::strategy::types::{
-    TerminalReason, TrendState, ZoneEvent, ZoneEventKind, ZoneEventReason, ZoneState as ZS,
+    ConsumeReason, TerminalReason, TrendState, ZoneEvent, ZoneEventKind, ZoneEventReason,
+    ZoneState as ZS,
 };
 
 /// Expiry + close-beyond-edge invalidation for the just-closed candle.
@@ -318,6 +319,39 @@ pub fn update_lifecycle(
                 zone_id: z.id.clone(),
                 kind: ZoneEventKind::Invalidated,
                 reason: Some(ZoneEventReason::Terminal(TerminalReason::CloseBeyondEdge)),
+            });
+        }
+    }
+    events
+}
+
+/// Candle-close wick reconciliation (§7.2). A candle whose range reached a still-`Active` zone
+/// (demand `candle.low <= zone.high`; supply `candle.high >= zone.low`), but for which no tick touch
+/// was observed this candle, is a `missed_touch`: polling skipped the wick, so there was no chance
+/// to trigger and the touch is already stale. Keyed strictly to `touched_ids` (the observed-touch
+/// ledger), so a zone already ended by a signal or veto — which always records its touch — is never
+/// re-consumed. The caller runs this before creating this candle's zone and resets the ledger.
+pub fn reconcile_candle_close(
+    zones: &mut [Zone],
+    candle: &Candle,
+    touched_ids: &[String],
+) -> Vec<ZoneEvent> {
+    let mut events = Vec::new();
+    for z in zones.iter_mut() {
+        if z.state != ZS::Active {
+            continue;
+        }
+        let overlapped = match z.kind {
+            ZoneKind::Demand => candle.low <= z.high,
+            ZoneKind::Supply => candle.high >= z.low,
+        };
+        if overlapped && !touched_ids.iter().any(|id| id == &z.id) {
+            z.state = ZS::Consumed;
+            z.consume_reason = Some(ConsumeReason::MissedTouch);
+            events.push(ZoneEvent {
+                zone_id: z.id.clone(),
+                kind: ZoneEventKind::Consumed,
+                reason: Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch)),
             });
         }
     }
@@ -409,6 +443,52 @@ mod lifecycle_tests {
         assert_eq!(zs[0].state, ZS::Active);
         assert_eq!(zs[1].state, ZS::Invalidated);
         assert_eq!(zs[1].terminal_reason, Some(TerminalReason::TrendFlip));
+    }
+
+    #[test]
+    fn candle_close_reconciliation_consumes_an_unobserved_overlap() {
+        // zone [1.0, 1.1]; candle low 1.05 <= zone.high 1.1 (overlap), but no tick observed a touch.
+        let mut zs = vec![zone(ZoneKind::Demand)];
+        let ev = reconcile_candle_close(&mut zs, &c("1.2", "1.3", "1.05", "1.15"), &[]);
+        assert_eq!(zs[0].state, ZS::Consumed);
+        assert_eq!(zs[0].consume_reason, Some(ConsumeReason::MissedTouch));
+        assert_eq!(ev.len(), 1);
+        assert_eq!(ev[0].kind, ZoneEventKind::Consumed);
+        assert_eq!(
+            ev[0].reason,
+            Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+        );
+    }
+
+    #[test]
+    fn candle_close_reconciliation_skips_an_observed_touch() {
+        let mut zs = vec![zone(ZoneKind::Demand)];
+        // Same overlapping candle, but the ledger shows a tick already reached the zone.
+        let ev = reconcile_candle_close(
+            &mut zs,
+            &c("1.2", "1.3", "1.05", "1.15"),
+            &["z".to_string()],
+        );
+        assert_eq!(zs[0].state, ZS::Active);
+        assert!(ev.is_empty());
+    }
+
+    #[test]
+    fn candle_close_reconciliation_skips_a_non_overlapping_candle() {
+        let mut zs = vec![zone(ZoneKind::Demand)];
+        // Candle low 1.2 > zone.high 1.1: the candle never reached the zone.
+        let ev = reconcile_candle_close(&mut zs, &c("1.2", "1.3", "1.2", "1.25"), &[]);
+        assert_eq!(zs[0].state, ZS::Active);
+        assert!(ev.is_empty());
+    }
+
+    #[test]
+    fn candle_close_reconciliation_supply_uses_the_high_edge() {
+        // zone [1.0, 1.1]; supply overlaps when candle.high >= zone.low 1.0.
+        let mut zs = vec![zone(ZoneKind::Supply)];
+        let ev = reconcile_candle_close(&mut zs, &c("0.9", "1.02", "0.8", "0.95"), &[]);
+        assert_eq!(zs[0].state, ZS::Consumed);
+        assert_eq!(ev.len(), 1);
     }
 }
 

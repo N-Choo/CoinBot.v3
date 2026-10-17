@@ -313,13 +313,41 @@ fn touch_distance(dir: Direction, zone: &Zone, prev: Decimal) -> Decimal {
     }
 }
 
-/// On the first tick after activation, a freshly-created zone that is already inside/beyond is a
-/// `missed_touch` (spec §7.2) **only when there is no trustworthy previous price** (`prev` is
-/// `None`: a cold start / restart / reconnect / data-gap, §4), because then the normal crossing
-/// logic cannot judge the zone. In continuous operation `prev` is always known, so the zone is left
-/// `Active` and evaluated by the normal first-touch path (`try_entry`). The awaiting set is cleared
-/// for **all** zones (not just one selected zone) and stale ids are dropped, so a deeper zone is not
-/// later judged against a much later price.
+/// Record every `Active` zone this tick reached (inside/beyond its proximal edge) in
+/// `state.zones_touched_this_candle`. This ledger lets the candle-close reconciliation (§7.2)
+/// distinguish a genuinely untouched candle from one whose wick reached a zone between samples.
+/// Runs on every tick, before first-touch evaluation, so a touch is recorded even when the tick
+/// does not itself produce a signal or veto (e.g. the trend is not yet directional).
+fn record_observed_touches(state: &mut StrategyState, price: Decimal) {
+    let mut hits: Vec<String> = Vec::new();
+    for z in state.zones.iter() {
+        if z.state != ZoneState::Active {
+            continue;
+        }
+        let inside = match z.kind {
+            ZoneKind::Demand => price <= z.high,
+            ZoneKind::Supply => price >= z.low,
+        };
+        if inside {
+            hits.push(z.id.clone());
+        }
+    }
+    for id in hits {
+        if !state.zones_touched_this_candle.contains(&id) {
+            state.zones_touched_this_candle.push(id);
+        }
+    }
+}
+
+/// On the first tick after activation, a freshly-created zone is a `missed_touch` (spec §7.2)
+/// **unless the first observation is an approach from outside the zone**. Concretely, per direction:
+/// the price is inside/beyond the zone (demand `price <= zone_high`, supply `price >= zone_low`)
+/// **and** the approach did not come from outside this tick — i.e. `prev` is `None` (a cold start /
+/// restart / reconnect / data-gap, §4) or `prev` was already inside/beyond (demand
+/// `prev <= zone_high`, supply `prev >= zone_low`). A genuine approach from outside (demand
+/// `prev > zone_high`, supply `prev < zone_low`) is left `Active` for the normal first-touch path in
+/// `try_entry`. The awaiting set is cleared for **all** zones (not just one selected zone) and stale
+/// ids are dropped, so a deeper zone is not later judged against a much later price.
 fn observe_first_tick(
     state: &mut StrategyState,
     dir: Direction,
@@ -336,7 +364,13 @@ fn observe_first_tick(
         else {
             continue; // stale id: the zone no longer exists / is no longer Active
         };
-        if prev.is_none() && is_missed_touch(dir, z, price) {
+        let inside_or_beyond = is_missed_touch(dir, z, price);
+        let approached_from_outside = match (dir, prev) {
+            (Direction::Long, Some(p)) => p > z.high,
+            (Direction::Short, Some(p)) => p < z.low,
+            (_, None) => false,
+        };
+        if inside_or_beyond && !approached_from_outside {
             z.state = ZoneState::Consumed;
             z.consume_reason = Some(ConsumeReason::MissedTouch);
             state.missed_touch_count += 1;
@@ -501,13 +535,17 @@ pub fn try_entry(
     cfg: &Config,
 ) -> Result<Vec<Output>, StrategyError> {
     let mut out = Vec::new();
+    // Tick touches feed the candle-close reconciliation (§7.2) and must be recorded before any early
+    // return (a touch is observed even when the tick produces no signal).
+    record_observed_touches(state, price);
     let dir = match direction_for(state.trend) {
         Some(d) => d,
         None => return Ok(out),
     };
 
-    // First observation after activation: missed-touch handling for freshly-created zones (only
-    // when there is no trustworthy previous price, i.e. a cold start / gap / restart).
+    // First observation after activation: missed-touch handling for freshly-created zones — missed
+    // unless the first observation is an approach from outside the zone (§7.2, see
+    // `observe_first_tick`).
     out.extend(observe_first_tick(state, dir, prev_price, price));
 
     let prev = match prev_price {
@@ -620,6 +658,59 @@ mod touch_tests {
         let out = try_entry(&mut s, None, 1, dec("1.98"), &cfg).unwrap();
         assert!(out.iter().any(|o| matches!(o, Output::ZoneEvent(_))));
         assert_eq!(s.missed_touch_count, 1);
+    }
+
+    #[test]
+    fn activated_while_inside_is_missed() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.zones = vec![demand()]; // [1.96, 2.00]
+        s.zones_awaiting_first_tick = vec!["z".into()];
+        // The zone was created while the price was already inside it: the previous observed price
+        // (1.98) is itself inside the zone (<= zone_high 2.00), so the approach did not come from
+        // outside. The next tick inside is therefore a `missed_touch` (§7.2), never a signal.
+        let out = try_entry(&mut s, Some(dec("1.98")), 1, dec("1.97"), &cfg).unwrap();
+        assert!(
+            out.iter().any(|o| matches!(
+                o,
+                Output::ZoneEvent(ev)
+                    if ev.reason
+                        == Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+            )),
+            "an inside-to-inside first observation must be a missed_touch"
+        );
+        assert!(
+            !out.iter().any(|o| matches!(o, Output::EntrySignal(_))),
+            "an inside first observation must not signal"
+        );
+        assert_eq!(s.missed_touch_count, 1);
+        assert_eq!(s.zones[0].state, ZoneState::Consumed);
+    }
+
+    #[test]
+    fn first_observation_approach_from_outside_is_not_missed() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        s.zones = vec![demand()]; // [1.96, 2.00]
+        s.zones_awaiting_first_tick = vec!["z".into()];
+        // `prev` 2.05 is above the zone (> zone_high), so the price approached from outside: this is
+        // a legitimate first touch, not a missed one.
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("1.99"), &cfg).unwrap();
+        assert!(
+            !out.iter().any(|o| matches!(
+                o,
+                Output::ZoneEvent(ev)
+                    if ev.reason
+                        == Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+            )),
+            "an approach from outside must not be missed"
+        );
+        assert_eq!(s.missed_touch_count, 0);
     }
 
     fn zone_id(id: &str, low: &str, high: &str, window_high: &str) -> Zone {

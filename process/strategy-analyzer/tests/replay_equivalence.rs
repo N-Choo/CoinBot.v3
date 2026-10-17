@@ -4,11 +4,19 @@
 //! still compiles the test target (empty).
 #![cfg(feature = "harness")]
 
+use rust_decimal::Decimal;
+use std::str::FromStr;
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
-use strategy_analyzer::strategy::types::{Input, Output, StrategyState};
+use strategy_analyzer::strategy::types::{
+    ConsumeReason, Input, Output, StrategyState, Tick, ZoneEventReason,
+};
+
+fn dec(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap()
+}
 
 /// The four hand-derived Task 27 fixtures, in a fixed order. Hashed together so the golden also
 /// covers the rejection paths (`mitigated`, `obstacle_too_close`), not just the happy path.
@@ -74,14 +82,21 @@ fn snapshot_resume_matches_uninterrupted_on_signal_fixture() {
     let all = fixture_events("tests/fixtures/signal_4h.csv", PathPolicy::LowFirst);
     let (full_state, full_per) = run_events(StrategyState::new("XRP-USDT", 1), &all, &cfg);
 
-    // 5 events per candle: snapshot after candle 20 (zone active) and mid-candle-21 (after its
-    // first tick), i.e. splits 105 and 106.
-    for split in [21 * 5, 21 * 5 + 1] {
+    // The restart is injected as the core `Resume` input (spec §4) after deserialization, so the
+    // snapshot-resume property covers the real reconnect path, not just a struct round-trip. Splits
+    // are taken at CANDLE boundaries (5 events/candle): split 100 is before candle 20's ticks (no
+    // zone yet) and split 105 is after candle 20's close (the zone is Active). A mid-candle resume
+    // legitimately diverges — `Resume` forgets the last price, so an unsampled move through the zone
+    // becomes a `missed_touch` (that path is covered by
+    // `resume_after_downtime_price_through_zone_is_missed`), not equivalence.
+    for split in [20 * 5, 21 * 5] {
         let (mid_state, _) = run_events(StrategyState::new("XRP-USDT", 1), &all[..split], &cfg);
         // Compare serialized JSON strings, not `==`: Decimal equality ignores scale, so `==` would
         // pass even if the snapshot round-trip changed a scale (which would break byte-equality).
         let snapshot = serde_json::to_string(&mid_state).unwrap();
         let resumed: StrategyState = serde_json::from_str(&snapshot).unwrap();
+        let (resumed, resume_outs) = step(&resumed, Input::Resume, &cfg).unwrap();
+        assert!(resume_outs.is_empty(), "a resume emits no output");
         let (tail_state, tail_per) = run_events(resumed, &all[split..], &cfg);
         assert_eq!(
             serde_json::to_string(&tail_state).unwrap(),
@@ -94,6 +109,49 @@ fn snapshot_resume_matches_uninterrupted_on_signal_fixture() {
             "outputs after resume must match the uninterrupted run (split {split})"
         );
     }
+}
+
+/// Restart with a genuine gap: the price moves through the zone while the core is down, so the first
+/// tick back is already inside it. `Resume` forgets the previous price, making that first
+/// observation a `missed_touch` (§7.2) — it must never be published as a stale entry.
+#[test]
+fn resume_after_downtime_price_through_zone_is_missed() {
+    let cfg = Config::default_for(&["XRP-USDT"]);
+    let all = fixture_events("tests/fixtures/signal_4h.csv", PathPolicy::LowFirst);
+    // Split 105 = just after candle 20 (the breakout) closes: the demand zone [104.0, 105.0] is
+    // Active and awaiting its first tick.
+    let split = 21 * 5;
+    let (mid_state, _) = run_events(StrategyState::new("XRP-USDT", 1), &all[..split], &cfg);
+    let snapshot = serde_json::to_string(&mid_state).unwrap();
+    let resumed: StrategyState = serde_json::from_str(&snapshot).unwrap();
+    let (resumed, _) = step(&resumed, Input::Resume, &cfg).unwrap();
+
+    // The first tick back is already inside the zone (104.5 <= zone_high 105.0).
+    let (after, outs) = step(
+        &resumed,
+        Input::PriceTick(Tick {
+            time_ms: 302_400_001,
+            price: dec("104.5"),
+            is_bar_open: false,
+        }),
+        &cfg,
+    )
+    .unwrap();
+
+    assert!(
+        !outs.iter().any(|o| matches!(o, Output::EntrySignal(_))),
+        "a restart at an unobserved touch must not signal"
+    );
+    assert!(
+        outs.iter().any(|o| matches!(
+            o,
+            Output::ZoneEvent(ev)
+                if ev.reason
+                    == Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+        )),
+        "the first tick inside the zone after a downtime must be a missed_touch"
+    );
+    assert_eq!(after.missed_touch_count, 1);
 }
 
 #[test]

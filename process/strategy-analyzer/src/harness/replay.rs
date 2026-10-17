@@ -63,6 +63,9 @@ mod tests {
         let (mid, _) = replay(StrategyState::new("XRP-USDT", 1), &ev[..15], &cfg).unwrap();
         let json = serde_json::to_string(&mid).unwrap();
         let resumed: StrategyState = serde_json::from_str(&json).unwrap();
+        // Route the restart through the core `Resume` input (spec §4), as a real reconnect would.
+        let (resumed, resume_outs) = step(&resumed, Input::Resume, &cfg).unwrap();
+        assert!(resume_outs.is_empty());
         let (tail, _) = replay(resumed, &ev[15..], &cfg).unwrap();
         assert_eq!(full, tail);
     }

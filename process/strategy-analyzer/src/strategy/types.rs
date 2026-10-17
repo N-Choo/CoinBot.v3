@@ -173,6 +173,11 @@ pub struct StrategyState {
     pub swing_lows: Vec<Pivot>,
     pub zones: Vec<Zone>,
     pub zones_awaiting_first_tick: Vec<String>,
+    /// Ids of `Active` zones an observed tick reached (inside/beyond the proximal edge) during the
+    /// current candle. Consumed at candle close by the wick reconciliation (§7.2), then reset. A
+    /// fresh zone has no observed touch, so this is the strict key that keeps reconciliation from
+    /// re-consuming a zone already ended by a signal or veto.
+    pub zones_touched_this_candle: Vec<String>,
     pub last_candle_time_ms: Option<Ms>,
     pub last_tick_time_ms: Option<Ms>,
     pub last_price: Option<Decimal>,
@@ -197,6 +202,7 @@ impl StrategyState {
             swing_lows: Vec::new(),
             zones: Vec::new(),
             zones_awaiting_first_tick: Vec::new(),
+            zones_touched_this_candle: Vec::new(),
             last_candle_time_ms: None,
             last_tick_time_ms: None,
             last_price: None,
@@ -209,6 +215,10 @@ impl StrategyState {
 pub enum Input {
     ClosedCandle(Candle),
     PriceTick(Tick),
+    /// Out-of-band restart / reconnect / data-gap signal (§4). On it, the last observed price is
+    /// forgotten and every `Active` zone must re-observe its first tick, so a zone the price moved
+    /// through during downtime is a `missed_touch` (§7.2), never a stale entry.
+    Resume,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -277,5 +287,13 @@ mod tests {
         let j = serde_json::to_string(&s).unwrap();
         let back: StrategyState = serde_json::from_str(&j).unwrap();
         assert_eq!(s, back);
+    }
+
+    #[test]
+    fn resume_input_round_trips_json() {
+        // Externally tagged so the harness can persist a restart in an event log.
+        let j = serde_json::to_string(&Input::Resume).unwrap();
+        assert_eq!(j, "\"Resume\"");
+        assert_eq!(serde_json::from_str::<Input>(&j).unwrap(), Input::Resume);
     }
 }
