@@ -17,6 +17,28 @@ pub fn is_rate_limited(err: &str) -> bool {
     err.contains("429") || lower.contains("rate limit") || lower.contains("too many")
 }
 
+/// True when the second-resolution window `[start_s, end_s]` overlaps the OOS window
+/// `[boundary_ms, ∞)`. The OOS window is inclusive of the boundary timestamp.
+pub fn overlaps_oos(start_s: i64, end_s: i64, boundary_ms: i64) -> bool {
+    start_s.saturating_mul(1000) >= boundary_ms || end_s.saturating_mul(1000) >= boundary_ms
+}
+
+/// `fetch-data` guard (§10.4): until the freeze lock exists, refuse any fetch range that overlaps
+/// the OOS window, so the confirmatory data cannot be pulled before the bar is frozen.
+pub fn guard_oos_range(
+    start_s: i64,
+    end_s: i64,
+    boundary_ms: i64,
+    lock_exists: bool,
+) -> Result<(), String> {
+    if !lock_exists && overlaps_oos(start_s, end_s, boundary_ms) {
+        return Err(format!(
+            "fetch-data: range [{start_s}, {end_s}] overlaps the OOS window (boundary {boundary_ms} ms); the freeze lock must exist first"
+        ));
+    }
+    Ok(())
+}
+
 /// Fetch one page from KuCoin and return raw CSV rows `time,open,close,high,low,volume,turnover`.
 /// Throttle between calls in the caller. Keep I/O out of the core.
 pub fn fetch_page(
@@ -69,5 +91,27 @@ mod tests {
     fn pages_respect_1500_cap() {
         let p = page_windows(0, 3000 * 60, 60);
         assert_eq!(p, vec![(0, 1500 * 60), (1500 * 60, 3000 * 60)]);
+    }
+
+    #[test]
+    fn oos_range_guard_binds_until_the_lock_exists() {
+        let boundary_ms = 1_000_000_000_000;
+        let boundary_s = boundary_ms / 1000;
+        // A range entirely before the boundary is always allowed.
+        assert!(guard_oos_range(0, boundary_s - 1, boundary_ms, false).is_ok());
+        // A range touching/after the boundary is refused while no lock exists...
+        assert!(guard_oos_range(0, boundary_s, boundary_ms, false).is_err());
+        assert!(guard_oos_range(boundary_s, boundary_s + 100, boundary_ms, false).is_err());
+        // ...but permitted once the lock exists.
+        assert!(guard_oos_range(boundary_s, boundary_s + 100, boundary_ms, true).is_ok());
+    }
+
+    #[test]
+    fn overlaps_oos_is_inclusive_of_the_boundary() {
+        let boundary_ms = 1_000_000_000_000;
+        let boundary_s = boundary_ms / 1000;
+        assert!(!overlaps_oos(0, boundary_s - 1, boundary_ms));
+        assert!(overlaps_oos(0, boundary_s, boundary_ms));
+        assert!(overlaps_oos(boundary_s, boundary_s + 1, boundary_ms));
     }
 }

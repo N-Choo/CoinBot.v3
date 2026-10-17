@@ -72,17 +72,31 @@ fn absorb_reasons(counts: &mut BTreeMap<String, usize>, outs: &[Output]) {
     }
 }
 
-/// Run one (policy) over a dataset. Signals are collected in pass 1; pass 2 simulates them
-/// in time order, opening at most one position at a time (later signals while a position is
-/// open are counted as `skipped_open_position`, mirroring the engine's caps). Core errors are
-/// propagated rather than panicked.
-pub fn run(
+/// Output of the count-only pass (ITEM 6): how many signals were produced and why zones ended, with
+/// no PnL, no trades, and no verdict.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignalCount {
+    pub signals: usize,
+    /// Every `Output` reason seen, keyed by its snake_case tag (same map `run` returns).
+    pub reason_counts: BTreeMap<String, usize>,
+}
+
+/// Pass 1: drive the core through the given policy, collecting signals (with their flat-tick index
+/// so pass 2 can simulate from the touching tick) and every output reason. Shared by `run` and
+/// `count_signals`.
+struct Pass1 {
+    flat_ticks: Vec<Tick>,
+    signals: Vec<(Signal, usize)>,
+    missed_touch: u64,
+    reason_counts: BTreeMap<String, usize>,
+}
+
+fn drive_pass1(
     symbol: &str,
     candles: &[Candle],
     policy: PathPolicy,
     cfg: &Config,
-    params: SimParams,
-) -> Result<RunResult, StrategyError> {
+) -> Result<Pass1, StrategyError> {
     let mut state = StrategyState::new(symbol, crate::strategy::STATE_SCHEMA_VERSION);
     let mut src = Ohlcv4hSynthesis::new(candles.to_vec(), policy);
     let mut flat_ticks: Vec<Tick> = Vec::new();
@@ -117,6 +131,48 @@ pub fn run(
         state = ns;
         absorb_reasons(&mut reason_counts, &outs);
     }
+
+    Ok(Pass1 {
+        flat_ticks,
+        signals,
+        missed_touch,
+        reason_counts,
+    })
+}
+
+/// Load and drive a dataset for **counts only** (ITEM 6): the signal count and every reason, with no
+/// simulation, no PnL, and no verdict. The caller is responsible for refusing OOS rows.
+pub fn count_signals(
+    symbol: &str,
+    candles: &[Candle],
+    policy: PathPolicy,
+    cfg: &Config,
+) -> Result<SignalCount, StrategyError> {
+    let pass1 = drive_pass1(symbol, candles, policy, cfg)?;
+    Ok(SignalCount {
+        signals: pass1.signals.len(),
+        reason_counts: pass1.reason_counts,
+    })
+}
+
+/// Run one (policy) over a dataset. Signals are collected in pass 1; pass 2 simulates them
+/// in time order, opening at most one position at a time (later signals while a position is
+/// open are counted as `skipped_open_position`, mirroring the engine's caps). Core errors are
+/// propagated rather than panicked.
+pub fn run(
+    symbol: &str,
+    candles: &[Candle],
+    policy: PathPolicy,
+    cfg: &Config,
+    params: SimParams,
+) -> Result<RunResult, StrategyError> {
+    let pass1 = drive_pass1(symbol, candles, policy, cfg)?;
+    let Pass1 {
+        flat_ticks,
+        signals,
+        missed_touch,
+        reason_counts,
+    } = pass1;
 
     let n_signals = signals.len();
     let mut trades = Vec::new();
