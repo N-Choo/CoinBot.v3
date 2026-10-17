@@ -29,7 +29,7 @@ impl Ohlcv4hSynthesis {
 impl TickSource for Ohlcv4hSynthesis {
     fn policy(&self) -> PathPolicy { self.policy }
     fn next_candle(&mut self) -> Option<(Vec<Tick>, Candle)> {
-        let c = self.candles.get(self.idx)?.clone();
+        let c = *self.candles.get(self.idx)?;
         self.idx += 1;
         Some((synth_ticks(&c, self.policy), c))
     }
@@ -39,7 +39,10 @@ impl TickSource for Ohlcv4hSynthesis {
 pub fn aggregate_4h(minutes: &[Candle]) -> Candle {
     let first = &minutes[0];
     let (mut high, mut low) = (first.high, first.low);
-    for m in minutes { if m.high > high { high = m.high; } if m.low < low { low = m.low; } }
+    for m in minutes {
+        if m.high > high { high = m.high; }
+        if m.low < low { low = m.low; }
+    }
     Candle { open_time_ms: first.open_time_ms, open: first.open, high, low, close: minutes.last().unwrap().close }
 }
 
