@@ -3098,12 +3098,12 @@ Do **not** tune to a passing implementation — derive it from the spec, with th
 
 Derivation (defaults: `atr_period` 14, `pivot_left/right` 2, `bos_min_distance` 0.1·ATR, `impulse_body` 1.5·ATR, `zone_search_lookback` 10, `zone_expiry` 30, `target_r` 3.0, `allow_no_obstacle` true; price scale 1 dp):
 
-- Candles 0–12 flat (`o=c=100.0, h=100.5, l=99.5`) → each true range ≈ 1.0, so the seeded ATR ≈ 1.0 and the 14-candle warm-up completes at index 13.
+- Candles 0–12 flat (`o=c=100.0, h=100.5, l=99.5`): each true range is 1.0; the ATR seed (simple mean of the first 14 TRs, candles 0–13) is **1.0357**, and the 14-candle warm-up completes at index 13. (Candle 15's 5.0 range pushes ATR up: ATR15 = 1.3165.)
 - **Swing low at 13** (`l=99.0`): right lows 14 (`100.0`) and 15 (`100.5`) are higher; left lows 11/12 (`99.5`) are ≥ 99.0. Confirmed at candle 15.
 - **Swing high at 15** (`h=105.5`): right highs 16 (`105.2`) and 17 (`104.5`) are lower; left highs 13/14 (`100.5`/`101`) are ≤ 105.5. Confirmed at candle 17.
 - **Demand candle at 19** (`o=104.5, h=105.0, l=104.0, c=104.2`, bearish): the most recent bearish candle before the breakout. Zone = `[104.0, 105.0]`, height 1.0 → 1.0 ATR (inside [0.5, 3.0]). Not mitigated (no candles strictly between 19 and the breakout).
-- **Breakout candle at 20** (`o=105.0, h=109.0, l=104.9, c=108.0`): body 3.0 ≥ 1.5·ATR; close 108.0 ≥ 105.5 + 0.1·ATR (105.6) → bullish BOS. `apply_bos` marks the 105.5 high broken; valid low = the 99.0 low at index 13 (no swing low between 15 and 20) → trend Bullish.
-- **Touch at candle 21** (`o=107.5, h=108.0, l=104.5, c=105.5`): `low_first` path is O(107.5) → L(104.5): previous price 107.5 > zone_high 105.0, current 104.5 ≤ 105.0 → first touch. Trigger 104.5; stop = 104.0 − 0.1·ATR ≈ 103.9; risk ≈ 0.6; TP = 104.5 + 3·0.6 = 106.3. Obstacle = the breakout high 109.0 (no unbroken swing high or supply zone above 104.5) → `obstacle_rr ≈ (109.0 − 104.5)/0.6 ≈ 7.5 ≥ 3.0` → **signal emitted**. Exactly one signal in the series.
+- **Breakout candle at 20** (`o=105.0, h=109.0, l=104.9, c=108.0`): with the pre-breakout ATR (**ATR19 = 1.2929**), the impulse threshold is 1.5·ATR = 1.9394 (body 3.0 passes) and the BOS level is 105.5 + 0.1·ATR = 105.6293 (close 108.0 passes). `apply_bos` marks the 105.5 high broken; valid low = the 99.0 low at index 13. (Candle 18's low 103.2 is **not** a swing low — it is above candle 17's 103.0 — so there is no swing low between 15 and 20.) → trend Bullish.
+- **Touch at candle 21** (`o=107.5, h=108.0, l=104.5, c=105.5`): `low_first` path is O(107.5) → L(104.5): previous 107.5 > zone_high 105.0, current 104.5 ≤ 105.0 → first touch. **The stop uses `zone.atr` — the pre-breakout ATR stored at BOS creation (ATR19 = 1.2929)**, per "no look-ahead, ATR before the breakout"; it does NOT use the latest closed ATR (ATR20 = 1.5557, which would give stop 103.8 / risk 0.7 / rr 6.43). So stop = 104.0 − 0.1·1.2929 = 103.8707 → rounds half-up to **103.9**; risk = **0.6**; TP = **106.3**. Obstacle = the breakout high **109.0** (the unconfirmed-extreme window includes the breakout candle, patched §7.5; no unbroken swing high or supply zone sits above 104.5) → obstacle_rr = (109.0 − 104.5)/0.6 = **7.5** ≥ 3.0 → **signal emitted**. Under `high_first` the path is O(107.5) → H(108.0) → L(104.5); the first crossing is again L(104.5), so both policies yield the same signal. Exactly one signal.
 
 `tests/fixtures/signal_4h.csv`:
 ```csv
@@ -3126,7 +3126,7 @@ open_time_ms,open,high,low,close
 216000000,101.0,105.5,100.5,105.0
 230400000,105.0,105.2,104.0,104.2
 244800000,104.2,104.5,103.0,103.5
-259200000,103.5,104.0,103.0,103.6
+259200000,103.5,104.0,103.2,103.6
 273600000,104.5,105.0,104.0,104.2
 288000000,105.0,109.0,104.9,108.0
 302400000,107.5,108.0,104.5,105.5
@@ -3154,6 +3154,18 @@ fn signal_fixture_yields_exactly_one_signal() {
     assert_eq!(n, 1, "hand-derived fixture must produce exactly one signal");
 }
 ```
+
+**Negative variants** (same head, candles 0–19; `open_time_ms = i * 14400000`). Hand-derived; each is a full CSV. Assert the signal count with the same loop (`assert_eq!(n, expected)`):
+
+- `signal_second_touch_4h.csv` — happy path plus one more touch: append `316800000,105.0,106.0,104.2,104.8`. The zone is already `Consumed`, so the second touch yields no new signal → **1**.
+- `signal_mitigated_4h.csv` — a candle between the zone candle and the breakout trades back into the zone (the grace candle skips index 20, so the dip is at 21):
+  `19:104.5,105.0,104.0,104.2, 20:105.5,106.0,105.2,105.8, 21:105.0,105.2,104.0,104.5, 22:105.3,109.0,105.1,108.0`.
+  Candle 21's low 104.0 ≤ zone_high 105.0 → `mitigated` → **0**.
+- `signal_obstacle_too_close_4h.csv` — a lower breakout high keeps the obstacle within 3R:
+  `19:104.5,105.0,104.0,104.2, 20:104.0,106.2,103.9,106.0, 21:106.0,106.1,104.9,105.0`.
+  Candle 20 body 2.0 passes the impulse gate and close 106.0 passes the BOS level (105.63); the touch at 21 triggers 104.9; obstacle = window_high 106.2 → rr = (106.2 − 104.9)/risk < 3 → veto → **0**.
+
+> Send all three derivations to the human reviewer alongside the happy path before locking the golden hash.
 
 > If the derived series does not produce exactly one signal, fix the **series** (report the discrepancy), do not weaken the assertion. Send the fixture and this derivation to the human reviewer before locking the golden hash.
 
