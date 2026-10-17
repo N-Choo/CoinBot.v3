@@ -1,5 +1,6 @@
-//! Replay-equivalence integration tests. Uses the hand-derived signal fixture (Task 27) so the
-//! golden hash covers a real signal path. Gated behind `harness` so `--no-default-features`
+//! Replay-equivalence integration tests. The golden hash covers the concatenated outputs of the
+//! four hand-derived Task 27 fixtures (happy path + second touch + two rejection variants), so it
+//! exercises real signal and rejection paths. Gated behind `harness` so `--no-default-features`
 //! still compiles the test target (empty).
 #![cfg(feature = "harness")]
 
@@ -9,13 +10,21 @@ use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
 use strategy_analyzer::strategy::types::{Input, Output, StrategyState};
 
-#[test]
-fn golden_hash_is_stable() {
-    let candles = load_csv("tests/fixtures/signal_4h.csv").unwrap();
+/// The four hand-derived Task 27 fixtures, in a fixed order. Hashed together so the golden also
+/// covers the rejection paths (`mitigated`, `obstacle_too_close`), not just the happy path.
+const FIXTURES: [&str; 4] = [
+    "tests/fixtures/signal_4h.csv",
+    "tests/fixtures/signal_second_touch_4h.csv",
+    "tests/fixtures/signal_mitigated_4h.csv",
+    "tests/fixtures/signal_obstacle_too_close_4h.csv",
+];
+
+fn replay_all_outputs(path: &str, policy: PathPolicy) -> Vec<Output> {
+    let candles = load_csv(path).unwrap();
     let cfg = Config::default_for(&["XRP-USDT"]);
     let mut s = StrategyState::new("XRP-USDT", 1);
     let mut outs: Vec<Output> = Vec::new();
-    let mut src = Ohlcv4hSynthesis::new(candles, PathPolicy::LowFirst);
+    let mut src = Ohlcv4hSynthesis::new(candles, policy);
     while let Some((ticks, candle)) = src.next_candle() {
         for t in ticks {
             let (ns, mut o) = step(&s, Input::PriceTick(t), &cfg).unwrap();
@@ -25,6 +34,15 @@ fn golden_hash_is_stable() {
         let (ns, mut o) = step(&s, Input::ClosedCandle(candle), &cfg).unwrap();
         s = ns;
         outs.append(&mut o);
+    }
+    outs
+}
+
+#[test]
+fn golden_hash_is_stable() {
+    let mut outs: Vec<Output> = Vec::new();
+    for path in FIXTURES {
+        outs.extend(replay_all_outputs(path, PathPolicy::LowFirst));
     }
     let digest = {
         use sha2::{Digest, Sha256};
