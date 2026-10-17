@@ -9,7 +9,9 @@ use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
-use strategy_analyzer::strategy::types::{Input, Output, Signal, StrategyState};
+use strategy_analyzer::strategy::types::{
+    ConsumeReason, Input, Output, Signal, StrategyState, ZoneEvent, ZoneEventKind,
+};
 
 /// Count `EntrySignal` outputs while replaying a cached OHLCV file under one path policy.
 fn count_signals(path: &str, policy: PathPolicy) -> usize {
@@ -52,6 +54,58 @@ fn emitted_signal(path: &str, policy: PathPolicy, cfg: &Config) -> Signal {
     found.expect("fixture must emit a signal")
 }
 
+/// Everything a fixture replay tells us about *why* it did (or did not) publish signals:
+/// the signal count, the `StateChange` veto tags, the `ZoneEvent`s, and any zone observed
+/// consumed by a published signal (`ConsumeReason::SignalPublished`, captured before the
+/// next closed candle prunes the terminal zone).
+struct FixtureRun {
+    signals: usize,
+    reasons: Vec<&'static str>,
+    zone_events: Vec<ZoneEvent>,
+    consumed_signal_zone_ids: Vec<String>,
+}
+
+/// Replay a fixture under one path policy, collecting signals, veto reasons, zone events and
+/// signal-consumed zone ids. This makes the historically-silent vetoes assertable.
+fn replay_fixture(path: &str, policy: PathPolicy) -> FixtureRun {
+    let candles = load_csv(path).unwrap();
+    let cfg = Config::default_for(&["XRP-USDT"]);
+    let mut st = StrategyState::new("XRP-USDT", 1);
+    let mut src = Ohlcv4hSynthesis::new(candles, policy);
+    let mut run = FixtureRun { signals: 0, reasons: Vec::new(), zone_events: Vec::new(), consumed_signal_zone_ids: Vec::new() };
+    while let Some((ticks, candle)) = src.next_candle() {
+        for t in ticks {
+            let (ns, outs) = step(&st, Input::PriceTick(t), &cfg).unwrap();
+            st = ns;
+            collect_outs(&mut run, outs);
+            collect_consumed_signal_zones(&mut run, &st);
+        }
+        let (ns, outs) = step(&st, Input::ClosedCandle(candle), &cfg).unwrap();
+        st = ns;
+        collect_outs(&mut run, outs);
+    }
+    run
+}
+
+fn collect_outs(run: &mut FixtureRun, outs: Vec<Output>) {
+    for out in outs {
+        match out {
+            Output::EntrySignal(_) => run.signals += 1,
+            Output::StateChange { reason } => run.reasons.push(reason),
+            Output::ZoneEvent(ev) => run.zone_events.push(ev),
+        }
+    }
+}
+
+/// Record zones the signal path consumed (`signal_published`) before pruning drops them.
+fn collect_consumed_signal_zones(run: &mut FixtureRun, st: &StrategyState) {
+    for z in st.zones.iter().filter(|z| z.consume_reason == Some(ConsumeReason::SignalPublished)) {
+        if !run.consumed_signal_zone_ids.contains(&z.id) {
+            run.consumed_signal_zone_ids.push(z.id.clone());
+        }
+    }
+}
+
 /// Hard-coded field asserts for the happy fixture's emitted signal, taken from the plan's
 /// hand-derivation (candle-21 touch at 104.5; stop = zone.low 104.0 − 0.1·ATR19 1.2929 =
 /// 103.8707 → 103.9 at 1 dp; risk 0.6; TP = 104.5 + 3·0.6 = 106.3; obstacle = breakout high
@@ -92,4 +146,43 @@ fn signal_fixture_counts_match_derivation() {
             "signal count mismatch for {path}"
         );
     }
+}
+
+/// The mitigated fixture must *name* its veto instead of returning silently.
+#[test]
+fn mitigated_fixture_emits_mitigated_reason() {
+    let run = replay_fixture("tests/fixtures/signal_mitigated_4h.csv", PathPolicy::LowFirst);
+    assert_eq!(run.signals, 0, "mitigated zone must publish no signal");
+    assert!(
+        run.reasons.contains(&"mitigated"),
+        "expected a `mitigated` veto reason, got {:?}",
+        run.reasons
+    );
+}
+
+/// The obstacle-too-close fixture vetoes the touch but keeps the zone Active, so the reason is
+/// emitted; the veto must still produce 0 signals.
+#[test]
+fn obstacle_too_close_fixture_emits_reason_and_no_signal() {
+    let run = replay_fixture("tests/fixtures/signal_obstacle_too_close_4h.csv", PathPolicy::LowFirst);
+    assert_eq!(run.signals, 0, "vetoed touch must publish no signal");
+    assert!(
+        run.reasons.contains(&"obstacle_too_close"),
+        "expected an `obstacle_too_close` veto reason, got {:?}",
+        run.reasons
+    );
+}
+
+/// The second touch sees a zone already consumed by the first signal: exactly one signal, and the
+/// first zone is `Consumed` (either a `Consumed` ZoneEvent or the `signal_published` consume reason).
+#[test]
+fn second_touch_fixture_consumes_first_zone() {
+    let run = replay_fixture("tests/fixtures/signal_second_touch_4h.csv", PathPolicy::LowFirst);
+    assert_eq!(run.signals, 1, "second touch must not publish a second signal");
+    let consumed = run.zone_events.iter().any(|e| e.kind == ZoneEventKind::Consumed)
+        || !run.consumed_signal_zone_ids.is_empty();
+    assert!(
+        consumed,
+        "the first zone must end `Consumed` (signal_published or a Consumed ZoneEvent)"
+    );
 }
