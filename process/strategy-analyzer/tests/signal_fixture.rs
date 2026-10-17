@@ -166,7 +166,10 @@ fn run_counts_missed_touch_from_tick_steps() {
         borrow_bps_per_day: Decimal::from(2),
     };
     let res = run("XRP-USDT", &candles, PathPolicy::LowFirst, &cfg, params).unwrap();
-    assert_eq!(res.signals, 0, "a missed first touch must not publish a signal");
+    assert_eq!(
+        res.signals, 0,
+        "a missed first touch must not publish a signal"
+    );
     assert_eq!(res.missed_touch, 1);
     assert_eq!(res.reason_counts.get("missed_touch"), Some(&1));
 }
