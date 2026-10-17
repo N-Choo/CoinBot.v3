@@ -162,6 +162,19 @@ pub fn count_signals(
     })
 }
 
+/// Replay a dataset and return every emitted `Signal` payload in emission order (no simulation, no
+/// PnL, no verdict). Drives the same pass-1 event ordering as `count_signals` and `run` (ticks
+/// first, then the closed candle). The caller is responsible for refusing OOS rows.
+pub fn emitted_signals(
+    symbol: &str,
+    candles: &[Candle],
+    policy: PathPolicy,
+    cfg: &Config,
+) -> Result<Vec<Signal>, StrategyError> {
+    let pass1 = drive_pass1(symbol, candles, policy, cfg)?;
+    Ok(pass1.signals.into_iter().map(|(s, _)| s).collect())
+}
+
 /// Run one (policy) over a dataset. Signals are collected in pass 1; pass 2 simulates them
 /// in time order, opening at most one position at a time (later signals while a position is
 /// open are counted as `skipped_open_position`, mirroring the engine's caps). Core errors are

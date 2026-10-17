@@ -16,7 +16,7 @@ use strategy_analyzer::harness::report::{
     adversarial_composite, calibration_wrong_fraction, cushion_warning, summarize,
     time_blocked_bootstrap, validate_aggregates, TradeRecord, AGG_TOLERANCE, BOOTSTRAP_BLOCK_MS,
 };
-use strategy_analyzer::harness::run::{count_signals, run, RunResult};
+use strategy_analyzer::harness::run::{count_signals, emitted_signals, run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
 use strategy_analyzer::harness::tick_source::{aggregate_4h_bucket, group_4h_buckets, PathPolicy};
 use strategy_analyzer::harness::verdict::{
@@ -102,6 +102,20 @@ enum Cmd {
         #[arg(long, default_value = "both")]
         policy: String,
     },
+    /// Dump every emitted `Signal` as one JSON object per line (in-sample only; no PnL, no trades,
+    /// no verdict). Refuses any row at/after the in-sample/OOS boundary, like `count-signals`.
+    DumpSignals {
+        #[arg(long = "data", value_name = "SYMBOL=PATH", required = true)]
+        data: Vec<String>,
+        #[arg(long = "price-scale", value_name = "SYMBOL=DP")]
+        price_scale: Vec<String>,
+        #[arg(long, default_value = "both")]
+        policy: String,
+        /// Target mode (`fixed_r` or `structural`); defaults to `fixed_r`. `structural` changes the
+        /// emitted take-profit level, so the mode is an explicit choice.
+        #[arg(long, default_value = "fixed_r")]
+        mode: String,
+    },
     /// Validate a 1m-derived 4H aggregate against an independently fetched 4H series (offline).
     /// Refuses the run above `AGG_TOLERANCE`; never silently patches. Network stays in `fetch-data`.
     Calibrate {
@@ -143,6 +157,12 @@ fn main() -> Res<()> {
             price_scale,
             policy,
         } => count_signals_cmd(&data, &price_scale, &policy),
+        Cmd::DumpSignals {
+            data,
+            price_scale,
+            policy,
+            mode,
+        } => dump_signals_cmd(&data, &price_scale, &policy, &mode),
         Cmd::Calibrate {
             one_minute,
             fetched_4h,
@@ -436,6 +456,46 @@ fn count_signals_cmd(data: &[String], price_scale: &[String], policy: &str) -> R
                 c.signals,
                 reasons.join(" ")
             );
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// dump-signals
+// ---------------------------------------------------------------------------------------------
+
+/// Dump every emitted `Signal` as one JSON object per line to stdout (in-sample only; no PnL, no
+/// trades, no verdict). Replays each symbol × policy through the pure core exactly like
+/// `count-signals` and refuses any row at/after the in-sample/OOS boundary.
+fn dump_signals_cmd(data: &[String], price_scale: &[String], policy: &str, mode: &str) -> Res<()> {
+    let datasets = parse_data(data)?;
+    let scales = parse_scales(price_scale)?;
+    let policies = parse_policies(policy)?;
+    let mode = match mode {
+        "fixed_r" => TargetMode::FixedR,
+        "structural" => TargetMode::Structural,
+        other => return Err(format!("unknown mode: {other}").into()),
+    };
+
+    for (symbol, path) in &datasets {
+        let cfg = Config {
+            target_mode: mode,
+            ..build_config(std::slice::from_ref(symbol), &scales)?
+        };
+        let candles = load_csv(path)?;
+        // Refuse any row at/after the in-sample/OOS boundary: dumping is in-sample only.
+        if let Some(ms) = lock::first_oos_candle(&candles, lock::OOS_BOUNDARY_MS) {
+            return Err(format!(
+                "{symbol}: row at/after the in-sample/OOS boundary (open_time_ms={ms} >= {}); dump-signals is in-sample only",
+                lock::OOS_BOUNDARY_MS
+            )
+            .into());
+        }
+        for p in &policies {
+            for sig in emitted_signals(symbol, &candles, *p, &cfg)? {
+                println!("{}", serde_json::to_string(&sig)?);
+            }
         }
     }
     Ok(())
