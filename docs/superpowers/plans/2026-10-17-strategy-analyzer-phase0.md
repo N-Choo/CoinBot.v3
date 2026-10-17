@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **The code in `process/strategy-analyzer/` is the source of truth.** The code blocks embedded below are an early snapshot and may lag the implemented code (e.g. renamed enum identifiers such as `VetoedNoObstacle`/`VetoedInvalidLevels`, the `price_increment` snapping, `Input::Resume`). Where a snapshot and the code disagree, **the code wins** — do not keep the snapshot in sync by hand.
+
 **Goal:** Build `process/strategy-analyzer`, a pure deterministic Rust core implementing the supply-and-demand 4H strategy, plus an offline backtest/replay harness that runs the core identically to how it will run live.
 
 **Architecture:** The crate splits into `strategy/` (pure, I/O-free, `Decimal`-only, no float arithmetic, no wall-clock, no `HashMap` iteration) and `harness/` (feature-gated; owns data fetching, tick generation, position simulation, and reporting). `harness → strategy` is a one-way dependency. The core exposes `step(&StrategyState, Input, &Config) -> Result<(StrategyState, Vec<Output>), StrategyError>` with validate-then-commit semantics.

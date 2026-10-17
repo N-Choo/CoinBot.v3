@@ -18,15 +18,15 @@
 Run the deterministic core live, per ticker, and serve signals to the trade engine over **gRPC** via the **existing** `AnalyzerService.Analyze` (`process/proto/analyzer.proto`, already compiled by `share/build.rs` and re-exported as `share::AnalyzerService` / `pub use analyzer::*`). The Rust analyzer **replaces** the Python `process/analyzer/`.
 
 ```
-trade-engine --gRPC Analyze(tickers)--> strategy-analyzer     (unary request/response)
-strategy-analyzer --AnalyzeResponse{signals}--> trade-engine
+trade-engine --gRPC Analyze(tickers, after_seq)--> strategy-analyzer   (unary)
+strategy-analyzer --AnalyzeResponse{signals: seq > after_seq}--> trade-engine
 ```
 
-Integration is **request/response**: the engine calls `Analyze(tickers)` and the analyzer returns the signals it produced since the previous call per ticker. Per-ticker loops run continuously and own per-ticker state; the RPC never resets it. The analyzer implements the tonic **server** (pattern: `process/deposit-worker/src/grpc_handler.rs`); the engine gains a tonic **client** (it has no `tonic` dependency today; `share` already exposes the generated types).
+Integration is a **sequence-acknowledged unary pull** (§6): the engine calls `Analyze(tickers, after_seq)` every ~5–10s and receives every signal with `seq > after_seq`; advancing `after_seq` acknowledges them. The call is also the activation (§3c). Per-ticker loops run continuously and own per-ticker state; the RPC never resets it. The analyzer implements the tonic **server** (pattern: `process/deposit-worker/src/grpc_handler.rs`); the engine gains a tonic **client** (no `tonic` dependency today; `share` re-exports the generated types).
 
 ## 2. Why a continuous loop
 
-The core is a per-symbol **state machine**; its guarantees (first-touch-only, missed-touch, no duplicate signals across restarts) require carrying state forward. The engine's ~24h trigger is coarser than 4H boundaries/tick touches, so the analyzer runs its own loop; the trigger only activates.
+The core is a per-symbol **state machine**; its guarantees (first-touch-only, missed-touch, no duplicate signals across restarts) require carrying state forward. The engine's call cadence (now ~5–10s via gRPC) still does not define the strategy's clock — 4H boundaries and tick touches do — so the analyzer runs its own loop; the call only activates.
 
 ## 3. Components
 
@@ -35,8 +35,8 @@ The core is a per-symbol **state machine**; its guarantees (first-touch-only, mi
 - **Per-symbol candle poller:** REST 4H candles (the `fetch-data` path); shares the global limiter.
 - **Symbol metadata / clock:** `priceIncrement` from `/api/v2/symbols`; time from `/api/v1/timestamp`.
 - **State store:** file-per-symbol (Phase 1); §4.
-- **Supervisor:** consumes `tickers:analyze`; spawns/refreshes tasks; owns the activation set, TTL, pruning.
-- **Publisher (Phase 2 only):** maps `Signal → TradeSignal` (§7) behind one cutover flag. **Phase 1 logs only** (or a shadow channel) — never `signals:result`.
+- **Supervisor:** serves gRPC `Analyze`; spawns/refreshes per-symbol tasks from the requested ticker set; owns activation, TTL, pruning.
+- **gRPC service (Phase 2 only):** the tonic server implementing `AnalyzerService`; maps `Signal → proto Signal` (§7) behind one cutover flag. **Phase 1 has no gRPC server and publishes nothing** — it logs only.
 - **Recorded input stream (Phase 1):** append each symbol's `(ClosedCandle | PriceTick)` inputs for live-vs-replay equivalence.
 
 ### 3a. Candle-close rule (adapter-owned, since the core has no clock)
@@ -49,13 +49,10 @@ A 4H candle is closed only when `open_time + 4h + settle <= exchange_now`, with 
 
 **Price increment decision (2026-10-17).** A dp `price_scale` alone cannot express a step-5/step-25 grid (KuCoin `priceIncrement` can be `0.0005` at 4 dp), so the **core carries each symbol's `price_increment` and snaps `stop_loss` / `take_profit` / reference levels to valid multiples** of it — stop **away from** entry, take-profit **toward** entry — before publishing. Published prices are therefore valid exchange multiples, and the **engine re-validates** them (the analyzer does not assume the engine's validation). When a symbol has no configured increment the core falls back to the Phase 0 dp `round_price` behavior.
 
-### 3c. Activation message + TTL
+### 3c. Activation
 
-`tickers:analyze` payload (JSON):
-```json
-{ "schema_version": 1, "symbols": ["XRP-USDT", "BTC-USDT"], "sent_at_ms": 1767225600000 }
-```
-- **Activation TTL** well above the 24h refresh (`activation_ttl = 72h`, the concrete default): on expiry the symbol is **deactivated** (loop stops; state retained until pruning). One missed message must not drop a symbol and its zone state.
+With gRPC there is no `tickers:analyze` message; the **`Analyze(tickers, after_seq)` call is the activation** — each call (every ~5–10s) refreshes the active ticker set.
+- **Activation TTL** can shrink from the earlier 72h (sized for the coarse 24h Redis trigger) to a **few minutes** (`activation_ttl = 5 min`, default): a symbol absent from the recent call window is **deactivated** (loop stops; state retained until pruning). One missed call must not drop a symbol and its zone state.
 - **Removal:** a symbol absent from the active set is deactivated (state retained, pruned per TTL).
 - **Re-add after a long gap:** treated as a **cold start** — re-warm from history and apply §4 (gap rule), so no fabricated first touch.
 
@@ -83,18 +80,23 @@ Poll `allTickers` every **5s** (proposed). A price older than **30s** (proposed)
 
 ## 6. Delivery semantics (gRPC `Analyze`)
 
-`Analyze` is **unary request/response** (`analyzer.proto`). The engine calls `Analyze(tickers)` and the analyzer returns the signals produced **since the last successful call** for those tickers. Consequences:
-- A **lost or retried** call must not create or drop a trade → stable `signal_id` + **engine-side dedup** (idempotency). The engine has **no** dedup today.
-- **`analyzer.proto` must be extended before use:** its `Signal` is `{ticker, action, confidence, entry_price}` — it lacks `sl_price`, `tp_price`, `zone_id`, and `signal_id`. The engine **honors SL/TP**, so these fields must be added, alongside a `schema_version`.
-- **Direction decision (confirm):** the engine drives the call cadence (pull). If signals must be pushed the instant a touch occurs, a server-streaming RPC is needed instead of unary `Analyze` (a proto change).
+`Analyze(tickers, after_seq)` returns the signals with **`seq > after_seq`**. Each signal carries `seq`, `signal_id`, and `expires_at_ms`. Semantics:
+- The engine calls every **~5–10s** (matching the 5s price poll) and acknowledges by advancing `after_seq`.
+- The analyzer **holds pending signals until acknowledged or expired**. A repeated call with the same `after_seq` **replays the same signals**, so a lost response is harmless (and the engine dedups on `signal_id`).
+- A zone consumed at emission whose signal is never acknowledged before `expires_at_ms` becomes **`expired_undelivered`**.
+- This supplies the core's **`EngineAck` and `Clock`** inputs (the ack advances `after_seq`; expiry is time-based).
+- **Streaming** can be added later over the **same `Signal` message**; it needs reconnect logic in an engine with no tonic dependency today, so **unary ships first**.
 
 ## 7. `Signal → gRPC Signal` mapping
 
-The proto `Signal` today: `{ ticker, action, confidence, entry_price }`. **Extend it** (proto change) to `{ schema_version, signal_id, ticker, action, confidence, entry_price, sl_price, tp_price, zone_id, reason }` so the engine can honor SL/TP and dedup:
+**Extend `analyzer.proto` additively** — never renumber or reuse fields 1–4. Add: `schema_version`, `signal_id`, `seq` (per-analyzer monotonic), `expires_at_ms`, `trigger_time_ms`, `sl_price`, `tp_price`, `zone_id`, `reason`. Keep prices as `double` (to match the engine's `TradeSignal`); `snap to priceIncrement` stays an **engine-side** job. Also add `after_seq` to `AnalyzeRequest`. No generated `Signal` struct literals exist in the workspace today (checked), so the addition is safe; **re-check with a workspace grep before merging** (an added field breaks any literal lacking `..Default::default()`).
 
 | proto `Signal` field | type | from Phase-0 `Signal` |
 | --- | --- | --- |
-| `signal_id` (new) | string | `signal.signal_id` (stable; the engine's dedup key) |
+| `signal_id` (new) | string | `signal.signal_id` (stable; dedup key) |
+| `seq` (new) | uint64 | assigned at emission (analyzer-monotonic) |
+| `expires_at_ms` (new) | int64 | emission time + TTL |
+| `trigger_time_ms` (new) | int64 | `signal.triggered_at_ms` |
 | `ticker` | string | `signal.symbol` (KuCoin form) |
 | `action` | string `"buy"`/`"sell"` | `Long → "buy"`, `Short → "sell"` |
 | `confidence` | double | fixed `1.0` (engine does not gate on it — logging only) |
@@ -129,11 +131,11 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) against the 
 - **≥ 3 forced restarts** and **≥ 3 forced network drops**, each verified to resume correctly (state load → §4 → no fabricated first touch; no duplicate signal).
 - **Live-vs-replay equivalence** on the recorded input stream (byte-identical outputs).
 - **Wick-miss rate** measured; if it exceeds a threshold (**proposed: >5% of zone touches**), switch touch detection to **1m-derived synthetic ticks** (`OneMinuteExpansion`) and re-run.
-- Zero `signals:result` publications in Phase 1.
+- **Phase 1 has no gRPC server** and publishes nothing (it logs only). The server, the engine client, the `analyzer.proto` changes, and the cutover flag are all **Phase 2**.
 
 ## 11. Phase 2 outline (not committed until Phase 1 passes)
 
-- Serve gRPC `Analyze` (§6/§7) behind **one cutover flag**; **Python kept deployable for rollback**; the two analyzers **mutually exclusive** under that flag.
+- Serve gRPC `Analyze` (§6/§7) behind **one cutover flag**. The engine reads from **exactly one** source — python/Redis **or** rust/gRPC — never both. **Python stays deployable for rollback** until the paper bar passes, then remove the Redis `signals:result` path and `tickers:analyze`. Because the Python analyzer is RSI-divergence, this is a **strategy swap as well as a transport swap** and stays gated on the Phase 0 verdict.
 - **Delivery:** idempotent unary `Analyze` + **engine-side dedup on `signal_id`** (§6); extend `analyzer.proto` with `sl_price`/`tp_price`/`zone_id`/`signal_id`/`schema_version`.
 - **State store** moves to Postgres/Redis with a defined migration owner.
 - Engine consumer + risk: the engine today has only a fund gate + `cap_loss`; daily-DD/open-risk/correlation/net-R:R **do not exist**.
