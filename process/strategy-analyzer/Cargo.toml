@@ -6,6 +6,9 @@ edition = "2021"
 [features]
 default = []
 harness = ["dep:clap", "dep:ureq", "dep:csv"]
+# Phase 1 live (shadow) adapter: continuous per-symbol loops, shared pollers, file state and a
+# recorded input stream. Log only — no gRPC server and nothing published to `signals:result`.
+live = ["dep:tokio", "dep:ureq", "dep:log", "dep:env_logger"]
 
 [dependencies]
 rust_decimal = { version = "1", features = ["serde-with-str"] }
@@ -16,6 +19,17 @@ sha2 = "0.10"
 clap = { version = "4", features = ["derive"], optional = true }
 ureq = { version = "2", features = ["json"], optional = true }
 csv = { version = "1", optional = true }
+# HTTP stays on the blocking `ureq` adapter above (called via `tokio::task::spawn_blocking`); tokio
+# only supplies the async runtime, timers, channels and signal handling for the live loops.
+tokio = { workspace = true, features = [
+    "rt-multi-thread",
+    "macros",
+    "sync",
+    "time",
+    "signal",
+], optional = true }
+log = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
 
 [dev-dependencies]
 # `syn`-based purity test (tests/purity.rs): parses the core and fails on any f32/f64 token.
@@ -26,3 +40,10 @@ proc-macro2 = { version = "1", features = ["span-locations"] }
 name = "backtest"
 path = "src/bin/backtest.rs"
 required-features = ["harness"]
+
+# Phase 1 shadow runner: spawns the live loops, logs only. `harness` supplies the offline replay
+# smoke path (a CSV -> synthetic ticks) so the binary can be exercised without the network.
+[[bin]]
+name = "serve"
+path = "src/bin/serve.rs"
+required-features = ["harness", "live"]

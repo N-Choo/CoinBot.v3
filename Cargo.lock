@@ -4779,6 +4779,8 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "csv",
+ "env_logger",
+ "log",
  "proc-macro2",
  "rust_decimal",
  "serde",
@@ -4786,6 +4788,7 @@ dependencies = [
  "sha2",
  "syn 2.0.117",
  "thiserror 1.0.69",
+ "tokio",
  "ureq",
 ]
 
