@@ -280,3 +280,79 @@ mod touch_tests {
         assert_eq!(s.missed_touch_count, 1);
     }
 }
+
+/// Edge-case accuracy tests (Task 28): the supply (short) path end to end through `step`, and a
+/// large-tick symbol proving the R:R gate evaluates the *rounded* payload levels.
+#[cfg(test)]
+mod edge_tests {
+    use super::*;
+    use crate::strategy::step::step;
+    use crate::strategy::types::{Direction, Input, Output, Pivot, StrategyState, Tick, TrendState, ZoneKind, ZoneState};
+    use std::str::FromStr;
+    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn zone(kind: ZoneKind, low: &str, high: &str, window_low: &str) -> Zone {
+        Zone { id: "z".into(), kind, low: dec(low), high: dec(high), atr: dec("1.0"),
+            breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0, state: ZoneState::Active,
+            terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec(high), window_low: dec(window_low) }
+    }
+
+    #[test]
+    fn supply_path_short_signal_end_to_end() {
+        // Bearish trend, an active supply zone [104.0, 105.0]; a descending tick rises back up
+        // and first-touches the zone's proximal edge (zone_low) from below.
+        // atr 1.0: stop = 105.0 + 0.1*1.0 = 105.1; trigger 104.1 -> risk 1.0; TP = 104.1 - 3.0*1.0.
+        // The only obstacle below the trigger is the zone window low 101.1 -> rr = 3.0 (== floor).
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("1.0"));
+        s.trend = TrendState::Bearish;
+        s.last_price = Some(dec("103.5"));
+        s.last_tick_time_ms = Some(0);
+        s.last_candle_time_ms = Some(0);
+        s.zones = vec![zone(ZoneKind::Supply, "104.0", "105.0", "101.1")];
+
+        let (_, outs) = step(&s, Input::PriceTick(Tick { time_ms: 1, price: dec("104.1"), is_bar_open: false }), &cfg).unwrap();
+        let sig = outs.iter().find_map(|o| if let Output::EntrySignal(sig) = o { Some(sig) } else { None })
+            .expect("a first touch from below must publish a short signal");
+
+        assert_eq!(sig.direction, Direction::Short);
+        assert_eq!(sig.trigger_price, dec("104.1"));
+        assert!(sig.stop_loss > sig.zone_high, "short stop sits ABOVE the supply zone ({} vs {})", sig.stop_loss, sig.zone_high);
+        assert_eq!(sig.stop_loss, dec("105.1"));
+        assert!(sig.take_profit < sig.trigger_price);
+        assert_eq!(sig.take_profit, dec("101.1"));
+        assert_eq!(sig.structure_obstacle_price, Some(dec("101.1")));
+        assert_eq!(sig.obstacle_rr, Some(dec("3.0")));
+    }
+
+    #[test]
+    fn large_tick_symbol_gate_uses_rounded_payload_levels() {
+        // A large-tick symbol (price_scale 0 => tick size 1.0). Raw (unrounded) numbers would
+        // veto: trigger 100.4 / stop 98.9 / obstacle 103.5 -> rr = 3.1/1.5 = 2.066 < 3.0. The
+        // gate must evaluate the ROUNDED payload levels instead: trigger 100, stop 99,
+        // obstacle 104, risk 1.0 -> rr 4.0 >= 3.0, so the signal is accepted.
+        let mut cfg = Config::default_for(&["BIG-USDT"]);
+        cfg.price_scale.insert("BIG-USDT".to_string(), 0);
+        let mut s = StrategyState::new("BIG-USDT", 1);
+        s.atr = Some(dec("1.0"));
+        s.trend = TrendState::Bullish;
+        s.last_price = Some(dec("100.7"));
+        s.last_tick_time_ms = Some(0);
+        s.last_candle_time_ms = Some(0);
+        s.swing_highs = vec![Pivot { index: 0, time_ms: 0, price: dec("103.5"), broken: false }];
+        // Zone high 100.4 so the touching tick (100.4) first-touches the proximal edge.
+        s.zones = vec![zone(ZoneKind::Demand, "99.0", "100.4", "99.0")];
+
+        let (_, outs) = step(&s, Input::PriceTick(Tick { time_ms: 1, price: dec("100.4"), is_bar_open: false }), &cfg).unwrap();
+        let sig = outs.iter().find_map(|o| if let Output::EntrySignal(sig) = o { Some(sig) } else { None })
+            .expect("the gate must accept when the rounded obstacle_rr clears the floor");
+
+        assert_eq!(sig.trigger_price, dec("100"));
+        assert_eq!(sig.stop_loss, dec("99"));
+        assert_eq!(sig.take_profit, dec("103"));
+        assert_eq!(sig.structure_obstacle_price, Some(dec("104")));
+        assert_eq!(sig.obstacle_rr, Some(dec("4.0")));
+        assert_eq!(sig.gross_rr, dec("3.0"));
+    }
+}

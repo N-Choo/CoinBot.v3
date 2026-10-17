@@ -134,6 +134,33 @@ mod tests {
         assert_eq!(z.low, dec("1.04"));
         assert_eq!(z.high, dec("1.14"));
     }
+
+    // A demand fixture whose breakout body (0.34) clears the impulse gate at ATR 0.2
+    // (threshold 1.5 * 0.2 = 0.30), so only the height bound can reject. Vary the zone candle.
+    fn height_fixture(zone_low: &str) -> Vec<Candle> {
+        vec![
+            candle("1.00","1.05","0.95","1.00"),             // 0
+            candle("1.20","1.20",zone_low,zone_low),         // 1 bearish zone candle, high fixed at 1.20
+            candle("1.10","1.15","1.05","1.12"),             // 2 bullish
+            candle("1.22","1.28","1.21","1.26"),             // 3 bullish, low 1.21 > zone high 1.20 -> not mitigated
+            candle("1.26","1.62","1.25","1.60"),             // 4 breakout, body 0.34
+        ]
+    }
+
+    #[test]
+    fn zone_size_bounds_are_inclusive_at_each_limit() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // height/ATR == min (0.1/0.2 = 0.5) -> accepted at the boundary
+        let at_min = create_zone(&win(height_fixture("1.10")), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg);
+        assert!(at_min.is_ok(), "height exactly at min must be accepted: {at_min:?}");
+        // just below min (0.099/0.2 = 0.495) -> rejected
+        assert_eq!(create_zone(&win(height_fixture("1.101")), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_small");
+        // height/ATR == max (0.6/0.2 = 3.0) -> accepted at the boundary
+        let at_max = create_zone(&win(height_fixture("0.60")), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg);
+        assert!(at_max.is_ok(), "height exactly at max must be accepted: {at_max:?}");
+        // just above max (0.601/0.2 = 3.005) -> rejected
+        assert_eq!(create_zone(&win(height_fixture("0.599")), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_large");
+    }
 }
 
 use crate::strategy::types::{TerminalReason, TrendState, ZoneEvent, ZoneEventKind, ZoneEventReason, ZoneState as ZS};
