@@ -106,15 +106,15 @@ footer for positions still open and an account summary:
   BTC-USDT
   ──────────────────────────────────────────────────────────────────
   entry      dir   entry$     exit       exit$      pnl%     pnl$  why
-  2026-05-12 BUY   91,200     2026-05-19 96,000     +5.0%   +50.00  TP
-  2026-05-28 BUY   88,000     2026-06-02 85,000    -10.0%   -50.00  SL
+  2026-05-12 BUY   $91,200    2026-05-19 $96,000     +5.0%  +50.00  TP
+  2026-05-28 BUY   $88,000    2026-06-02 $85,000    -10.0%  -50.00  SL
   ──────────────────────────────────────────────────────────────────
   open: 1  |  trades 2  wins 1/2 (50%)  realized +0.00  equity 1000.00 (init 1000)
 ```
 
-`why` is `TP` or `SL`. Positions still open at the end of data are listed in the
-table with `open` in the exit columns (they are never force-closed) and counted
-in the `open:` footer; the summary reports win rate, realized PnL, and equity.
+`why` is `TP` or `SL` on closed rows, and `open` on rows that are still open at
+the end of data (they are never force-closed and are counted in the `open:`
+footer); the summary reports win rate, realized PnL, and equity.
 
 ## Core rules
 
