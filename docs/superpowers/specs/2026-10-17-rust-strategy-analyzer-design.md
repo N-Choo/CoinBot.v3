@@ -252,6 +252,8 @@ Trait producing an ordered `(PriceTick, ClosedCandle)` event stream with the §4
 
 The core never knows which source is used. Resolution is stamped on every report; cross-resolution comparison is refused unless explicitly forced.
 
+> **CLI resolution (Phase 0).** The `OneMinuteExpansion` source and 1m data are implemented and used by `calibrate` (1m→4H aggregate validation, bucketed by the 4H grid cell), but the headline `backtest`/`count-signals` CLI is **4H-synthesis-only**: there is deliberately **no `--resolution` flag**, so cross-resolution comparison is not exposed. Wiring 1m into the headline run is deferred — it first requires the perturbation diagnostics to fall back to 4H synthesis to stay within budget (§10.4).
+
 ### 8.2 Data acquisition
 - `fetch-data` is a **separate subcommand** that pages KuCoin `GET /api/v1/market/candles` by time (`startAt`/`endAt`, seconds; max 1500 records/request; spot has **no historical range limit**; **throttled to respect rate limits**), writes a cached file, and prints its **dataset hash**. Backtest never touches the network.
 - Deep 1m history **is obtainable by pagination** (≈ 700 throttled requests/pair for 2 years), so 1m-grade data can be a **Phase 0** deliverable (`fetch-data --interval 1min`) rather than deferred. If 1m is not fetched, headline results come from 4H synthesis and 1m is used only for calibration (§8.5).

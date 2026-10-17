@@ -86,6 +86,11 @@ backtest freeze-lock --data XRP-USDT=data/xrp_4h.csv --price-scale XRP-USDT=4 \
 # Refuses any row at/after the in-sample/OOS boundary. No PnL, no trades, no verdict.
 backtest count-signals --data XRP-USDT=data/xrp_4h.csv --price-scale XRP-USDT=4
 
+# Validate a 1m series' 4H aggregate against an independently fetched 4H series (offline).
+# 1m candles are bucketed by their 4H grid cell (open_time_ms / 4h), so a mid-bucket start
+# still aligns. Refuses the run above AGG_TOLERANCE; never silently patches.
+backtest calibrate --one-minute data/xrp_1m.csv --fetched-4h data/xrp_4h.csv
+
 # Run the backtest offline against one or more cached datasets.
 backtest backtest --data XRP-USDT=data/xrp_4h.csv --data BTC-USDT=data/btc_4h.csv \
     --price-scale XRP-USDT=4 --price-scale BTC-USDT=2 \
@@ -97,7 +102,15 @@ backtest backtest --data XRP-USDT=data/xrp_4h.csv --data BTC-USDT=data/btc_4h.cs
 explicit price scale (there is **no** silent default: a missing scale is an error, and neither the
 symbol set nor the scale is hard-coded). `--policy both` and `--mode both` (the defaults) run both
 path policies and both target modes side by side. `fetch-data` is throttled and retries with
-exponential backoff on rate limits.
+exponential backoff on rate limits, and writes a provenance sidecar (`<out>.provenance.json`:
+symbol, interval, range, row count, dataset hash) next to the cache; a malformed exchange timestamp
+is an error (never silently coerced to `0`).
+
+**Resolution: `backtest`/`count-signals` are 4H-synthesis-only in Phase 0** (spec §8.1's
+cross-resolution comparison is not exposed on the CLI, so there is no `--resolution` flag). The
+`OneMinuteExpansion` `TickSource` exists in `harness::tick_source` and 1m data is used by
+`calibrate`; wiring 1m into the headline backtest CLI is deferred (it would need diagnostics to drop
+back to 4H synthesis to stay within budget, per spec §10.4).
 
 ## Numeric & determinism policy (short form)
 
@@ -136,6 +149,9 @@ so changing any of those inputs changes the lock.
   range touches the OOS window unless `--oos` and a matching `--lock` are supplied.
 - **Non-OOS runs are labelled `EXPLORATORY`** so a `Pass` cannot be mistaken for a confirmatory
   result.
+- **OOS names exactly one mode.** `--oos` requires a single explicit `--mode` (`fixed_r` or
+  `structural`) that **matches the frozen lock**; `--mode both` is refused (each mode is compared
+  in-sample only), and a mode that differs from the locked one is refused by name.
 - **OOS is one-shot and append-only.** Every OOS invocation is appended to `<lock>.oos.log`
   (recording the dataset hashes and verdict), so the first confirmatory run's record is preserved.
   A second OOS run on the same data is **refused** unless `--oos-consumed` is passed; an overridden
