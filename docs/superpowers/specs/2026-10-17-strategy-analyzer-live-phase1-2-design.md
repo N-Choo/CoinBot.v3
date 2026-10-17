@@ -15,14 +15,14 @@
 
 ## 1. Objective
 
-Run the deterministic core live, per ticker, and (Phase 2) publish to the trade engine on the **existing contract** (`TradeSignal` on Redis `signals:result`). Integration is the repo's **engine-triggered request/response**:
+Run the deterministic core live, per ticker, and serve signals to the trade engine over **gRPC** via the **existing** `AnalyzerService.Analyze` (`process/proto/analyzer.proto`, already compiled by `share/build.rs` and re-exported as `share::AnalyzerService` / `pub use analyzer::*`). The Rust analyzer **replaces** the Python `process/analyzer/`.
 
 ```
-trade-engine --PUB tickers:analyze--> strategy-analyzer         (activate/refresh symbols)
-strategy-analyzer --(Phase 2) PUB signals:result--> trade-engine (Vec<TradeSignal>)
+trade-engine --gRPC Analyze(tickers)--> strategy-analyzer     (unary request/response)
+strategy-analyzer --AnalyzeResponse{signals}--> trade-engine
 ```
 
-The analyzer owns continuous per-ticker loops and persists per-ticker state; the engine message only registers/refreshes *which* symbols run. **Decision:** the Rust analyzer **replaces** the Python `process/analyzer/` on this path (Option A targets the same contract; coexistence would double-publish).
+Integration is **request/response**: the engine calls `Analyze(tickers)` and the analyzer returns the signals it produced since the previous call per ticker. Per-ticker loops run continuously and own per-ticker state; the RPC never resets it. The analyzer implements the tonic **server** (pattern: `process/deposit-worker/src/grpc_handler.rs`); the engine gains a tonic **client** (it has no `tonic` dependency today; `share` already exposes the generated types).
 
 ## 2. Why a continuous loop
 
@@ -81,28 +81,35 @@ Clearing `last_price` catches a cross that is *still inside* the zone after down
 
 Poll `allTickers` every **5s** (proposed). A price older than **30s** (proposed) is not fed as a tick, and recovery from that gap follows the §4 rule. The staleness limit and poll interval are **config**, recorded in the shadow report.
 
-## 6. Delivery semantics — Pub/Sub is at-most-once
+## 6. Delivery semantics (gRPC `Analyze`)
 
-Phase 2 publishing via Redis **Pub/Sub** is **at-most-once**: if the engine is down at publish time, the signal is **lost** (and the zone is already consumed, so it will not be re-offered). Alternatives — **Redis Streams** with a consumer group + `XACK` (at-least-once; engine dedups on `signal_id`), or keeping Pub/Sub with a **durable outbox** plus engine-side idempotency — carry a delivery/idempotency contract that shapes the Phase 2 design (publisher, consumer, and dedup key). The **Streams-vs-outbox decision is therefore required before the Phase 2 design**, not at its exit. The engine currently has **no** dedup table.
+`Analyze` is **unary request/response** (`analyzer.proto`). The engine calls `Analyze(tickers)` and the analyzer returns the signals produced **since the last successful call** for those tickers. Consequences:
+- A **lost or retried** call must not create or drop a trade → stable `signal_id` + **engine-side dedup** (idempotency). The engine has **no** dedup today.
+- **`analyzer.proto` must be extended before use:** its `Signal` is `{ticker, action, confidence, entry_price}` — it lacks `sl_price`, `tp_price`, `zone_id`, and `signal_id`. The engine **honors SL/TP**, so these fields must be added, alongside a `schema_version`.
+- **Direction decision (confirm):** the engine drives the call cadence (pull). If signals must be pushed the instant a touch occurs, a server-streaming RPC is needed instead of unary `Analyze` (a proto change).
 
-## 7. `Signal → TradeSignal` mapping (Option A)
+## 7. `Signal → gRPC Signal` mapping
 
-| `TradeSignal` (engine) | type | from Phase-0 `Signal` |
+The proto `Signal` today: `{ ticker, action, confidence, entry_price }`. **Extend it** (proto change) to `{ schema_version, signal_id, ticker, action, confidence, entry_price, sl_price, tp_price, zone_id, reason }` so the engine can honor SL/TP and dedup:
+
+| proto `Signal` field | type | from Phase-0 `Signal` |
 | --- | --- | --- |
-| `ticker` | String | `signal.symbol` (KuCoin form; must match the engine's contract ticker) |
-| `action` | String `"BUY"`/`"SELL"` | `Long → "BUY"`, `Short → "SELL"` |
-| `confidence` | `f64` | fixed `1.0` (documented) |
-| `entry_price` | `f64` | `reference_entry_price` (Decimal→`f64` **only at the publish edge**) |
-| `sl_price` | `f64` | `stop_loss` |
-| `tp_price` | `f64` | `take_profit` |
-| `reason` | String | `supply_demand_4h zone=<id> rr=<gross_rr> mode=<target_mode>` |
+| `signal_id` (new) | string | `signal.signal_id` (stable; the engine's dedup key) |
+| `ticker` | string | `signal.symbol` (KuCoin form) |
+| `action` | string `"buy"`/`"sell"` | `Long → "buy"`, `Short → "sell"` |
+| `confidence` | double | fixed `1.0` (engine does not gate on it — logging only) |
+| `entry_price` | double | `reference_entry_price` (Decimal→f64 at the boundary; round-trip pinned) |
+| `sl_price` (new) | double | `stop_loss` |
+| `tp_price` (new) | double | `take_profit` |
+| `zone_id` (new) | string | `signal.zone_id` |
+| `reason` (new) | string | `supply_demand_4h rr=<gross_rr> mode=<target_mode>` |
 
-The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used by `position_exit`). `Decimal`→`f64` conversion happens **only** at the publisher boundary (`harness::publish::price_f64`; core and state stay `Decimal`), and is pinned by a round-trip test across price scales.
+The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used by `position_exit`). `Decimal`→`f64` conversion happens **only** at the RPC boundary (`harness::publish::price_f64`; core and state stay `Decimal`), pinned by a round-trip test across price scales.
 
-**Price increment (§3b, 2026-10-17).** The core snaps `stop_loss`, `take_profit`, and reference levels to the symbol's `price_increment` before publishing (stop away from entry, take-profit toward entry), so the prices handed to the engine are valid multiples of the exchange increment. The **engine re-validates**; the analyzer never relies on that. A dp-only `price_scale` could still yield a rejectable price on a step-5 grid, so the increment is the authoritative step.
+**Price increment (§3b).** The core snaps `stop_loss`, `take_profit`, and reference levels to the symbol's `price_increment` before publishing (stop away from entry, take-profit toward entry), so the prices handed to the engine are valid multiples of the exchange increment. The **engine re-validates**; the analyzer never relies on that. A dp-only `price_scale` could still yield a rejectable price on a step-5 grid, so the increment is the authoritative step. The engine currently quantizes only quantity, so it must be updated to quantize SL/TP too.
 
-- `signal_id` **must become a first-class `TradeSignal` field before engine-side dedup** (Phase 2 §6/§11): dedup must key on the stable id, not on a `reason`-embedded string. Until the engine schema gains that field, the id is carried in `reason`.
-- `confidence` is **not gated by the engine**: the engine only logs it (`TradeSignal::log`), so it is fixed at `1.0` and must not be read as a filter or threshold.
+- `signal_id` **must be a first-class proto field before engine-side dedup** (dedup keys on the stable id, not a `reason` string).
+- `confidence` is **not gated by the engine** (logging only), so it is fixed at `1.0`.
 
 ## 8. Rate limiting, isolation, quarantine
 
@@ -126,8 +133,8 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) against the 
 
 ## 11. Phase 2 outline (not committed until Phase 1 passes)
 
-- Publish (§7) behind **one cutover flag**; **Python kept deployable for rollback**; the two publishers **mutually exclusive** under that flag.
-- **Delivery:** Streams+`XACK` or outbox (§6); engine-side **dedup on `signal_id`** (must be built).
+- Serve gRPC `Analyze` (§6/§7) behind **one cutover flag**; **Python kept deployable for rollback**; the two analyzers **mutually exclusive** under that flag.
+- **Delivery:** idempotent unary `Analyze` + **engine-side dedup on `signal_id`** (§6); extend `analyzer.proto` with `sl_price`/`tp_price`/`zone_id`/`signal_id`/`schema_version`.
 - **State store** moves to Postgres/Redis with a defined migration owner.
 - Engine consumer + risk: the engine today has only a fund gate + `cap_loss`; daily-DD/open-risk/correlation/net-R:R **do not exist**.
 - **Paper-trading bar before any live cutover:** ≥ **4 weeks** and ≥ **30 signals**, with every difference between paper outcomes and the backtest explained.
@@ -145,7 +152,7 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) against the 
 - **Phase 0 OOS bar outcome — gates this entire document.**
 - Per-endpoint **weights** to finalize the §8 request budget.
 - The **missed-touch rule** is *approach-from-outside* (Phase 0 §7.2, updated): a zone is `missed_touch` unless the first observation is an approach from outside it (i.e. `prev` is `None` or already inside/beyond ⇒ missed). Covered by `activated_while_inside_is_missed`, `first_observation_approach_from_outside_is_not_missed`, `missed_touch_on_first_observation`. Restart/gap handling is now the pure `Input::Resume` input (testable via replay; §4).
-- Phase 2 delivery choice (Streams vs outbox) and state store (Postgres vs Redis) + migration owner.
+- Phase 2 state store (Postgres vs Redis) + migration owner; extend `analyzer.proto`; add a `tonic` client to `trade-engine`.
 - `OneMinuteExpansion` chunking by count → time-bucketed before any 1m headline use (also relevant to the §10 wick-miss fallback).
 - `signal_id` field in `TradeSignal` (or `reason`-embedded) until the engine schema changes.
 - Phase 0 plan Task 4 change: move `price_scale` out of hashed `Config` (§3b).
