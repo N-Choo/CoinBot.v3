@@ -1,9 +1,10 @@
-"""Pure port of the trade-engine's order/exit math.
+"""Pure port of the trade-engine's order/exit math plus a replay driver.
 
 Mirrors process/trade-engine:
   order_budget    <- trader/sizing.rs
   evaluate_exit   <- position_exit/decision.rs
-PnL math (reconciler/pnl.rs) and the SimEngine replay driver are added later.
+  realized_pnl / cap_loss / close_credit <- reconciler/pnl.rs
+  SimEngine       <- signal_handler + position_exit
 """
 
 from __future__ import annotations
@@ -89,3 +90,114 @@ def cap_loss(raw_pnl: float, committed: float) -> float:
 def close_credit(entry_funds: float, pnl: float) -> float:
     """Credit returned to the contract on close: committed fund plus PnL."""
     return entry_funds + pnl
+
+
+@dataclass
+class Position:
+    """An open position simulated from one analyzer signal."""
+
+    side: str
+    entry_price: float
+    E: float
+    tp: float
+    sl: float
+    entry_idx: int
+    entry_date: str
+
+
+@dataclass
+class ClosedTrade:
+    """A realized round trip."""
+
+    side: str
+    entry_price: float
+    exit_price: float
+    E: float
+    pnl: float
+    pnl_pct: float
+    reason: str
+    entry_idx: int
+    entry_date: str
+    exit_idx: int
+    exit_date: str
+
+
+class SimEngine:
+    """Replay driver for one contract: funds plus open positions.
+
+    Faithful to `signal_handler` + `position_exit`: a position opens on every
+    signal while `available_fund >= order_budget(init_fund)` (so at most two
+    concurrent), and closes only when a candle's range reaches its TP or SL.
+    """
+
+    def __init__(self, init_fund: float, fee_rate: float) -> None:
+        self.init_fund = init_fund
+        self.available_fund = init_fund
+        self.total_traded_fund = 0.0
+        self.fee_rate = fee_rate
+        self.positions: list[Position] = []
+        self.closed: list[ClosedTrade] = []
+
+    @property
+    def budget(self) -> float:
+        return order_budget(self.init_fund)
+
+    def on_signal(
+        self,
+        side: str,
+        entry_price: float,
+        tp: float,
+        sl: float,
+        idx: int,
+        date: str,
+    ) -> bool:
+        """Process one analyzer signal; open a position if funds allow."""
+        if side not in ("buy", "sell"):
+            return False
+        if entry_price <= 0 or tp <= 0 or sl <= 0:
+            return False
+        budget = self.budget
+        if self.available_fund < budget:
+            return False
+        self.available_fund -= budget
+        self.total_traded_fund += budget
+        self.positions.append(
+            Position(side, entry_price, budget, tp, sl, idx, date)
+        )
+        return True
+
+    def on_candle(self, idx: int, high: float, low: float, date: str) -> None:
+        """Check open positions against candle ``idx`` and close TP/SL hits."""
+        still_open: list[Position] = []
+        for pos in self.positions:
+            if pos.entry_idx >= idx:
+                still_open.append(pos)
+                continue
+            reason = evaluate_exit_candle(pos.side, high, low, pos.tp, pos.sl)
+            if reason is None:
+                still_open.append(pos)
+                continue
+            self._close(pos, reason, idx, date)
+        self.positions = still_open
+
+    def _close(self, pos: Position, reason: str, idx: int, date: str) -> None:
+        exit_price = pos.tp if reason == TAKE_PROFIT else pos.sl
+        proceeds = pos.E * (exit_price / pos.entry_price)
+        fees = self.fee_rate * pos.E + self.fee_rate * proceeds
+        pnl = cap_loss(realized_pnl(pos.side, pos.E, proceeds, fees), pos.E)
+        self.available_fund += close_credit(pos.E, pnl)
+        self.closed.append(
+            ClosedTrade(
+                side=pos.side,
+                entry_price=pos.entry_price,
+                exit_price=exit_price,
+                E=pos.E,
+                pnl=pnl,
+                pnl_pct=(pnl / pos.E * 100) if pos.E else 0.0,
+                reason=reason,
+                entry_idx=pos.entry_idx,
+                entry_date=pos.entry_date,
+                exit_idx=idx,
+                exit_date=date,
+            )
+        )
