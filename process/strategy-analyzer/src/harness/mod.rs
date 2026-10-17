@@ -3,3 +3,4 @@
 pub mod dataset;
 pub mod tick_source;
 pub mod replay;
+pub mod sim;
