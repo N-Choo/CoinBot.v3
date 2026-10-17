@@ -10,6 +10,8 @@
 
 **Conventions:** TDD per task (write failing test → run → implement → run → commit). Never use `f32`/`f64` in `strategy/`. Run `cargo test -p strategy-analyzer` from the repo root. Commit prefixes: `feat:`/`test:`/`chore:`/`docs:`.
 
+> **Revision (2026-10-17, second review).** Applied after the first plan draft: (1) bounded rolling-window state + running ATR (no per-tick full-history clone); (2) BOS marks **every** cleared level and follows the §6.3 eligibility table, and trend stays `Unknown` when no valid low/high exists; (3) a separate `TerminalReason` enum; (4) `try_entry` takes the touching tick's time and uses the zone's incremental window extremes for the obstacle; (5) `ATR == 0` skips only BOS/zone creation; (6) sim fills TP at its limit and the stop at the stop price (or the gap tick); (7) calendar-block bootstrap with trade timestamps; (8) dataset gap policy; (9) fetch sorting/dedup/ms/retry; (10) signal-producing fixture + edge-case/verdict/perturbation/calibration tasks (27–31) and review gates.
+
 ---
 
 ## File Structure
@@ -435,8 +437,12 @@ Create `src/strategy/types.rs`:
 ```rust
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use std::collections::VecDeque;
 
 pub type Ms = i64;
+
+/// Bounded rolling window of closed candles kept in state.
+pub const WINDOW_CANDLES: usize = 64;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Candle { pub open_time_ms: Ms, pub open: Decimal, pub high: Decimal, pub low: Decimal, pub close: Decimal }
@@ -466,6 +472,16 @@ pub enum ConsumeReason {
     EngineRejectedStrategy, EngineRejectedTransient, ExpiredUndelivered,
 }
 
+/// Why a zone became terminal without a signal. Separate from `ConsumeReason`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum TerminalReason { TrendFlip, CloseBeyondEdge, Expired }
+
+/// A zone event carries either a terminal reason or a consumption reason.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ZoneEventReason { Terminal(TerminalReason), Consumed(ConsumeReason) }
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Zone {
     pub id: String,
@@ -475,10 +491,13 @@ pub struct Zone {
     pub atr: Decimal,                 // ATR at activation
     pub breakout_time_ms: Ms,
     pub zone_candle_time_ms: Ms,
-    pub activated_at_index: u64,
+    pub activated_at_index: u64,      // absolute candle index at activation
     pub state: ZoneState,
-    pub reason: Option<ConsumeReason>,
+    pub terminal_reason: Option<TerminalReason>,
+    pub consume_reason: Option<ConsumeReason>,
     pub attempt_made: bool,
+    pub window_high: Decimal,         // max high from breakout candle through latest closed candle
+    pub window_low: Decimal,          // min low over the same window (includes the breakout candle)
 }
 
 impl Zone {
@@ -525,14 +544,24 @@ pub struct Pivot { pub index: u64, pub time_ms: Ms, pub price: Decimal, pub brok
 pub struct StrategyState {
     pub schema_version: u32,
     pub symbol: String,
-    pub candles: Vec<Candle>,
+    /// Bounded rolling window of the most recent closed candles (capacity WINDOW_CANDLES).
+    pub window: VecDeque<Candle>,
+    /// Absolute count of closed candles seen (window positions are derived from this).
+    pub candle_count: u64,
+    pub prev_close: Option<Decimal>,
+    /// Running Wilder ATR through the last processed candle.
     pub atr: Option<Decimal>,
+    pub atr_seed_sum: Decimal,
+    pub atr_seen: u32,
     pub trend: TrendState,
-    pub valid_low: Option<Decimal>,
-    pub valid_high: Option<Decimal>,
+    /// Absolute pivot indices for the valid low/high (spec §6.3).
+    pub valid_low_idx: Option<u64>,
+    pub valid_high_idx: Option<u64>,
+    /// Pivot.index is ABSOLUTE (== candle_count - 1 - right at confirmation time).
     pub swing_highs: Vec<Pivot>,
     pub swing_lows: Vec<Pivot>,
     pub zones: Vec<Zone>,
+    pub zones_awaiting_first_tick: Vec<String>,
     pub last_candle_time_ms: Option<Ms>,
     pub last_tick_time_ms: Option<Ms>,
     pub last_price: Option<Decimal>,
@@ -542,14 +571,16 @@ pub struct StrategyState {
 impl StrategyState {
     pub fn new(symbol: &str, schema_version: u32) -> Self {
         StrategyState {
-            schema_version, symbol: symbol.to_string(), candles: Vec::new(), atr: None,
-            trend: TrendState::Unknown, valid_low: None, valid_high: None,
+            schema_version, symbol: symbol.to_string(), window: VecDeque::new(),
+            candle_count: 0, prev_close: None, atr: None, atr_seed_sum: Decimal::ZERO,
+            atr_seen: 0, trend: TrendState::Unknown, valid_low_idx: None, valid_high_idx: None,
             swing_highs: Vec::new(), swing_lows: Vec::new(), zones: Vec::new(),
+            zones_awaiting_first_tick: Vec::new(),
             last_candle_time_ms: None, last_tick_time_ms: None, last_price: None,
             missed_touch_count: 0,
         }
     }
-}
+}'
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input { ClosedCandle(Candle), PriceTick(Tick) }
@@ -558,7 +589,7 @@ pub enum Input { ClosedCandle(Candle), PriceTick(Tick) }
 pub enum ZoneEventKind { Created, Invalidated, Expired, Consumed }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ZoneEvent { pub zone_id: String, pub kind: ZoneEventKind, pub reason: Option<ConsumeReason> }
+pub struct ZoneEvent { pub zone_id: String, pub kind: ZoneEventKind, pub reason: Option<ZoneEventReason> }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Output {
@@ -577,7 +608,9 @@ mod tests {
     fn zone() -> Zone {
         Zone { id: "z".into(), kind: ZoneKind::Demand, low: Decimal::ZERO, high: Decimal::ONE,
             atr: Decimal::ONE, breakout_time_ms: 0, zone_candle_time_ms: 0,
-            activated_at_index: 0, state: ZoneState::Active, reason: None, attempt_made: false }
+            activated_at_index: 0, state: ZoneState::Active,
+            terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: Decimal::ONE, window_low: Decimal::ZERO }
     }
 
     #[test]
@@ -697,7 +730,7 @@ mod tests {
         let s = StrategyState::new("XRP-USDT", 1);
         let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
         let (s, _) = step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS)), &cfg).unwrap();
-        assert_eq!(s.candles.len(), 2);
+        assert_eq!(s.window.len(), 2);
     }
 
     #[test]
@@ -783,20 +816,29 @@ pub fn true_range(prev_close: Option<Decimal>, high: Decimal, low: Decimal) -> D
 
 /// Wilder ATR seeded with the simple mean of the first `period` true ranges.
 /// Returns `None` until warm-up is complete.
-pub fn wilder_atr(series: &[(Decimal, Decimal, Decimal)], period: u32) -> Option<Decimal> {
-    let p = period as usize;
-    if series.len() < p || p == 0 { return None; }
-    let mut trs = Vec::with_capacity(series.len());
-    for (i, (_, h, l)) in series.iter().enumerate() {
-        let pc = if i == 0 { None } else { Some(series[i - 1].0) };
-        trs.push(true_range(pc, *h, *l));
+/// Incremental Wilder ATR. State stores its fields directly (`atr`, `atr_seed_sum`, `atr_seen`).
+pub struct AtrState { pub value: Option<Decimal>, pub seed_sum: Decimal, pub seen: u32, pub period: u32 }
+
+impl AtrState {
+    pub fn new(period: u32) -> Self { Self { value: None, seed_sum: Decimal::ZERO, seen: 0, period } }
+
+    /// Feed one candle's TR inputs; returns the running ATR once warm-up completes.
+    pub fn update(&mut self, prev_close: Option<Decimal>, high: Decimal, low: Decimal) -> Option<Decimal> {
+        let tr = true_range(prev_close, high, low);
+        self.seen += 1;
+        match self.value {
+            None => {
+                self.seed_sum += tr;
+                if self.seen == self.period {
+                    self.value = Some(work(self.seed_sum / Decimal::from(self.period as u64)));
+                }
+            }
+            Some(prev) => {
+                self.value = Some(work((prev * Decimal::from(self.period as u64 - 1) + tr) / Decimal::from(self.period as u64)));
+            }
+        }
+        self.value
     }
-    let seed: Decimal = trs[..p].iter().copied().sum::<Decimal>() / Decimal::from(p as u64);
-    let mut atr = work(seed);
-    for tr in trs.iter().skip(p) {
-        atr = work((atr * Decimal::from(p as u64 - 1) + *tr) / Decimal::from(p as u64));
-    }
-    Some(atr)
 }
 
 #[cfg(test)]
@@ -812,20 +854,25 @@ mod tests {
 
     #[test]
     fn warmup_returns_none() {
-        let data: Vec<_> = (0..13).map(|_| (dec("1"), dec("2"), dec("0.5"))).collect();
-        assert_eq!(wilder_atr(&data, 14), None);
+        let mut a = AtrState::new(14);
+        for _ in 0..13 { assert_eq!(a.update(None, dec("2"), dec("0.5")), None); }
+        assert!(a.update(None, dec("2"), dec("0.5")).is_some());
     }
 
     #[test]
     fn flat_series_yields_zero_atr_not_error() {
-        let data: Vec<_> = (0..20).map(|_| (dec("1"), dec("1"), dec("1"))).collect();
-        assert_eq!(wilder_atr(&data, 14), Some(Decimal::ZERO));
+        let mut a = AtrState::new(14);
+        let mut v = None;
+        for _ in 0..20 { v = a.update(Some(dec("1")), dec("1"), dec("1")); }
+        assert_eq!(v, Some(Decimal::ZERO));
     }
 
     #[test]
     fn constant_range_seeds_to_that_range() {
-        let data: Vec<_> = (0..20).map(|_| (dec("1"), dec("2"), dec("0.5"))).collect();
-        assert_eq!(wilder_atr(&data, 14), Some(dec("1.5")));
+        let mut a = AtrState::new(14);
+        let mut v = None;
+        for _ in 0..20 { v = a.update(Some(dec("1")), dec("2"), dec("0.5")); }
+        assert_eq!(v, Some(dec("1.5")));
     }
 }
 ```
@@ -954,28 +1001,38 @@ git commit -m "feat(strategy-analyzer): confirmed swing pivots with delay + tie 
 Append to `structure.rs`:
 ```rust
 use crate::strategy::config::Config;
+use crate::strategy::types::{StrategyState, TrendState};
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BosKind { Bullish, Bearish }
 
-/// Detect a BOS on the just-closed candle. `atr_before` must come from data
-/// strictly before that candle (caller guarantees no look-ahead).
-pub fn detect_bos(
-    candles: &[Candle],
-    swing_highs: &[Pivot],
-    swing_lows: &[Pivot],
-    atr_before: Decimal,
-    cfg: &Config,
-) -> Option<(BosKind, usize)> {
-    let last = candles.len().checked_sub(1)?;
-    let close = candles[last].close;
+/// Detect a BOS on the just-closed candle using the §6.3 eligibility table.
+/// `atr_before` must be the ATR through the *previous* candle (no look-ahead).
+/// Returns the broken kind and the absolute index of the broken level.
+pub fn detect_bos(state: &StrategyState, atr_before: Decimal, cfg: &Config) -> Option<(BosKind, u64)> {
+    let close = state.window.back()?.close;
     let dist = cfg.bos_min_distance_atr * atr_before;
-    for (i, hi) in swing_highs.iter().enumerate() {
-        if !hi.broken && close >= hi.price + dist { return Some((BosKind::Bullish, i)); }
+    let recent_high = state.swing_highs.iter().filter(|p| !p.broken).max_by_key(|p| p.index);
+    let recent_low = state.swing_lows.iter().filter(|p| !p.broken).max_by_key(|p| p.index);
+    let high_price = |idx: u64| state.swing_highs.iter().find(|p| p.index == idx).map(|p| p.price);
+    let low_price = |idx: u64| state.swing_lows.iter().find(|p| p.index == idx).map(|p| p.price);
+
+    // Bullish candidate: in Bearish only valid_high (reversal); otherwise the most recent unbroken high.
+    let bull = match state.trend {
+        TrendState::Bearish => state.valid_high_idx.and_then(|i| high_price(i).map(|p| (p, i))),
+        _ => recent_high.map(|h| (h.price, h.index)),
+    };
+    if let Some((price, idx)) = bull {
+        if close >= price + dist { return Some((BosKind::Bullish, idx)); }
     }
-    for (i, lo) in swing_lows.iter().enumerate() {
-        if !lo.broken && close <= lo.price - dist { return Some((BosKind::Bearish, i)); }
+    // Bearish candidate: in Bullish only valid_low (reversal); otherwise the most recent unbroken low.
+    let bear = match state.trend {
+        TrendState::Bullish => state.valid_low_idx.and_then(|i| low_price(i).map(|p| (p, i))),
+        _ => recent_low.map(|l| (l.price, l.index)),
+    };
+    if let Some((price, idx)) = bear {
+        if close <= price - dist { return Some((BosKind::Bearish, idx)); }
     }
     None
 }
@@ -983,30 +1040,47 @@ pub fn detect_bos(
 #[cfg(test)]
 mod bos_tests {
     use super::*;
+    use crate::strategy::types::{Candle, Pivot, StrategyState, TrendState};
     use std::str::FromStr;
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
 
-    fn up_break() -> (Vec<Candle>, Vec<Pivot>) {
-        let candles = vec![
-            Candle { open_time_ms: 0, open: dec("1"), high: dec("2"), low: dec("1"), close: dec("1.5") },
-            Candle { open_time_ms: 4*3600*1000, open: dec("1.5"), high: dec("2.5"), low: dec("1.4"), close: dec("2.6") },
-        ];
-        let highs = vec![Pivot { index: 0, time_ms: 0, price: dec("2.0"), broken: false }];
-        (candles, highs)
+    fn state_with(close: &str, highs: Vec<(u64, &str)>, lows: Vec<(u64, &str)>, trend: TrendState, vl: Option<u64>, vh: Option<u64>) -> StrategyState {
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.window.push_back(Candle { open_time_ms: 0, open: dec(close), high: dec(close), low: dec(close), close: dec(close) });
+        s.swing_highs = highs.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: dec(p), broken: false }).collect();
+        s.swing_lows = lows.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: dec(p), broken: false }).collect();
+        s.trend = trend; s.valid_low_idx = vl; s.valid_high_idx = vh;
+        s
     }
 
     #[test]
-    fn bullish_bos_when_close_exceeds_high_plus_distance() {
-        let (candles, highs) = up_break();
+    fn bullish_bos_reports_most_recent_cleared_high() {
         let cfg = Config::default_for(&["XRP-USDT"]);
-        assert_eq!(detect_bos(&candles, &highs, &[], dec("1.0"), &cfg), Some((BosKind::Bullish, 0)));
+        let s = state_with("2.6", vec![(0, "2.0"), (1, "2.3")], vec![], TrendState::Unknown, None, None);
+        assert_eq!(detect_bos(&s, dec("1.0"), &cfg), Some((BosKind::Bullish, 1)));
+    }
+
+    #[test]
+    fn bos_equality_boundary_fires() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // close == price + dist exactly (2.0 + 0.1)
+        let s = state_with("2.1", vec![(0, "2.0")], vec![], TrendState::Unknown, None, None);
+        assert_eq!(detect_bos(&s, dec("1.0"), &cfg), Some((BosKind::Bullish, 0)));
+    }
+
+    #[test]
+    fn bullish_trend_does_not_reverse_on_arbitrary_low() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // In Bullish, only valid_low triggers a bearish reversal; an unbroken low must NOT fire.
+        let s = state_with("1.0", vec![], vec![(0, "0.5")], TrendState::Bullish, None, None);
+        assert_eq!(detect_bos(&s, dec("1.0"), &cfg), None);
     }
 
     #[test]
     fn no_bos_when_distance_not_met() {
-        let (candles, highs) = up_break();
         let cfg = Config::default_for(&["XRP-USDT"]);
-        assert_eq!(detect_bos(&candles, &highs, &[], dec("100"), &cfg), None);
+        let s = state_with("2.0", vec![(0, "2.0")], vec![], TrendState::Unknown, None, None);
+        assert_eq!(detect_bos(&s, dec("1.0"), &cfg), None);
     }
 }
 ```
@@ -1034,27 +1108,33 @@ git commit -m "feat(strategy-analyzer): BOS detection against pre-breakout ATR"
 
 Append:
 ```rust
-use crate::strategy::types::{StrategyState, TrendState};
+use crate::strategy::types::TrendState;
 
-/// Apply a BOS: set trend, mark the broken pivot, set valid_low/valid_high per spec §6.3.
-pub fn apply_bos(state: &mut StrategyState, kind: BosKind, pivot_idx: usize) {
-    let breakout_idx = state.candles.len() as u64 - 1;
+/// Apply a BOS: mark EVERY cleared level broken, set trend + valid low/high per §6.3.
+/// If no valid low/high can be assigned, the trend is left unchanged (state stays Unknown).
+pub fn apply_bos(state: &mut StrategyState, kind: BosKind, broken_idx: u64) {
+    let breakout = state.candle_count.saturating_sub(1);
+    let close = state.window.back().map(|c| c.close).unwrap_or(Decimal::ZERO);
     match kind {
         BosKind::Bullish => {
-            let broken_high = state.swing_highs[pivot_idx].clone();
-            state.swing_highs[pivot_idx].broken = true;
-            state.trend = TrendState::Bullish;
-            state.valid_low = state.swing_lows.iter()
-                .filter(|l| l.index > broken_high.index && l.index < breakout_idx).last().map(|l| l.price)
-                .or_else(|| state.swing_lows.iter().filter(|l| l.index < broken_high.index).last().map(|l| l.price));
+            for h in state.swing_highs.iter_mut() {
+                if !h.broken && h.price <= close { h.broken = true; }
+            }
+            let vl = state.swing_lows.iter()
+                .filter(|l| l.index > broken_idx && l.index < breakout).map(|l| l.index).max()
+                .or_else(|| state.swing_lows.iter().filter(|l| l.index < broken_idx).map(|l| l.index).max());
+            state.valid_low_idx = vl;
+            if vl.is_some() { state.trend = TrendState::Bullish; }
         }
         BosKind::Bearish => {
-            let broken_low = state.swing_lows[pivot_idx].clone();
-            state.swing_lows[pivot_idx].broken = true;
-            state.trend = TrendState::Bearish;
-            state.valid_high = state.swing_highs.iter()
-                .filter(|h| h.index > broken_low.index && h.index < breakout_idx).last().map(|h| h.price)
-                .or_else(|| state.swing_highs.iter().filter(|h| h.index < broken_low.index).last().map(|h| h.price));
+            for l in state.swing_lows.iter_mut() {
+                if !l.broken && l.price >= close { l.broken = true; }
+            }
+            let vh = state.swing_highs.iter()
+                .filter(|h| h.index > broken_idx && h.index < breakout).map(|h| h.index).max()
+                .or_else(|| state.swing_highs.iter().filter(|h| h.index < broken_idx).map(|h| h.index).max());
+            state.valid_high_idx = vh;
+            if vh.is_some() { state.trend = TrendState::Bearish; }
         }
     }
 }
@@ -1062,36 +1142,41 @@ pub fn apply_bos(state: &mut StrategyState, kind: BosKind, pivot_idx: usize) {
 #[cfg(test)]
 mod trend_tests {
     use super::*;
-    use crate::strategy::types::{Candle, Pivot, StrategyState};
+    use crate::strategy::types::{Candle, Pivot, StrategyState, TrendState};
     use rust_decimal::Decimal;
 
-    fn flat_candles(n: usize) -> Vec<Candle> {
-        (0..n).map(|i| Candle { open_time_ms: i as i64, open: Decimal::ONE, high: Decimal::ONE, low: Decimal::ZERO, close: Decimal::ONE }).collect()
+    fn st(count: u64, close: i64, highs: Vec<(u64, i64)>, lows: Vec<(u64, i64)>) -> StrategyState {
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.candle_count = count;
+        s.window.push_back(Candle { open_time_ms: 0, open: Decimal::from(close), high: Decimal::from(close), low: Decimal::from(close), close: Decimal::from(close) });
+        s.swing_highs = highs.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: Decimal::from(p), broken: false }).collect();
+        s.swing_lows = lows.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: Decimal::from(p), broken: false }).collect();
+        s
     }
 
     #[test]
-    fn bullish_bos_sets_trend_and_valid_low_after_broken_high() {
-        let mut s = StrategyState::new("XRP-USDT", 1);
-        s.candles = flat_candles(5); // breakout_idx = 4
-        s.swing_highs = vec![Pivot { index: 1, time_ms: 1, price: Decimal::from(2), broken: false }];
-        s.swing_lows = vec![
-            Pivot { index: 0, time_ms: 0, price: Decimal::from(1), broken: false },
-            Pivot { index: 3, time_ms: 3, price: Decimal::from(2), broken: false },
-        ];
-        apply_bos(&mut s, BosKind::Bullish, 0);
+    fn bullish_bos_marks_all_cleared_highs_and_sets_valid_low() {
+        let mut s = st(6, 5, vec![(1, 2), (2, 3)], vec![(0, 1), (3, 2)]);
+        apply_bos(&mut s, BosKind::Bullish, 2);
         assert_eq!(s.trend, TrendState::Bullish);
-        assert_eq!(s.valid_low, Some(Decimal::from(2))); // the low after the broken high
-        assert!(s.swing_highs[0].broken);
+        assert!(s.swing_highs.iter().all(|h| h.broken)); // both cleared in ONE BOS
+        assert_eq!(s.valid_low_idx, Some(3)); // low after the broken high, before breakout
+    }
+
+    #[test]
+    fn trend_stays_unknown_when_no_valid_low() {
+        let mut s = st(6, 5, vec![(1, 2)], vec![]);
+        apply_bos(&mut s, BosKind::Bullish, 1);
+        assert_eq!(s.trend, TrendState::Unknown);
+        assert_eq!(s.valid_low_idx, None);
+        assert!(s.swing_highs[0].broken); // level still marked broken
     }
 
     #[test]
     fn valid_low_falls_back_to_before_broken_high() {
-        let mut s = StrategyState::new("XRP-USDT", 1);
-        s.candles = flat_candles(5);
-        s.swing_highs = vec![Pivot { index: 3, time_ms: 3, price: Decimal::from(9), broken: false }];
-        s.swing_lows = vec![Pivot { index: 1, time_ms: 1, price: Decimal::from(5), broken: false }];
-        apply_bos(&mut s, BosKind::Bullish, 0);
-        assert_eq!(s.valid_low, Some(Decimal::from(5)));
+        let mut s = st(6, 5, vec![(3, 9)], vec![(1, 5)]);
+        apply_bos(&mut s, BosKind::Bullish, 3);
+        assert_eq!(s.valid_low_idx, Some(1));
     }
 }
 ```
@@ -1122,65 +1207,68 @@ Create `src/strategy/zones.rs`:
 ```rust
 use crate::strategy::config::Config;
 use crate::strategy::structure::BosKind;
-use crate::strategy::types::{Candle, Zone, ZoneKind, ZoneState};
+use crate::strategy::types::{Zone, ZoneKind, ZoneState};
 use rust_decimal::Decimal;
+use std::collections::VecDeque;
 
-/// Build a zone after a BOS. `Err(reason)` is a rejection tag; `Ok(zone)` otherwise.
-pub fn create_zone(
-    candles: &[Candle],
-    kind: BosKind,
-    atr: Decimal,
-    symbol: &str,
-    cfg: &Config,
-) -> Result<Zone, &'static str> {
+/// Build a zone after a BOS, from the bounded candle window. `Err(reason)` is a rejection tag.
+/// `activated_at_index` is set by the caller (it owns the absolute candle counter).
+pub fn create_zone(window: &VecDeque<Candle>, kind: BosKind, atr: Decimal, symbol: &str, cfg: &Config) -> Result<Zone, &'static str> {
     if atr <= Decimal::ZERO { return Err("atr_zero"); }
-    let breakout = candles.len() - 1;
+    let n = window.len();
+    if n == 0 { return Err("no_candles"); }
+    let at = |i: usize| window.get(i).unwrap();
+    let breakout = n - 1;
     let lookback_start = breakout.saturating_sub(cfg.zone_search_lookback as usize);
 
     let mut chosen = None;
     for i in (lookback_start..breakout).rev() {
-        let c = &candles[i];
+        let c = at(i);
         let opposite = match kind { BosKind::Bullish => c.close < c.open, BosKind::Bearish => c.close > c.open };
         if opposite { chosen = Some(i); break; }
     }
     let zi = chosen.ok_or("no_opposite_candle")?;
 
-    let body = (candles[breakout].close - candles[breakout].open).abs();
+    let body = (at(breakout).close - at(breakout).open).abs();
     if body < cfg.impulse_body_threshold_atr * atr { return Err("weak_impulse"); }
 
-    let zc = &candles[zi];
+    let zc = at(zi);
     let (low, high) = (zc.low, zc.high);
-
     let height_atr = (high - low) / atr;
     if height_atr < cfg.min_zone_height_atr { return Err("zone_too_small"); }
     if height_atr > cfg.max_zone_height_atr { return Err("zone_too_large"); }
 
-    let start = zi + 1 + cfg.mitigation_grace_candles as usize;
-    for c in &candles[start.min(breakout)..breakout] {
+    let start = (zi + 1 + cfg.mitigation_grace_candles as usize).min(breakout);
+    for i in start..breakout {
+        let c = at(i);
         let mitigated = match kind { BosKind::Bullish => c.low <= high, BosKind::Bearish => c.high >= low };
         if mitigated { return Err("mitigated"); }
     }
 
     let zone_kind = match kind { BosKind::Bullish => ZoneKind::Demand, BosKind::Bearish => ZoneKind::Supply };
     let kind_tag = match zone_kind { ZoneKind::Demand => "demand", ZoneKind::Supply => "supply" };
-    let id = format!("{}:{}:{}:{}", symbol, candles[breakout].open_time_ms, zc.open_time_ms, kind_tag);
+    let bc = at(breakout);
+    let id = format!("{}:{}:{}:{}", symbol, bc.open_time_ms, zc.open_time_ms, kind_tag);
     Ok(Zone {
         id, kind: zone_kind, low, high, atr,
-        breakout_time_ms: candles[breakout].open_time_ms,
+        breakout_time_ms: bc.open_time_ms,
         zone_candle_time_ms: zc.open_time_ms,
-        activated_at_index: breakout as u64,
-        state: ZoneState::Active, reason: None, attempt_made: false,
+        activated_at_index: 0, // set by caller (absolute index)
+        state: ZoneState::Active, terminal_reason: None, consume_reason: None, attempt_made: false,
+        window_high: bc.high, window_low: bc.low, // window starts at the breakout candle
     })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::strategy::types::Candle;
     use std::str::FromStr;
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
     fn candle(o: &str, h: &str, l: &str, c: &str) -> Candle {
         Candle { open_time_ms: 0, open: dec(o), high: dec(h), low: dec(l), close: dec(c) }
     }
+    fn win(v: Vec<Candle>) -> VecDeque<Candle> { v.into() }
 
     // index 1 is the bearish demand candle (low 0.98 / high 1.06); index 4 is the breakout.
     fn base() -> Vec<Candle> {
@@ -1194,13 +1282,14 @@ mod tests {
     }
 
     #[test]
-    fn creates_demand_zone() {
+    fn creates_demand_zone_with_window_starting_at_breakout() {
         let cfg = Config::default_for(&["XRP-USDT"]);
-        let z = create_zone(&base(), BosKind::Bullish, dec("0.1"), "XRP-USDT", &cfg).unwrap();
+        let z = create_zone(&win(base()), BosKind::Bullish, dec("0.1"), "XRP-USDT", &cfg).unwrap();
         assert_eq!(z.kind, ZoneKind::Demand);
         assert_eq!(z.low, dec("0.98"));
         assert_eq!(z.high, dec("1.06"));
-        assert_eq!(z.id, format!("XRP-USDT:{}:{}:demand", base()[4].open_time_ms, base()[1].open_time_ms));
+        assert_eq!(z.window_high, dec("1.25")); // breakout candle high (included)
+        assert_eq!(z.window_low, dec("1.08"));  // breakout candle low (included)
     }
 
     #[test]
@@ -1208,13 +1297,39 @@ mod tests {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let mut c = base();
         c[3] = candle("1.04","1.10","1.05","1.09"); // low 1.05 <= zone high 1.06 -> mitigated
-        assert_eq!(create_zone(&c, BosKind::Bullish, dec("0.1"), "XRP-USDT", &cfg).unwrap_err(), "mitigated");
+        assert_eq!(create_zone(&win(c), BosKind::Bullish, dec("0.1"), "XRP-USDT", &cfg).unwrap_err(), "mitigated");
     }
 
     #[test]
     fn rejects_atr_zero() {
         let cfg = Config::default_for(&["XRP-USDT"]);
-        assert_eq!(create_zone(&base(), BosKind::Bullish, dec("0"), "XRP-USDT", &cfg).unwrap_err(), "atr_zero");
+        assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0"), "XRP-USDT", &cfg).unwrap_err(), "atr_zero");
+    }
+
+    #[test]
+    fn rejects_zone_too_small_and_too_large() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // zone height 0.08; with atr 0.2 -> 0.4 < min 0.5 -> too small
+        assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_small");
+        // with atr 0.02 -> height 4.0 > max 3.0 -> too large
+        assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0.02"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_large");
+    }
+
+    #[test]
+    fn creates_supply_zone_on_bearish_bos() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // index 1 is the bullish supply candle (high 1.06); breakout is a strong down candle.
+        let v = vec![
+            candle("1.00","1.05","0.95","1.00"),
+            candle("0.99","1.10","0.98","1.09"), // bullish supply candle
+            candle("1.09","1.12","1.07","1.10"),
+            candle("1.10","1.13","1.09","1.12"),
+            candle("1.12","1.13","0.95","0.96"), // bearish breakout, body 0.16
+        ];
+        let z = create_zone(&win(v), BosKind::Bearish, dec("0.1"), "XRP-USDT", &cfg).unwrap();
+        assert_eq!(z.kind, ZoneKind::Supply);
+        assert_eq!(z.low, dec("0.98"));
+        assert_eq!(z.high, dec("1.10"));
     }
 }
 ```
@@ -1244,7 +1359,7 @@ git commit -m "feat(strategy-analyzer): zone creation, mitigation, size limits"
 
 Append to `zones.rs`:
 ```rust
-use crate::strategy::types::{ConsumeReason, TrendState, ZoneEvent, ZoneEventKind, ZoneState as ZS};
+use crate::strategy::types::{TerminalReason, TrendState, ZoneEvent, ZoneEventKind, ZoneEventReason, ZoneState as ZS};
 
 /// Expiry + close-beyond-edge invalidation for the just-closed candle.
 pub fn update_lifecycle(zones: &mut [Zone], candle: &Candle, idx: u64, expiry_candles: u32) -> Vec<ZoneEvent> {
@@ -1252,14 +1367,14 @@ pub fn update_lifecycle(zones: &mut [Zone], candle: &Candle, idx: u64, expiry_ca
     for z in zones.iter_mut() {
         if z.state != ZS::Active { continue; }
         if idx.saturating_sub(z.activated_at_index) >= expiry_candles as u64 {
-            z.state = ZS::Expired; z.reason = Some(ConsumeReason::ExpiredUndelivered);
-            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Expired, reason: z.reason });
+            z.state = ZS::Expired; z.terminal_reason = Some(TerminalReason::Expired);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Expired, reason: Some(ZoneEventReason::Terminal(TerminalReason::Expired)) });
             continue;
         }
         let invalid = match z.kind { ZoneKind::Demand => candle.close < z.low, ZoneKind::Supply => candle.close > z.high };
         if invalid {
-            z.state = ZS::Invalidated; z.reason = Some(ConsumeReason::MissedTouch);
-            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: z.reason });
+            z.state = ZS::Invalidated; z.terminal_reason = Some(TerminalReason::CloseBeyondEdge);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: Some(ZoneEventReason::Terminal(TerminalReason::CloseBeyondEdge)) });
         }
     }
     events
@@ -1276,8 +1391,8 @@ pub fn invalidate_on_flip(zones: &mut [Zone], trend: TrendState) -> Vec<ZoneEven
             TrendState::Unknown => false,
         };
         if wrong {
-            z.state = ZS::Invalidated; z.reason = Some(ConsumeReason::EngineRejectedStrategy);
-            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: z.reason });
+            z.state = ZS::Invalidated; z.terminal_reason = Some(TerminalReason::TrendFlip);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: Some(ZoneEventReason::Terminal(TerminalReason::TrendFlip)) });
         }
     }
     events
@@ -1286,38 +1401,43 @@ pub fn invalidate_on_flip(zones: &mut [Zone], trend: TrendState) -> Vec<ZoneEven
 #[cfg(test)]
 mod lifecycle_tests {
     use super::*;
+    use crate::strategy::types::Candle;
     use std::str::FromStr;
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
     fn zone(kind: ZoneKind) -> Zone {
         Zone { id: "z".into(), kind, low: dec("1.0"), high: dec("1.1"), atr: dec("0.05"),
             breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0,
-            state: ZS::Active, reason: None, attempt_made: false }
+            state: ZS::Active, terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec("1.1"), window_low: dec("1.0") }
     }
     fn c(open: &str, high: &str, low: &str, close: &str) -> Candle {
         Candle { open_time_ms: 0, open: dec(open), high: dec(high), low: dec(low), close: dec(close) }
     }
 
     #[test]
-    fn expires_after_window() {
+    fn expiry_uses_expired_terminal_reason() {
         let mut zs = vec![zone(ZoneKind::Demand)];
         let ev = update_lifecycle(&mut zs, &c("1","1","1","1"), 30, 30);
         assert_eq!(zs[0].state, ZS::Expired);
+        assert_eq!(zs[0].terminal_reason, Some(TerminalReason::Expired));
         assert_eq!(ev.len(), 1);
     }
 
     #[test]
-    fn invalidates_demand_on_close_below_low() {
+    fn close_below_low_uses_close_beyond_edge() {
         let mut zs = vec![zone(ZoneKind::Demand)];
         update_lifecycle(&mut zs, &c("1.0","1.0","0.9","0.95"), 1, 30);
         assert_eq!(zs[0].state, ZS::Invalidated);
+        assert_eq!(zs[0].terminal_reason, Some(TerminalReason::CloseBeyondEdge));
     }
 
     #[test]
-    fn trend_flip_invalidates_opposite_zones() {
+    fn trend_flip_uses_trend_flip_reason() {
         let mut zs = vec![zone(ZoneKind::Demand), zone(ZoneKind::Supply)];
         invalidate_on_flip(&mut zs, TrendState::Bullish);
         assert_eq!(zs[0].state, ZS::Active);
         assert_eq!(zs[1].state, ZS::Invalidated);
+        assert_eq!(zs[1].terminal_reason, Some(TerminalReason::TrendFlip));
     }
 }
 ```
@@ -1366,7 +1486,9 @@ mod select_tests {
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
     fn zone(id: &str, low: &str, high: &str) -> Zone {
         Zone { id: id.into(), kind: ZoneKind::Demand, low: dec(low), high: dec(high), atr: dec("0.1"),
-            breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0, state: ZS::Active, reason: None, attempt_made: false }
+            breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0, state: ZS::Active,
+            terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec(high), window_low: dec(low) }
     }
 
     #[test]
@@ -1504,7 +1626,8 @@ mod tests {
     fn zone(kind: ZoneKind, low: &str, high: &str) -> Zone {
         Zone { id: "z".into(), kind, low: dec(low), high: dec(high), atr: dec("0.1"),
             breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0,
-            state: ZoneState::Active, reason: None, attempt_made: false }
+            state: ZoneState::Active, terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec(high), window_low: dec(low) }
     }
 
     #[test]
@@ -1530,11 +1653,30 @@ mod tests {
     fn coarse_price_scale_gate_uses_rounded_levels() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let z = zone(ZoneKind::Demand, "1.960", "2.000");
-        // trigger rounds to 2.00 at scale 2; levels must be derived from the rounded values
+        // trigger 2.001 rounds to 2.00 at scale 2; stop 1.95; risk 0.05; TP = 2.00 + 3*0.05 = 2.15
         let l = compute_levels(Direction::Long, &z, dec("2.001"), Some(dec("2.500")), 2, &cfg).unwrap();
-        let t = dec("2.00");
-        let risk = t - l.stop_loss;
-        assert_eq!(l.gross_rr, (l.take_profit - t) / risk);
+        assert_eq!(l.stop_loss, dec("1.95"));
+        assert_eq!(l.take_profit, dec("2.15"));
+        assert_eq!(l.gross_rr, dec("3.0")); // derived from the ROUNDED levels, against a known value
+    }
+
+    #[test]
+    fn structural_mode_targets_the_obstacle() {
+        let cfg = Config { target_mode: TargetMode::Structural, ..Config::default_for(&["XRP-USDT"]) };
+        let z = zone(ZoneKind::Demand, "1.96", "2.00");
+        // obstacle 2.50, buffer = 0.1*atr(0.1) = 0.01 -> TP = 2.49; risk 0.05 -> gross 9.8
+        let l = compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.50")), 2, &cfg).unwrap();
+        assert_eq!(l.take_profit, dec("2.49"));
+        assert_eq!(l.gross_rr, dec("9.8"));
+    }
+
+    #[test]
+    fn no_obstacle_respects_allow_no_obstacle() {
+        let z = zone(ZoneKind::Demand, "1.96", "2.00");
+        let allow = Config { allow_no_obstacle: true, ..Config::default_for(&["XRP-USDT"]) };
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &allow).is_some());
+        let deny = Config { allow_no_obstacle: false, ..Config::default_for(&["XRP-USDT"]) };
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &deny).is_none());
     }
 }
 ```
@@ -1562,9 +1704,9 @@ git commit -m "feat(strategy-analyzer): levels, obstacle check, target modes"
 - Modify: `process/strategy-analyzer/src/strategy/signals.rs`
 - Modify: `process/strategy-analyzer/src/strategy/step.rs`
 
-- [ ] **Step 1: Add first-observation tracking**
+- [ ] **Step 1: Confirm first-observation tracking exists**
 
-In `types.rs`, add to `StrategyState` the field `pub zones_awaiting_first_tick: Vec<String>` and initialize it to `Vec::new()` in `new()`. (Only `new()` constructs state in tests, so nothing else breaks.)
+`StrategyState.zones_awaiting_first_tick` is already defined in Task 5 and initialized in `new()`. No change is needed here; it is used below.
 
 - [ ] **Step 2: Write the failing tests + implementation**
 
@@ -1589,7 +1731,8 @@ fn direction_for(trend: TrendState) -> Option<Direction> {
 }
 
 /// Entry attempt on a tick. Mutates `state`, returns outputs.
-pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, price: Decimal, cfg: &Config) -> Vec<Output> {
+/// `tick_time_ms` is the touching tick's timestamp (becomes `triggered_at_ms`).
+pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_time_ms: Ms, price: Decimal, cfg: &Config) -> Vec<Output> {
     let mut out = Vec::new();
     let dir = match direction_for(state.trend) { Some(d) => d, None => return out };
     let atr = match state.atr { Some(a) if a > Decimal::ZERO => a, _ => return out };
@@ -1602,10 +1745,10 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, price: 
         state.zones_awaiting_first_tick.retain(|id| id != &zone_snapshot.id);
         if is_missed_touch(dir, &zone_snapshot, price) {
             if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
-                z.state = ZoneState::Consumed; z.reason = Some(ConsumeReason::MissedTouch);
+                z.state = ZoneState::Consumed; z.consume_reason = Some(ConsumeReason::MissedTouch);
             }
             state.missed_touch_count += 1;
-            out.push(Output::ZoneEvent(ZoneEvent { zone_id: zone_snapshot.id.clone(), kind: ZoneEventKind::Consumed, reason: Some(ConsumeReason::MissedTouch) }));
+            out.push(Output::ZoneEvent(ZoneEvent { zone_id: zone_snapshot.id.clone(), kind: ZoneEventKind::Consumed, reason: Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch)) }));
             return out;
         }
     }
@@ -1613,15 +1756,15 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, price: 
     let prev = match prev_price { Some(p) => p, None => return out };
     if !is_first_touch(dir, &zone_snapshot, prev, price) { return out; }
 
-    // Obstacle from swing levels + active opposite zones + window extremes (Task 16 supplies window).
+    // Obstacle: swing levels + active opposite zones + the zone's window extremes (includes breakout candle).
     let (swing_highs, swing_lows) = (&state.swing_highs, &state.swing_lows);
     let (active_supply, active_demand): (Vec<Zone>, Vec<Zone>) = (
         state.zones.iter().filter(|z| z.state == ZoneState::Active && z.kind == ZoneKind::Supply).cloned().collect(),
         state.zones.iter().filter(|z| z.state == ZoneState::Active && z.kind == ZoneKind::Demand).cloned().collect(),
     );
     let obstacle = match dir {
-        Direction::Long => obstacle_for_long(price, swing_highs, &active_supply, price), // window_high filled in Task 16
-        Direction::Short => obstacle_for_short(price, swing_lows, &active_demand, price),
+        Direction::Long => obstacle_for_long(price, swing_highs, &active_supply, zone_snapshot.window_high),
+        Direction::Short => obstacle_for_short(price, swing_lows, &active_demand, zone_snapshot.window_low),
     };
     let price_scale = cfg.price_scale.get(&state.symbol).copied().unwrap_or(4);
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
@@ -1642,11 +1785,11 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, price: 
         target_mode: match cfg.target_mode { TargetMode::FixedR => "fixed_r", TargetMode::Structural => "structural" }.to_string(),
         target_r: cfg.target_r, min_gross_rr: cfg.min_gross_rr, gross_rr: levels.gross_rr,
         structure_obstacle_price: levels.obstacle, obstacle_rr: levels.obstacle_rr,
-        triggered_at_ms: state.last_tick_time_ms.unwrap_or(0),
+        triggered_at_ms: tick_time_ms,
         candle_timestamp_ms: state.last_candle_time_ms.unwrap_or(0),
     };
     if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
-        z.state = ZoneState::Consumed; z.reason = Some(ConsumeReason::SignalPublished); z.attempt_made = true;
+        z.state = ZoneState::Consumed; z.consume_reason = Some(ConsumeReason::SignalPublished); z.attempt_made = true;
     }
     out.push(Output::EntrySignal(signal));
     out
@@ -1655,7 +1798,7 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, price: 
 
 Modify `step.rs::on_tick` to call it:
 ```rust
-    let outputs = crate::strategy::signals::try_entry(state, state.last_price, t.price, cfg);
+    let outputs = crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg);
     state.last_tick_time_ms = Some(t.time_ms);
     state.last_price = Some(t.price);
     Ok(outputs)
@@ -1672,7 +1815,9 @@ mod touch_tests {
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
     fn demand() -> Zone {
         Zone { id:"z".into(), kind: ZoneKind::Demand, low: dec("1.96"), high: dec("2.00"), atr: dec("0.1"),
-            breakout_time_ms:0, zone_candle_time_ms:0, activated_at_index:0, state: ZoneState::Active, reason:None, attempt_made:false }
+            breakout_time_ms:0, zone_candle_time_ms:0, activated_at_index:0, state: ZoneState::Active,
+            terminal_reason:None, consume_reason:None, attempt_made:false,
+            window_high: dec("2.00"), window_low: dec("1.96") }
     }
 
     #[test]
@@ -1682,14 +1827,16 @@ mod touch_tests {
     }
 
     #[test]
-    fn emits_signal_on_first_touch() {
+    fn emits_signal_on_first_touch_with_tick_time() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let mut s = StrategyState::new("XRP-USDT", 1);
         s.atr = Some(dec("0.1"));
         s.trend = TrendState::Bullish;
         s.zones = vec![demand()];
         s.swing_highs = vec![Pivot { index:0, time_ms:0, price: dec("2.30"), broken:false }];
-        let _ = try_entry(&mut s, Some(dec("2.05")), dec("2.00"), &cfg);
+        let out = try_entry(&mut s, Some(dec("2.05")), 12345, dec("2.00"), &cfg);
+        let sig = out.iter().find_map(|o| if let Output::EntrySignal(sig) = o { Some(sig) } else { None }).unwrap();
+        assert_eq!(sig.triggered_at_ms, 12345); // the TOUCHING tick's time, not the previous one
         assert!(s.zones[0].state == ZoneState::Consumed);
     }
 
@@ -1701,7 +1848,7 @@ mod touch_tests {
         s.trend = TrendState::Bullish;
         s.zones = vec![demand()];
         s.zones_awaiting_first_tick = vec!["z".into()];
-        let out = try_entry(&mut s, Some(dec("2.10")), dec("1.98"), &cfg);
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.98"), &cfg);
         assert!(out.iter().any(|o| matches!(o, Output::ZoneEvent(_))));
         assert_eq!(s.missed_touch_count, 1);
     }
@@ -1729,16 +1876,97 @@ git commit -m "feat(strategy-analyzer): first-touch trigger + missed-touch handl
 
 - [ ] **Step 1: Write the failing tests + implementation**
 
-Rewrite `on_candle` to:
-1. record the candle (validation as before);
-2. compute `atr_now = wilder_atr(all candles)`; if `Some(0)` emit `Output::StateChange { reason: "atr_zero" }` and return (candle still recorded);
-3. detect newly confirmed pivots and push them;
-4. compute `atr_before = wilder_atr(candles[..len-1])` (for BOS distance and zone `A`); if `Some`, run `detect_bos`; on a BOS: `apply_bos`, `invalidate_on_flip`, then `create_zone(... `; push the zone or emit `StateChange { reason: <rejection tag> }`;
-5. for each newly created zone, push its id to `state.zones_awaiting_first_tick`;
-6. run `update_lifecycle`;
-7. set `state.atr = atr_now`; push any events.
+Rewrite `on_candle` to be incremental (bounded window, running ATR). Replace its body with:
 
-Add tests to `step.rs`:
+```rust
+fn on_candle(state: &mut StrategyState, c: Candle, cfg: &Config) -> Result<Vec<Output>, StrategyError> {
+    if c.high < c.low || c.high <= Decimal::ZERO || c.low <= Decimal::ZERO {
+        return Err(StrategyError::MalformedCandle { at_ms: c.open_time_ms, why: "bad range/price" });
+    }
+    if let Some(prev) = state.last_candle_time_ms {
+        if c.open_time_ms == prev { return Err(StrategyError::DuplicateCandle(c.open_time_ms)); }
+        if c.open_time_ms < prev { return Err(StrategyError::OutOfOrderCandle { got_ms: c.open_time_ms, prev_ms: prev }); }
+        if c.open_time_ms != prev + TIMEFRAME_MS {
+            return Err(StrategyError::GappedCandle { expected_ms: prev + TIMEFRAME_MS, got_ms: c.open_time_ms });
+        }
+    }
+    let mut out = Vec::new();
+
+    // ATR through the PREVIOUS candle is the no-look-ahead value used for BOS/zone `A`.
+    let atr_before = state.atr;
+
+    // Record into the bounded window and advance counters.
+    state.window.push_back(c);
+    if state.window.len() > crate::strategy::types::WINDOW_CANDLES { state.window.pop_front(); }
+    state.candle_count += 1;
+    state.last_candle_time_ms = Some(c.open_time_ms);
+
+    // Update window extremes for every live zone (window = breakout candle through latest close).
+    for z in state.zones.iter_mut() {
+        if z.state == ZoneState::Active {
+            if c.high > z.window_high { z.window_high = c.high; }
+            if c.low < z.window_low { z.window_low = c.low; }
+        }
+    }
+
+    // Running ATR (incremental; fields live on the state).
+    let mut atr_state = crate::strategy::indicators::atr::AtrState { value: state.atr, seed_sum: state.atr_seed_sum, seen: state.atr_seen, period: cfg.atr_period };
+    let atr_now = atr_state.update(state.prev_close, c.high, c.low);
+    state.atr = atr_state.value;
+    state.atr_seed_sum = atr_state.seed_sum;
+    state.atr_seen = atr_state.seen;
+
+    let atr_is_zero = atr_now == Some(Decimal::ZERO);
+    if atr_is_zero {
+        // In-band: ATR == 0 skips ONLY BOS + zone creation. Pivots and lifecycle still run.
+        out.push(Output::StateChange { reason: "atr_zero" });
+    }
+
+    // Pivots (absolute index = candle_count - 1 - right).
+    let window: Vec<Candle> = state.window.iter().copied().collect();
+    let (left, right) = (cfg.pivot_left as usize, cfg.pivot_right as usize);
+    if let Some(mut p) = newly_confirmed_high(&window, left, right) {
+        p.index = state.candle_count - 1 - right as u64;
+        state.swing_highs.push(p);
+    }
+    if let Some(mut p) = newly_confirmed_low(&window, left, right) {
+        p.index = state.candle_count - 1 - right as u64;
+        state.swing_lows.push(p);
+    }
+
+    // BOS + zones (skipped only when ATR == 0).
+    if !atr_is_zero {
+        if let Some(atr_b) = atr_before {
+            if let Some((kind, broken_idx)) = detect_bos(state, atr_b, cfg) {
+                let before = state.trend;
+                apply_bos(state, kind, broken_idx);
+                if state.trend != before {
+                    out.extend(invalidate_on_flip(&mut state.zones, state.trend));
+                }
+                match create_zone(&state.window, kind, atr_b, &state.symbol.clone(), cfg) {
+                    Ok(mut z) => {
+                        z.activated_at_index = state.candle_count - 1;
+                        state.zones_awaiting_first_tick.push(z.id.clone());
+                        out.push(Output::ZoneEvent(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Created, reason: None }));
+                        state.zones.push(z);
+                    }
+                    Err(tag) => out.push(Output::StateChange { reason: tag }),
+                }
+            }
+        }
+    }
+
+    // Lifecycle (expiry + close-beyond-edge) for the just-closed candle.
+    out.extend(update_lifecycle(&mut state.zones, &c, state.candle_count - 1, cfg.zone_expiry_candles));
+
+    state.prev_close = Some(c.close);
+    Ok(out)
+}
+```
+
+Add to `step.rs` imports: `use crate::strategy::indicators::atr::AtrState;` (or fully-qualify); `use crate::strategy::structure::{apply_bos, detect_bos, newly_confirmed_high, newly_confirmed_low, BosKind};`; `use crate::strategy::zones::{create_zone, invalidate_on_flip, update_lifecycle};`; and `ZoneState`, `TrendState`, `ZoneEvent`, `ZoneEventKind` from `types`.
+
+Tests to add to `step.rs`:
 ```rust
 #[test]
 fn atr_zero_is_in_band_not_error() {
@@ -1749,7 +1977,9 @@ fn atr_zero_is_in_band_not_error() {
         let (ns, outs) = step(&s, Input::ClosedCandle(Candle { open_time_ms: i * TIMEFRAME_MS, ..flat }), &cfg).unwrap();
         s = ns;
         if outs.iter().any(|o| matches!(o, Output::StateChange { reason: "atr_zero" })) {
-            assert_eq!(s.candles.len(), (i + 1) as usize); // candle still recorded
+            // Candle still fully processed: counter and window advanced (no early return).
+            assert_eq!(s.candle_count, (i + 1) as u64);
+            assert_eq!(s.window.len(), (i + 1) as usize);
             return;
         }
     }
@@ -1816,18 +2046,47 @@ use rust_decimal::Decimal;
 use sha2::{Digest, Sha256};
 use std::str::FromStr;
 
+/// How to handle missing intervals. KuCoin omits intervals with no trades, so `Skip`
+/// is the default (a gap must not abort a backtest).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GapPolicy { Reject, Skip, ForwardFill }
+
 pub fn load_csv(path: &str) -> Result<Vec<Candle>, String> {
+    load_csv_with_policy(path, GapPolicy::Skip, 4 * 60 * 60 * 1000)
+}
+
+pub fn load_csv_with_policy(path: &str, policy: GapPolicy, expected_interval_ms: i64) -> Result<Vec<Candle>, String> {
     let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
-    let mut out = Vec::new();
+    let mut raw = Vec::new();
     for rec in rdr.records() {
         let r = rec.map_err(|e| e.to_string())?;
-        out.push(Candle {
+        raw.push(Candle {
             open_time_ms: r[0].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
             open: Decimal::from_str(&r[1]).map_err(|e| e.to_string())?,
             high: Decimal::from_str(&r[2]).map_err(|e| e.to_string())?,
             low: Decimal::from_str(&r[3]).map_err(|e| e.to_string())?,
             close: Decimal::from_str(&r[4]).map_err(|e| e.to_string())?,
         });
+    }
+    raw.sort_by_key(|c| c.open_time_ms);
+    raw.dedup_by_key(|c| c.open_time_ms);
+    let mut out: Vec<Candle> = Vec::with_capacity(raw.len());
+    for c in raw {
+        if let Some(prev) = out.last().map(|p| p.open_time_ms) {
+            let mut t = prev;
+            while t + expected_interval_ms < c.open_time_ms {
+                t += expected_interval_ms;
+                match policy {
+                    GapPolicy::Reject => return Err(format!("gap before {}", c.open_time_ms)),
+                    GapPolicy::Skip => {}
+                    GapPolicy::ForwardFill => {
+                        let last = out.last().unwrap().close;
+                        out.push(Candle { open_time_ms: t, open: last, high: last, low: last, close: last });
+                    }
+                }
+            }
+        }
+        out.push(c);
     }
     Ok(out)
 }
@@ -2076,7 +2335,7 @@ fn golden_hash_is_stable() {
 }
 ```
 
-Create `tests/golden/outs.hash` as an empty file (so the path exists; the test fills it on first run and CI then compares).
+Run the test once to generate `tests/golden/outs.hash`, then **commit the non-empty file** (so CI legs compare against it instead of each writing its own and passing vacuously). Generate it against the signal-producing fixture (Task 27); if Task 27 has not run yet, regenerate and re-commit after it lands.
 
 Add `pub mod replay;` to `harness/mod.rs`.
 
@@ -2119,40 +2378,45 @@ pub struct SimParams {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SimOutcome { TakeProfit(Decimal), StopLoss(Decimal), Unresolved }
 
-/// Simulate one signal along the tick path, returning a realised R multiple.
-pub fn simulate(sig: &Signal, ticks: &[Tick], params: SimParams, days_held: Decimal) -> SimOutcome {
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SimResult { pub outcome: SimOutcome, pub entry_ms: i64, pub exit_ms: i64 }
+
+/// Simulate one signal across the FULL tick stream from entry (the caller concatenates
+/// ticks across subsequent candles until resolution). Take-profit fills AT its limit price;
+/// the stop fills at the stop price, or the tick price if gapped past it, plus slippage.
+pub fn simulate(sig: &Signal, ticks: &[Tick], params: SimParams) -> SimResult {
     let risk = match sig.direction { Direction::Long => sig.trigger_price - sig.stop_loss, Direction::Short => sig.stop_loss - sig.trigger_price };
-    if risk <= Decimal::ZERO { return SimOutcome::StopLoss(Decimal::ZERO); }
     let idx = params.latency_ticks as usize;
-    if idx >= ticks.len() { return SimOutcome::Unresolved; }
+    if risk <= Decimal::ZERO || idx >= ticks.len() {
+        let ms = ticks.first().map(|t| t.time_ms).unwrap_or(0);
+        return SimResult { outcome: SimOutcome::Unresolved, entry_ms: ms, exit_ms: ms };
+    }
     let raw = ticks[idx].price;
     let slip = raw * params.entry_slip_bps / Decimal::from(10_000);
-    let e = match sig.direction { Direction::Long => raw + slip, Direction::Short => raw - slip };
-    let cost = e * (params.fee_bps * Decimal::from(2) + params.borrow_bps_per_day * days_held) / Decimal::from(10_000);
+    let entry = match sig.direction { Direction::Long => raw + slip, Direction::Short => raw - slip };
+    let entry_ms = ticks[idx].time_ms;
 
     for t in &ticks[idx..] {
-        match sig.direction {
-            Direction::Long => {
-                if t.price <= sig.stop_loss {
-                    let s = t.price * params.stop_slip_bps / Decimal::from(10_000);
-                    return SimOutcome::StopLoss(-((e - t.price + s) + cost) / risk);
-                }
-                if t.price >= sig.take_profit {
-                    return SimOutcome::TakeProfit(((t.price - e) - cost) / risk);
-                }
-            }
-            Direction::Short => {
-                if t.price >= sig.stop_loss {
-                    let s = t.price * params.stop_slip_bps / Decimal::from(10_000);
-                    return SimOutcome::StopLoss(-((t.price - e + s) + cost) / risk);
-                }
-                if t.price <= sig.take_profit {
-                    return SimOutcome::TakeProfit(((e - t.price) - cost) / risk);
-                }
-            }
+        let (hit_stop, hit_tp) = match sig.direction {
+            Direction::Long => (t.price <= sig.stop_loss, t.price >= sig.take_profit),
+            Direction::Short => (t.price >= sig.stop_loss, t.price <= sig.take_profit),
+        };
+        let days = Decimal::from((t.time_ms - entry_ms).max(0)) / Decimal::from(86_400_000);
+        let cost = entry * (params.fee_bps * Decimal::from(2) + params.borrow_bps_per_day * days) / Decimal::from(10_000);
+        if hit_stop {
+            let base = match sig.direction { Direction::Long => sig.stop_loss.min(t.price), Direction::Short => sig.stop_loss.max(t.price) };
+            let s = base * params.stop_slip_bps / Decimal::from(10_000);
+            let fill = match sig.direction { Direction::Long => base - s, Direction::Short => base + s };
+            let r = match sig.direction { Direction::Long => (entry - fill - cost) / risk, Direction::Short => (fill - entry - cost) / risk };
+            return SimResult { outcome: SimOutcome::StopLoss(r), entry_ms, exit_ms: t.time_ms };
+        }
+        if hit_tp {
+            let fill = sig.take_profit; // limit price, not the tick extreme
+            let r = match sig.direction { Direction::Long => (fill - entry - cost) / risk, Direction::Short => (entry - fill - cost) / risk };
+            return SimResult { outcome: SimOutcome::TakeProfit(r), entry_ms, exit_ms: t.time_ms };
         }
     }
-    SimOutcome::Unresolved
+    SimResult { outcome: SimOutcome::Unresolved, entry_ms, exit_ms: ticks.last().map(|t| t.time_ms).unwrap_or(entry_ms) }
 }
 
 #[cfg(test)]
@@ -2178,15 +2442,23 @@ mod tests {
     fn p() -> SimParams { SimParams { fee_bps:dec("5"), entry_slip_bps:dec("5"), stop_slip_bps:dec("15"), borrow_bps_per_day:dec("2"), latency_ticks:1 } }
 
     #[test]
-    fn hits_take_profit() {
+    fn take_profit_fills_at_limit_not_tick_extreme() {
+        // TP is 2.15; the last tick is 2.20 (the synthetic extreme). The fill must be AT 2.15.
         let t = vec![Tick{time_ms:0,price:dec("2.00")}, Tick{time_ms:1,price:dec("2.00")}, Tick{time_ms:2,price:dec("2.20")}];
-        assert!(matches!(simulate(&long_sig(), &t, p(), dec("0")), SimOutcome::TakeProfit(_)));
+        match simulate(&long_sig(), &t, p()).outcome {
+            SimOutcome::TakeProfit(x) => assert!(x > dec("2.9") && x <= dec("3.0"), "clean TP ~3R, got {x}"),
+            other => panic!("{other:?}"),
+        }
     }
 
     #[test]
-    fn hits_stop() {
+    fn gapped_stop_fills_at_tick_price() {
+        // Price gaps to 1.90, past the 1.95 stop -> worse than -1R.
         let t = vec![Tick{time_ms:0,price:dec("2.00")}, Tick{time_ms:1,price:dec("2.00")}, Tick{time_ms:2,price:dec("1.90")}];
-        assert!(matches!(simulate(&long_sig(), &t, p(), dec("0")), SimOutcome::StopLoss(_)));
+        match simulate(&long_sig(), &t, p()).outcome {
+            SimOutcome::StopLoss(x) => assert!(x < dec("-1.0"), "gap worse than -1R, got {x}"),
+            other => panic!("{other:?}"),
+        }
     }
 }
 ```
@@ -2222,7 +2494,7 @@ use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct TradeRecord { pub direction: Direction, pub r: Decimal, pub pair: String }
+pub struct TradeRecord { pub direction: Direction, pub r: Decimal, pub pair: String, pub entry_time_ms: i64, pub exit_time_ms: i64 }
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Summary {
@@ -2272,36 +2544,38 @@ impl Lcg {
     fn below(&mut self, n: usize) -> usize { (self.next() % n as u64) as usize }
 }
 
-/// Calendar-block bootstrap: resample contiguous blocks of `block` trades and take
-/// the 95% lower bound (5th percentile) of the resampled means. Seeded and deterministic.
-pub fn time_blocked_bootstrap(trades: &[TradeRecord], block: usize, resamples: usize, seed: u64) -> (f64, f64) {
+pub const BOOTSTRAP_BLOCK_MS: i64 = 14 * 86_400_000; // 2 weeks (pre-registered block length)
+
+/// Calendar-block bootstrap: assign each trade to a calendar block by `entry_time_ms`,
+/// resample whole blocks with replacement, return (mean, 5th-percentile lower bound).
+pub fn time_blocked_bootstrap(trades: &[TradeRecord], block_ms: i64, resamples: usize, seed: u64) -> (f64, f64) {
     if trades.is_empty() { return (0.0, 0.0); }
-    let vals: Vec<f64> = trades.iter().map(|t| t.r.to_string().parse::<f64>().unwrap()).collect();
-    let mean0 = vals.iter().sum::<f64>() / vals.len() as f64;
-    let n_blocks = (vals.len() + block - 1) / block;
+    let vals = |r: Decimal| r.to_string().parse::<f64>().unwrap();
+    let mean0 = trades.iter().map(|t| vals(t.r)).sum::<f64>() / trades.len() as f64;
+    let t0 = trades.iter().map(|t| t.entry_time_ms).min().unwrap();
+    let mut blocks: std::collections::BTreeMap<i64, Vec<f64>> = std::collections::BTreeMap::new();
+    for t in trades { blocks.entry((t.entry_time_ms - t0) / block_ms).or_default().push(vals(t.r)); }
+    let block_list: Vec<Vec<f64>> = blocks.into_values().collect();
+    let n = block_list.len();
     let mut rng = Lcg(seed);
     let mut means = Vec::with_capacity(resamples);
     for _ in 0..resamples {
-        let mut acc = 0.0;
-        let mut cnt = 0usize;
-        for _ in 0..n_blocks {
-            let b = rng.below(n_blocks);
-            for k in 0..block {
-                if let Some(v) = vals.get(b * block + k) { acc += v; cnt += 1; }
-            }
+        let mut acc = 0.0; let mut cnt = 0usize;
+        for _ in 0..n {
+            let b = rng.below(n);
+            for v in &block_list[b] { acc += v; cnt += 1; }
         }
         means.push(acc / cnt as f64);
     }
     means.sort_by(|a, b| a.partial_cmp(b).unwrap());
-    let lower = means[(means.len() as f64 * 0.05) as usize];
-    (mean0, lower)
+    (mean0, means[(means.len() as f64 * 0.05) as usize])
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::str::FromStr;
-    fn t(r: &str, p: &str) -> TradeRecord { TradeRecord { direction: Direction::Long, r: Decimal::from_str(r).unwrap(), pair: p.into() } }
+    fn t(r: &str, p: &str) -> TradeRecord { TradeRecord { direction: Direction::Long, r: Decimal::from_str(r).unwrap(), pair: p.into(), entry_time_ms: 0, exit_time_ms: 0 } }
 
     #[test]
     fn summary_counts_and_splits() {
@@ -2312,9 +2586,13 @@ mod tests {
     }
 
     #[test]
-    fn bootstrap_is_deterministic() {
-        let data: Vec<_> = (0..200).map(|i| t(if i % 3 == 0 { "-1.0" } else { "3.0" }, "A")).collect();
-        assert_eq!(time_blocked_bootstrap(&data, 14, 500, 42), time_blocked_bootstrap(&data, 14, 500, 42));
+    fn bootstrap_is_deterministic_and_calendar_blocked() {
+        let data: Vec<_> = (0..200).map(|i| TradeRecord {
+            direction: Direction::Long,
+            r: Decimal::from_str(if i % 3 == 0 { "-1.0" } else { "3.0" }).unwrap(),
+            pair: "A".into(), entry_time_ms: i as i64 * 86_400_000, exit_time_ms: i as i64 * 86_400_000,
+        }).collect();
+        assert_eq!(time_blocked_bootstrap(&data, BOOTSTRAP_BLOCK_MS, 500, 42), time_blocked_bootstrap(&data, BOOTSTRAP_BLOCK_MS, 500, 42));
     }
 
     #[test]
@@ -2572,7 +2850,7 @@ pub fn fetch_page(base_url: &str, symbol: &str, interval: &str, start_s: i64, en
     }).collect())
 }
 ```
-Wire `FetchData` in `bin/backtest.rs` to page via `page_windows`, call `fetch_page` with a small `std::thread::sleep` between pages, write the cache CSV (`open_time_ms,open,high,low,close`; note KuCoin order is `time,open,close,high,low,...`), then print `dataset_hash(out)`.
+Wire `FetchData` in `bin/backtest.rs` to: page via `page_windows`; call `fetch_page` with a small `std::thread::sleep` between pages and **retry with exponential backoff on HTTP 429 / rate-limit responses**; then (a) convert KuCoin **seconds to milliseconds** (`* 1000`), (b) **sort rows oldest-first**, (c) **de-duplicate across page boundaries by open time**, (d) write the cache CSV (`open_time_ms,open,high,low,close`; KuCoin column order is `time,open,close,high,low,volume,turnover`), and finally print `dataset_hash(out)`.
 
 - [ ] **Step 4: Implement the full `Backtest` command**
 
@@ -2603,12 +2881,15 @@ git commit -m "feat(strategy-analyzer): full backtest run + fetch-data (policies
 ```make
 strategy-check:
 	@echo "checking strategy core purity..."
-	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' || (echo "float type in core" && exit 1)
-	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' || (echo "hash-map in core" && exit 1)
+	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "float type in core" && exit 1)
+	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "hash-map in core" && exit 1)
 	cargo build -p strategy-analyzer --no-default-features
+	cargo build -p strategy-analyzer --all-features
 ```
 
-Add `strategy-check` to the `ci` target (after `test`), and to `.PHONY`.
+The `grep -vE '//'` filters lines that contain a `//` comment, so matches in comments are ignored (the spec excludes comments; a full tokenizer is out of scope). Add `strategy-check` to the `ci` target after `test`, and to `.PHONY`.
+
+**Lint/test the harness too:** change the Makefile `clippy` and `test` targets to pass `--all-features` for `strategy-analyzer` (so `harness/` is linted and tested, not just the core), e.g. `cargo clippy -p strategy-analyzer --all-features --no-deps -- -D warnings` and `cargo test -p strategy-analyzer --all-features`.
 
 - [ ] **Step 2: Add the CI matrix and steps**
 
@@ -2652,18 +2933,274 @@ git commit -m "docs(strategy-analyzer): crate README + spec implementation statu
 
 ---
 
+## Task 27: Signal-producing fixture + reuse in replay/golden/integration
+
+**Files:**
+- Create: `process/strategy-analyzer/tests/fixtures/signal_4h.csv`
+- Create: `process/strategy-analyzer/tests/signal_fixture.rs`
+
+- [ ] **Step 1: Build a series that yields exactly one signal**
+
+The existing fixtures are flat and shorter than the 14-candle ATR warm-up, so they exercise nothing. Create a 40-candle 4H series that satisfies: ≥14 candles warm-up → a confirmed swing high → a later candle closes ≥ `0.1·ATR` above it with body ≥ `1.5·ATR` (impulse) → a bearish candle within `zone_search_lookback` forms a demand zone that is NOT mitigated → then a tick crosses `zone_high` from above. Assert exactly one signal:
+
+```rust
+use strategy_analyzer::harness::dataset::load_csv;
+use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
+use strategy_analyzer::strategy::config::Config;
+use strategy_analyzer::strategy::step::step;
+use strategy_analyzer::strategy::types::{Input, Output, StrategyState};
+
+#[test]
+fn signal_fixture_yields_exactly_one_signal() {
+    let candles = load_csv("tests/fixtures/signal_4h.csv").unwrap();
+    let cfg = Config::default_for(&["XRP-USDT"]);
+    let mut st = StrategyState::new("XRP-USDT", 1);
+    let mut src = Ohlcv4hSynthesis::new(candles, PathPolicy::LowFirst);
+    let mut n = 0usize;
+    while let Some((ticks, candle)) = src.next_candle() {
+        for t in ticks { let (ns, o) = step(&st, Input::PriceTick(t), &cfg).unwrap(); st = ns; n += o.iter().filter(|o| matches!(o, Output::EntrySignal(_))).count(); }
+        let (ns, _) = step(&st, Input::ClosedCandle(candle), &cfg).unwrap(); st = ns;
+    }
+    assert_eq!(n, 1, "fixture must produce exactly one signal; tune the series if not");
+}
+```
+
+> Implementer note: the fixture's exact OHLC values may need one or two tuning passes to satisfy every gate (impulse body, zone not mitigated, obstacle ≥ target, touch). The assertion is deterministic once it passes; do not weaken it.
+
+- [ ] **Step 2: Reuse the fixture**
+
+Change the replay-equivalence test (Task 19) and the integration test (Task 24) to use `signal_4h.csv` (not `small_4h.csv`), so those tests exercise a real signal path.
+
+- [ ] **Step 3: Commit**
+
+```bash
+git add process/strategy-analyzer/tests
+git commit -m "test(strategy-analyzer): signal-producing fixture reused across harness tests"
+```
+
+---
+
+## Task 28: Edge-case accuracy tests
+
+**Files:**
+- Modify: `process/strategy-analyzer/src/strategy/signals.rs` (tests only)
+- Modify: `process/strategy-analyzer/src/strategy/structure.rs` (tests only)
+
+- [ ] **Step 1: Add the missing tests** (Task 14 already adds structural/no-obstacle; Task 9 adds the BOS equality boundary). Add the remaining:
+
+```rust
+#[test]
+fn supply_path_short_signal_end_to_end() {
+    // A strengthening down-move forms a supply zone; a tick crosses zone_low from below.
+    // Assert one Short EntrySignal with stop above zone_high and TP below trigger.
+}
+
+#[test]
+fn zone_size_bounds_reject_exactly_at_the_boundary() {
+    // height/atr == min -> accepted; just below -> rejected; == max -> accepted; just above -> rejected.
+}
+```
+Fill these with concrete values following the patterns in Tasks 11/14 (demand-zone construction mirrored for supply; `compute_levels` for the short).
+
+- [ ] **Step 2: Run and commit**
+
+Run: `cargo test -p strategy-analyzer --no-default-features signals:: structure::`
+Expected: all pass.
+
+```bash
+git add process/strategy-analyzer/src/strategy/signals.rs process/strategy-analyzer/src/strategy/structure.rs
+git commit -m "test(strategy-analyzer): supply path + zone size boundaries"
+```
+
+---
+
+## Task 29: Verdict, regime tagging, concentration, cost stress
+
+**Files:**
+- Create: `process/strategy-analyzer/src/harness/verdict.rs`
+- Modify: `process/strategy-analyzer/src/harness/mod.rs`
+
+- [ ] **Step 1: Write the failing tests + implementation**
+
+```rust
+use crate::harness::report::{Summary, TradeRecord, time_blocked_bootstrap, BOOTSTRAP_BLOCK_MS};
+use rust_decimal::Decimal;
+
+/// Regime by the 200-day average: `true` = uptrend. `closes` are daily-ish closes.
+pub fn is_uptrend(closes: &[Decimal]) -> bool {
+    if closes.len() < 200 { return false; }
+    let mean200: Decimal = closes[closes.len() - 200..].iter().copied().sum::<Decimal>() / Decimal::from(200);
+    closes.last().map(|c| *c >= mean200).unwrap_or(false)
+}
+
+#[derive(Debug, PartialEq)]
+pub struct Verdict { pub n: usize, pub mean_r: f64, pub lower_95: f64, pub passes: bool, pub inconclusive_single_regime: bool, pub concentrated: bool, pub cost_stress_ok: bool }
+
+/// Evaluate the pre-registered §10.4 bar. Gates: n >= 200 (executed), mean net R > 0,
+/// bootstrap lower bound > 0 (adversarial composite), not single-regime, no pair > 50% of total R,
+/// and mean still positive at 1.5x costs.
+pub fn verdict(composite: &[TradeRecord], one_regime_only: bool, total_r: Decimal, max_pair_r: Decimal, mean_r_at_1_5x_cost: f64) -> Verdict {
+    let (mean_r, lower_95) = time_blocked_bootstrap(composite, BOOTSTRAP_BLOCK_MS, 10_000, 12345);
+    let concentrated = total_r > Decimal::ZERO && (max_pair_r / total_r) > Decimal::new(1, 1); // > 50%
+    let cost_stress_ok = mean_r_at_1_5x_cost > 0.0;
+    let passes = composite.len() >= 200 && mean_r > 0.0 && lower_95 > 0.0 && !one_regime_only && !concentrated && cost_stress_ok;
+    Verdict { n: composite.len(), mean_r, lower_95, passes, inconclusive_single_regime: one_regime_only, concentrated, cost_stress_ok }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::strategy::types::Direction;
+    use std::str::FromStr;
+    fn rec(r: &str) -> TradeRecord { TradeRecord { direction: Direction::Long, r: Decimal::from_str(r).unwrap(), pair: "A".into(), entry_time_ms: 0, exit_time_ms: 0 } }
+
+    #[test]
+    fn healthy_sample_passes() {
+        let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
+        let total: Decimal = data.iter().map(|t| t.r).sum();
+        let v = verdict(&data, false, total, total / Decimal::from(2), 0.5);
+        assert!(v.passes, "{v:?}");
+    }
+
+    #[test]
+    fn single_regime_and_concentration_block() {
+        let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
+        let total: Decimal = data.iter().map(|t| t.r).sum();
+        let one_regime = verdict(&data, true, total, total / Decimal::from(2), 0.5);
+        assert!(!one_regime.passes); // a single regime is inconclusive
+        let concentrated = verdict(&data, false, total, total, 0.5); // one pair holds 100% of R
+        assert!(concentrated.concentrated);
+        assert!(!concentrated.passes);
+    }
+}
+```
+
+- [ ] **Step 2: Run and commit**
+
+Run: `cargo test -p strategy-analyzer --features harness verdict::`
+Expected: pass.
+
+```bash
+git add process/strategy-analyzer/src/harness
+git commit -m "feat(strategy-analyzer): verdict + regime + concentration + cost-stress gates"
+```
+
+---
+
+## Task 30: Perturbation diagnostics (OAT + joint), 4H synthesis only
+
+**Files:**
+- Create: `process/strategy-analyzer/src/harness/perturb.rs`
+- Modify: `process/strategy-analyzer/src/harness/mod.rs`
+
+- [ ] **Step 1: Write the failing tests + implementation**
+
+```rust
+use rust_decimal::Decimal;
+
+/// One-at-a-time ±20% perturbation of a single parameter, passed through `eval`.
+/// Returns the fraction of cells (each ±20%) whose expectancy > 0.
+pub fn oat_positive_fraction(base: Decimal, eval: &dyn Fn(Decimal) -> Decimal) -> f64 {
+    let mut ok = 0; let mut total = 0;
+    for f in [Decimal::new(8, 1), Decimal::new(12, 1)] { // 0.8 and 1.2
+        if eval(base * f) > Decimal::ZERO { ok += 1; }
+        total += 1;
+    }
+    ok as f64 / total as f64
+}
+
+/// Seeded joint perturbation: each parameter uniform in ±20%; returns the fraction of
+/// `draws` with positive expectancy.
+pub fn joint_positive_fraction(base: &[Decimal], draws: usize, seed: u64, eval: &dyn Fn(&[Decimal]) -> Decimal) -> f64 {
+    let mut rng = Lcg(seed);
+    let mut ok = 0;
+    for _ in 0..draws {
+        let v: Vec<Decimal> = base.iter().map(|b| {
+            // uniform in [-0.2, 0.2]: map u64 fraction to a per-mille offset
+            let off = (rng.below(401) as i64 - 200); // -200..=200 -> -0.2..=0.2
+            *b * (Decimal::ONE + Decimal::from(off) / Decimal::from(1000))
+        }).collect();
+        if eval(&v) > Decimal::ZERO { ok += 1; }
+    }
+    ok as f64 / draws as f64
+}
+
+// reuse Lcg: make it `pub(crate)` in report.rs.
+```
+Tests: `oat_positive_fraction` returns 1.0 when eval is always positive; `joint_positive_fraction` is deterministic for a fixed seed.
+
+- [ ] **Step 2: Run and commit**
+
+Run: `cargo test -p strategy-analyzer --features harness perturb::`
+Expected: pass.
+
+```bash
+git add process/strategy-analyzer/src/harness
+git commit -m "feat(strategy-analyzer): seeded OAT + joint perturbation diagnostics"
+```
+
+Note: the CLI runs these **on 4H synthesis only**, within the pre-registered wall-clock budget.
+
+---
+
+## Task 31: 1m calibration report
+
+**Files:**
+- Modify: `process/strategy-analyzer/src/harness/report.rs`
+
+- [ ] **Step 1: Write the failing test + implementation**
+
+```rust
+/// Given per-candle comparisons of the assumed vs. observed intrabar high/low order,
+/// return the fraction of candles where the assumption was wrong.
+pub fn calibration_wrong_fraction(assumed_low_first: &[bool], observed_low_first: &[bool]) -> f64 {
+    if assumed_low_first.is_empty() { return 0.0; }
+    let wrong = assumed_low_first.iter().zip(observed_low_first).filter(|(a, o)| a != o).count();
+    wrong as f64 / assumed_low_first.len() as f64
+}
+```
+Test: identical → 0.0; all different → 1.0. Print this in the report header when 1m data is present.
+
+- [ ] **Step 2: Run and commit**
+
+```bash
+cargo test -p strategy-analyzer --features harness report::calibration
+git add process/strategy-analyzer/src/harness
+git commit -m "feat(strategy-analyzer): 1m intrabar calibration report"
+```
+
+---
+
+## Review gates
+
+- **After Task 16 (core complete):** stop and run a human/code review of `strategy/` before starting the harness. Confirm: no float/HashMap in core, replay determinism, signal payload correctness, and the §6.3 tre/valid-high-low behavior.
+- **After Task 23 (harness CLI):** stop and review the harness before wiring the final backtest/verdict.
+
+---
+
 ## Self-Review
 
 **Spec coverage:**
-- §1 layout/features → Task 1; §2 numeric policy → Tasks 2, 4, 16; §3 config/validation → Task 4; §4 I/O/errors/ordering/per-symbol → Tasks 5, 6, 15, 16; §5 structure → Tasks 8–10; §6 zones/lifecycle → Tasks 11–13; §7 signals/levels/obstacle/modes → Tasks 14–15; §8 harness (sources, paging, policies, sim, reporting) → Tasks 17–24; §9 payload → Tasks 5, 16; §10 tests/bar/lock → Tasks 19, 21, 22, 24; §11–13 → logs/README + deferred list.
-- **Gap addressed:** §8.2's real network fetch is implemented in Task 24 Step 3 (`fetch_page` via `ureq`, throttled, isolated from the core).
-- **Deliberate simplifications (flagged):** the harness's `fetch_page` returns raw strings and the caller maps the KuCoin column order; the perturbation diagnostics live in Task 24 Step 4 and run on 4H synthesis only.
+- §1 layout/features → Task 1; §2 numeric policy → Tasks 2, 4, 16; §3 config/validation → Task 4; §4 I/O/errors/ordering/per-symbol → Tasks 5, 6, 15, 16; §5 structure → Tasks 8–10; §6 zones/lifecycle → Tasks 11–13; §7 signals/levels/obstacle/modes → Tasks 14–15; §8 harness (sources, paging, policies, sim, reporting, datasets, fetch) → Tasks 17–24, 28; §9 payload → Tasks 5, 16; §10 tests/bar/verdict → Tasks 19, 21, 22, 27, 29–31; §11–13 → logs/README + deferred list.
+- **Second-review fixes** are reflected in the Revision note above and in Tasks 5, 7, 9–17, 19–21, 24, 25, 27–31.
 
-**Placeholder scan:** no TBD/TODO. Task 24 Steps 3–4 describe work without full code (it is integration glue over already-tested units) — implementers should build on the tested `fetch::page_windows`, `sim::simulate`, and `report` functions, not invent new logic. This is the only place a step is described rather than fully coded; everything it calls is code-complete in earlier tasks.
+**Second-review coverage:**
+- BOS-repeats + §6.3 table → Tasks 9–10 (marks every cleared level; trend stays Unknown without a valid low/high) and Task 9's equality-boundary + no-reversal tests.
+- `triggered_at_ms` → Task 15 (takes `tick_time_ms`; test asserts it).
+- Unconfirmed-extreme obstacle → Task 15 (`zone.window_high`/`window_low`, incremented in Task 16, seeded at the breakout candle in Task 11).
+- Separate terminal reasons → Tasks 5, 12 (`TerminalReason` + `ZoneEventReason`).
+- `ATR == 0` scoping → Task 16 (skips only BOS/zone creation; test asserts the candle is fully processed).
+- Sim fill model → Task 20 (TP at limit, stop at stop-or-gap-tick; multi-candle tick stream; `entry_ms`/`exit_ms`).
+- Performance (state shape) → Task 5 (`VecDeque` window + `candle_count`), Task 7 (`AtrState`); `step` cloning is now O(window).
+- Bootstrap calendar blocks + timestamps → Task 21.
+- 1m aggregation, dataset gaps, fetch hygiene, CI `--all-features` + comment-excluding grep → Tasks 8.1, 17, 24, 25.
+- Verification gaps (signal fixture, committed golden hash, edge-case/verdict/perturbation/calibration) → Tasks 27–31.
 
-**Type consistency:** `Zone` (id/kind/low/high/atr/breakout_time_ms/zone_candle_time_ms/activated_at_index/state/reason/attempt_made) is identical in Tasks 5, 11–15. `StrategyState` gains exactly one field in Task 15 (`zones_awaiting_first_tick`), initialized in `new()`. `Signal` fields (Task 5) match the assertions in Tasks 16 and the fixtures in Tasks 20–21. `TargetMode`, `PathPolicy`, `BosKind`, `SimParams`, `SimOutcome`, `TradeRecord`, `Summary` are each defined once and reused. `bos_min_distance_atr`/`impulse_body_threshold_atr`/`stop_buffer_atr`/`structural_buffer_atr`/`min_zone_height_atr`/`max_zone_height_atr` names are consistent between `Config` (Task 4) and their uses (Tasks 9, 11, 14).
+**Placeholder scan:** no TBD/TODO. Tasks 24 (Steps 3–4), 27 (fixture tuning), 28 (test bodies to fill following given patterns), 29 (one test to rewrite cleanly) and 30–31 are described with concrete patterns rather than fully coded — each builds on code-complete units from earlier tasks. Everything they call is code-complete.
 
-**Known follow-ups (intentional):** the real HTTP call is isolated in Task 24 so tests never hit the network; deep-1m acquisition and the `OneMinuteExpansion` source are a post-Phase-0 add-on (the `TickSource` trait already accommodates them).
+**Type consistency:** `Zone` (id/kind/low/high/atr/breakout_time_ms/zone_candle_time_ms/activated_at_index/state/terminal_reason/consume_reason/attempt_made/window_high/window_low) is identical across Tasks 5, 11–15. `StrategyState` (window/candle_count/prev_close/atr/atr_seed_sum/atr_seen/trend/valid_low_idx/valid_high_idx/swing_*/zones/zones_awaiting_first_tick/…) is defined once in Task 5 and used consistently. `detect_bos(&state, atr_before, cfg) -> Option<(BosKind, u64)>` (Task 9) matches Task 16's call; `apply_bos(state, kind, broken_idx)` (Task 10) matches. `try_entry(state, prev_price, tick_time_ms, price, cfg)` (Task 15) matches Task 16's `on_tick`. `simulate(&Signal, &[Tick], SimParams) -> SimResult` (Task 20) and `TradeRecord { …, entry_time_ms, exit_time_ms }` (Task 21) match Tasks 29–31.
+
+**Known follow-ups (intentional):** the real HTTP call is isolated in Task 24 so tests never hit the network; the `OneMinuteExpansion` source and deep-1m acquisition remain a post-Phase-0 add-on (the `TickSource` trait accommodates it); Task 27's fixture may need value tuning to satisfy all gates.
 
 ---
 
