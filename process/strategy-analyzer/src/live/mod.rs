@@ -25,8 +25,8 @@ pub mod sym_loop;
 pub use clock::{Clock, ExchangeClock, ManualClock};
 pub use config::{LiveConfig, LiveConfigError};
 pub use poller::{
-    candle_is_closed, select_closed_candles, MarketData, SharedTickerPoller, TickerSnapshot,
-    UreqMarketData,
+    candle_is_closed, select_closed_candles, MarketData, RateLimiter, SharedTickerPoller,
+    TickerSnapshot, UreqMarketData,
 };
 pub use state_store::{ColdReason, LoadOutcome, StateStore, StateStoreError};
 pub use supervisor::{shutdown_signal, LiveError, Supervisor};

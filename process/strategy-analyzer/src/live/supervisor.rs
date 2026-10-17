@@ -8,7 +8,8 @@
 use crate::live::clock::Clock;
 use crate::live::config::{LiveConfig, LiveConfigError, TIMEFRAME_MS};
 use crate::live::poller::{
-    CandleCursor, CandlePoller, MarketData, SharedTickerPoller, TickerSnapshot, CANDLE_LOOKBACK,
+    CandleCursor, CandlePoller, MarketData, RateLimiter, SharedTickerPoller, TickerSnapshot,
+    CANDLE_LOOKBACK, RATE_LIMIT_MIN_INTERVAL,
 };
 use crate::live::state_store::{StateStore, StateStoreError};
 use crate::live::sym_loop::{LiveEvent, LiveInput, SymbolLoop};
@@ -48,6 +49,7 @@ pub struct Supervisor {
     cfg: LiveConfig,
     market: Arc<dyn MarketData>,
     clock: Arc<dyn Clock>,
+    limiter: Arc<RateLimiter>,
     store: Arc<StateStore>,
     strategy_cfg: Config,
 }
@@ -69,6 +71,7 @@ impl Supervisor {
             cfg,
             market,
             clock,
+            limiter: Arc::new(RateLimiter::new(RATE_LIMIT_MIN_INTERVAL)),
             store,
             strategy_cfg,
         })
@@ -81,6 +84,7 @@ impl Supervisor {
             cfg,
             market,
             clock,
+            limiter,
             store,
             strategy_cfg,
         } = self;
@@ -92,18 +96,20 @@ impl Supervisor {
         }
 
         // Measure the exchange offset once, then refresh on a heartbeat.
-        sync_clock(market.clone(), clock.clone()).await;
+        sync_clock(market.clone(), clock.clone(), limiter.clone()).await;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let (ticker_tx, ticker_handle) = SharedTickerPoller::spawn(
             market.clone(),
             clock.clone(),
+            limiter.clone(),
             cfg.poll_interval(),
             shutdown_rx.clone(),
         );
         let heartbeat = {
             let market = market.clone();
             let clock = clock.clone();
+            let limiter = limiter.clone();
             let mut sd = shutdown_rx.clone();
             tokio::spawn(async move {
                 let mut t = tokio::time::interval(CLOCK_REFRESH);
@@ -111,7 +117,7 @@ impl Supervisor {
                 loop {
                     tokio::select! {
                         r = sd.changed() => { if r.is_err() || *sd.borrow() { break; } }
-                        _ = t.tick() => sync_clock(market.clone(), clock.clone()).await,
+                        _ = t.tick() => sync_clock(market.clone(), clock.clone(), limiter.clone()).await,
                     }
                 }
             })
@@ -126,6 +132,7 @@ impl Supervisor {
                 store: store.clone(),
                 market: market.clone(),
                 clock: clock.clone(),
+                limiter: limiter.clone(),
                 rx: ticker_tx.subscribe(),
                 shutdown: shutdown_rx.clone(),
             };
@@ -165,6 +172,7 @@ struct SymbolDeps {
     store: Arc<StateStore>,
     market: Arc<dyn MarketData>,
     clock: Arc<dyn Clock>,
+    limiter: Arc<RateLimiter>,
     rx: broadcast::Receiver<TickerSnapshot>,
     shutdown: watch::Receiver<bool>,
 }
@@ -177,6 +185,7 @@ async fn run_symbol(deps: SymbolDeps) {
         store,
         market,
         clock,
+        limiter,
         mut rx,
         mut shutdown,
     } = deps;
@@ -205,7 +214,7 @@ async fn run_symbol(deps: SymbolDeps) {
     };
 
     if lp.is_cold() {
-        warm_from_history(&symbol, &market, &clock, &poller, &mut lp).await;
+        warm_from_history(&symbol, &market, &clock, &limiter, &poller, &mut lp).await;
         if lp.is_quarantined() {
             return;
         }
@@ -242,7 +251,7 @@ async fn run_symbol(deps: SymbolDeps) {
             _ = check.tick() => {
                 let now = clock.exchange_now_ms();
                 if now >= next_open + TIMEFRAME_MS + live_cfg.candle_settle_ms {
-                    if poll_candles(&symbol, &market, &poller, &mut lp, now).await {
+                    if poll_candles(&symbol, &market, &limiter, &poller, &mut lp, now).await {
                         log::warn!("symbol={symbol} stopping (quarantined)");
                         break;
                     }
@@ -260,10 +269,12 @@ async fn warm_from_history(
     symbol: &str,
     market: &Arc<dyn MarketData>,
     clock: &Arc<dyn Clock>,
+    limiter: &Arc<RateLimiter>,
     poller: &CandlePoller,
     lp: &mut SymbolLoop,
 ) {
     let now = clock.exchange_now_ms();
+    limiter.acquire().await;
     let m = market.clone();
     let p = poller.clone();
     let sym = symbol.to_string();
@@ -282,11 +293,13 @@ async fn warm_from_history(
 async fn poll_candles(
     symbol: &str,
     market: &Arc<dyn MarketData>,
+    limiter: &Arc<RateLimiter>,
     poller: &CandlePoller,
     lp: &mut SymbolLoop,
     now_ms: i64,
 ) -> bool {
     let cursor = lp.candle_cursor();
+    limiter.acquire().await;
     let m = market.clone();
     let p = poller.clone();
     let sym = symbol.to_string();
@@ -324,7 +337,8 @@ fn stop_requested(events: &[LiveEvent]) -> bool {
         .any(|e| matches!(e, LiveEvent::Quarantine { .. }))
 }
 
-async fn sync_clock(market: Arc<dyn MarketData>, clock: Arc<dyn Clock>) {
+async fn sync_clock(market: Arc<dyn MarketData>, clock: Arc<dyn Clock>, limiter: Arc<RateLimiter>) {
+    limiter.acquire().await;
     let m = market.clone();
     match tokio::task::spawn_blocking(move || m.exchange_time_ms()).await {
         Ok(Ok(t)) => clock.sync(t),

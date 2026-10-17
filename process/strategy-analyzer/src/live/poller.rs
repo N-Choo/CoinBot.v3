@@ -14,12 +14,45 @@ use std::collections::BTreeMap;
 use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, watch};
+use tokio::sync::broadcast;
+use tokio::sync::watch;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::task::JoinHandle;
+use tokio::time::Instant as TokioInstant;
 
 /// Candles requested when there is no cursor yet (cold re-warm), comfortably above
 /// `strategy::types::WINDOW_CANDLES` (64).
 pub const CANDLE_LOOKBACK: u32 = 80;
+
+/// Minimum spacing between outbound requests: the KuCoin Public pool is 2000/30s (VIP0, ~66.7
+/// req/s), so a global 15 ms spacing keeps the adapter well inside budget (live spec §8).
+pub const RATE_LIMIT_MIN_INTERVAL: Duration = Duration::from_millis(15);
+
+/// A global request pacer shared by every network call (live spec §8 "shared limiter"). It serializes
+/// requests so the adapter as a whole respects the Public pool budget.
+pub struct RateLimiter {
+    min_interval: Duration,
+    next_allowed: AsyncMutex<TokioInstant>,
+}
+
+impl RateLimiter {
+    pub fn new(min_interval: Duration) -> Self {
+        RateLimiter {
+            min_interval,
+            next_allowed: AsyncMutex::new(TokioInstant::now()),
+        }
+    }
+
+    /// Wait until the next request slot, then reserve the following one.
+    pub async fn acquire(&self) {
+        let mut next = self.next_allowed.lock().await;
+        let now = TokioInstant::now();
+        if *next > now {
+            tokio::time::sleep_until(*next).await;
+        }
+        *next = TokioInstant::now() + self.min_interval;
+    }
+}
 
 /// The network boundary for the live adapters. Blocking by design; callers use `spawn_blocking`.
 pub trait MarketData: Send + Sync + 'static {
@@ -324,6 +357,7 @@ impl SharedTickerPoller {
     pub fn spawn(
         market: Arc<dyn MarketData>,
         clock: Arc<dyn Clock>,
+        limiter: Arc<RateLimiter>,
         poll_interval: Duration,
         mut shutdown: watch::Receiver<bool>,
     ) -> (broadcast::Sender<TickerSnapshot>, JoinHandle<()>) {
@@ -340,6 +374,7 @@ impl SharedTickerPoller {
                         }
                     }
                     _ = ticker.tick() => {
+                        limiter.acquire().await;
                         let m = market.clone();
                         match tokio::task::spawn_blocking(move || m.all_tickers_last()).await {
                             Ok(Ok(prices)) => {
@@ -530,5 +565,18 @@ mod tests {
         assert!(parse_timestamp(&bad).is_err());
         assert!(parse_all_tickers(&bad).is_err());
         assert!(parse_candles(&bad).is_err());
+    }
+
+    #[tokio::test]
+    async fn rate_limiter_spaces_requests_by_the_minimum_interval() {
+        let interval = Duration::from_millis(10);
+        let limiter = RateLimiter::new(interval);
+        limiter.acquire().await; // the first slot is immediate
+        let start = std::time::Instant::now();
+        limiter.acquire().await; // the second waits one interval
+        assert!(
+            start.elapsed() >= interval,
+            "second acquire must wait at least the minimum interval"
+        );
     }
 }
