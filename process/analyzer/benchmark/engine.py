@@ -26,7 +26,8 @@ def evaluate_exit(side: str, last: float, tp: float, sl: float) -> str | None:
     """Decide whether ``side``'s position reached ``tp`` or ``sl`` at ``last``.
 
     Long (``buy``) exits high on TP / low on SL; short (``sell``) is inverted.
-    TP is checked first, matching the engine.
+    TP is checked first, matching the engine. Kept as the 1:1 port of the
+    engine's last-price rule; the candle replay uses ``evaluate_exit_candle``.
     """
     if side == "buy":
         if last >= tp:
@@ -128,8 +129,9 @@ class SimEngine:
     """Replay driver for one contract: funds plus open positions.
 
     Faithful to `signal_handler` + `position_exit`: a position opens on every
-    signal while `available_fund >= order_budget(init_fund)` (so at most two
-    concurrent), and closes only when a candle's range reaches its TP or SL.
+    signal while `available_fund >= order_budget(init_fund)` (typically two
+    concurrent — more once realized profits raise the fund), and closes only
+    when a candle's range reaches its TP or SL.
     """
 
     def __init__(self, init_fund: float, fee_rate: float) -> None:

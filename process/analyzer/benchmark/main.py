@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import asdict
+from datetime import datetime
 from typing import Any
 
 import pandas as pd
@@ -38,9 +39,8 @@ def _load_dotenv(path: str = ".env") -> None:
 
 def _date_str(df: pd.DataFrame, i: int) -> str:
     ts = df["Timestamp"].iloc[i] if "Timestamp" in df.columns else df.index[i]
-    from datetime import datetime as dt
 
-    if isinstance(ts, (dt, Timestamp)):
+    if isinstance(ts, (datetime, Timestamp)):
         return ts.strftime("%Y-%m-%d")
     return str(ts)
 
