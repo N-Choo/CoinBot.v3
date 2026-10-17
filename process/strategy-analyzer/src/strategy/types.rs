@@ -155,6 +155,9 @@ pub enum ZoneEventKind { Created, Invalidated, Expired, Consumed }
 pub struct ZoneEvent { pub zone_id: String, pub kind: ZoneEventKind, pub reason: Option<ZoneEventReason> }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+// Signal is intentionally kept unboxed: the Phase 0 output API pattern-matches
+// `Output::EntrySignal(sig)` directly and the enum is not hot-path allocated.
+#[allow(clippy::large_enum_variant)]
 pub enum Output {
     ZoneEvent(ZoneEvent),
     EntrySignal(Signal),

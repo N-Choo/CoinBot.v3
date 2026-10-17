@@ -222,7 +222,7 @@ use crate::strategy::decimal::round_to;
 use crate::strategy::types::TrendState as TS;
 
 /// Active zone nearest to `price` in the trend direction (distance to the proximal edge).
-pub fn select_zone<'a>(zones: &'a [Zone], trend: TS, price: Decimal) -> Option<&'a Zone> {
+pub fn select_zone(zones: &[Zone], trend: TS, price: Decimal) -> Option<&Zone> {
     let want = match trend { TS::Bullish => ZoneKind::Demand, TS::Bearish => ZoneKind::Supply, TS::Unknown => return None };
     zones.iter()
         .filter(|z| z.state == ZS::Active && z.kind == want)

@@ -127,8 +127,8 @@ fn on_candle(
     state.zones.retain(|z| !z.is_terminal());
     state.swing_highs.retain(|p| !p.broken);
     state.swing_lows.retain(|p| !p.broken);
-    if state.valid_low_idx.map_or(false, |i| !state.swing_lows.iter().any(|p| p.index == i)) { state.valid_low_idx = None; }
-    if state.valid_high_idx.map_or(false, |i| !state.swing_highs.iter().any(|p| p.index == i)) { state.valid_high_idx = None; }
+    if state.valid_low_idx.is_some_and(|i| !state.swing_lows.iter().any(|p| p.index == i)) { state.valid_low_idx = None; }
+    if state.valid_high_idx.is_some_and(|i| !state.swing_highs.iter().any(|p| p.index == i)) { state.valid_high_idx = None; }
 
     state.prev_close = Some(c.close);
     Ok(out)
