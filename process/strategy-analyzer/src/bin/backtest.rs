@@ -71,6 +71,11 @@ enum Cmd {
         policy: String,
         #[arg(long, default_value = "both")]
         mode: String,
+        /// Candle interval the lock seals (KuCoin string, e.g. `4hour`, `5min`). The frozen
+        /// `config_version` depends on it, so the lock only matches a `backtest` run on the same
+        /// interval.
+        #[arg(long, default_value = "4hour")]
+        candle_interval: String,
         #[arg(long)]
         out: String,
     },
@@ -153,8 +158,9 @@ fn main() -> Res<()> {
             price_scale,
             policy,
             mode,
+            candle_interval,
             out,
-        } => freeze_lock(&data, &price_scale, &policy, &mode, &out),
+        } => freeze_lock(&data, &price_scale, &policy, &mode, &candle_interval, &out),
         Cmd::Backtest {
             data,
             price_scale,
@@ -427,14 +433,15 @@ fn freeze_lock(
     price_scale: &[String],
     policy: &str,
     mode: &str,
+    candle_interval: &str,
     out: &str,
 ) -> Res<()> {
     let datasets = parse_data(data)?;
     let scales = parse_scales(price_scale)?;
     let symbols: Vec<String> = datasets.iter().map(|(s, _)| s.clone()).collect();
-    // The freeze lock seals the pre-registered 4h strategy (its default); `backtest` accepts
-    // `--candle-interval`, so a sealed lock only matches a run on the same interval.
-    let cfg = build_config(&symbols, &scales, "4hour")?;
+    // The freeze lock seals the strategy on `candle_interval` (default 4h); `backtest` accepts the
+    // same `--candle-interval`, so a sealed lock only matches a run on the same interval.
+    let cfg = build_config(&symbols, &scales, candle_interval)?;
     let cv = config_version(&cfg.canonical_params_json());
 
     let mut dataset_hashes: BTreeMap<String, String> = BTreeMap::new();
