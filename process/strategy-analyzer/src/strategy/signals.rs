@@ -385,7 +385,7 @@ fn observe_first_tick(
 }
 
 /// Evaluate one crossed `Active` zone for a first-touch entry. A signal or a veto **consumes** the
-/// zone (spec §6 one entry attempt per zone, §7.1 first touch). Returns the emitted output, or
+/// zone (spec §6 first touch only, §7.1 first touch). Returns the emitted output, or
 /// `None` when the tick is not actually a first touch for that zone.
 fn attempt_zone(
     state: &mut StrategyState,
@@ -453,12 +453,12 @@ fn attempt_zone(
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
         Ok(l) => l,
         Err(tag) => {
-            // §7.1 first touch + §6 "one entry attempt per zone": a first-touch veto CONSUMES
-            // the zone (no `StateChange`), so a later/deeper tick cannot re-trigger it.
+            // §7.1 first touch + §6 first touch only: a first-touch veto CONSUMES the zone (no
+            // `StateChange`), so a later/deeper tick cannot re-trigger it.
             let reason = match tag {
                 "obstacle_too_close" => ConsumeReason::VetoedObstacleTooClose,
-                "obstacle_none" => ConsumeReason::VetoedObstacleNone,
-                "risk_nonpositive" => ConsumeReason::VetoedRiskNonPositive,
+                "obstacle_none" => ConsumeReason::VetoedNoObstacle,
+                "risk_nonpositive" => ConsumeReason::VetoedInvalidLevels,
                 other => unreachable!("`compute_levels` veto tag `{other}` has no ConsumeReason"),
             };
             if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_id) {
@@ -843,7 +843,7 @@ mod touch_tests {
         assert!(out.iter().any(|o| matches!(
             o,
             Output::ZoneEvent(ev) if ev.zone_id == "shallow"
-                && ev.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedRiskNonPositive))
+                && ev.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedInvalidLevels))
         )));
         let sig = out
             .iter()
@@ -856,6 +856,85 @@ mod touch_tests {
             })
             .expect("the deeper crossed zone must still signal after the veto");
         assert_eq!(sig.zone_id, "deep");
+    }
+
+    /// The fixed decision: a first-touch veto **consumes** the zone, so a later re-cross of the
+    /// same zone emits nothing — no signal and no second veto `ZoneEvent`.
+    #[test]
+    fn vetoed_touch_consumes_zone_and_a_later_recross_emits_nothing() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // Demand [1.96, 2.00], atr 0.1: stop = 1.96 - 0.01 = 1.95; trigger 2.00 -> risk 0.05;
+        // fixed_r TP would be 2.00 + 3*0.05 = 2.15, but obstacle 2.10 gives rr 2.0 < 3.0 -> veto.
+        s.zones = vec![zone_id("z", "1.96", "2.00", "1.0")];
+        s.swing_highs = vec![Pivot {
+            index: 0,
+            time_ms: 0,
+            price: dec("2.10"),
+            broken: false,
+        }];
+
+        // First touch from above: the veto consumes the zone and emits exactly one ZoneEvent.
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("2.00"), &cfg).unwrap();
+        let vetoes = out
+            .iter()
+            .filter(|o| {
+                matches!(
+                    o,
+                    Output::ZoneEvent(ev)
+                        if ev.reason == Some(ZoneEventReason::Consumed(
+                            ConsumeReason::VetoedObstacleTooClose,
+                        ))
+                )
+            })
+            .count();
+        assert_eq!(
+            vetoes, 1,
+            "the first touch must emit exactly one veto event: {out:?}"
+        );
+        assert!(!out.iter().any(|o| matches!(o, Output::EntrySignal(_))));
+        assert_eq!(s.zones[0].state, ZoneState::Consumed);
+
+        // A later re-cross of the same (now Consumed) zone must emit nothing.
+        let again = try_entry(&mut s, Some(dec("2.05")), 2, dec("2.00"), &cfg).unwrap();
+        assert!(
+            again.is_empty(),
+            "a re-cross of a consumed zone must emit nothing: {again:?}"
+        );
+        assert_eq!(
+            s.zones[0].consume_reason,
+            Some(ConsumeReason::VetoedObstacleTooClose),
+            "the zone keeps its first veto reason"
+        );
+    }
+
+    /// A no-obstacle veto also consumes the zone with its own reason (the other renamed tag).
+    #[test]
+    fn no_obstacle_veto_consumes_zone() {
+        let cfg = Config {
+            allow_no_obstacle: false,
+            ..Config::default_for(&["XRP-USDT"])
+        };
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // No swing high and window_high (1.0) is below the trigger, so obstacle is None.
+        s.zones = vec![zone_id("z", "1.96", "2.00", "1.0")];
+
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("2.00"), &cfg).unwrap();
+        assert!(
+            out.iter().any(|o| matches!(
+                o,
+                Output::ZoneEvent(ev)
+                    if ev.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedNoObstacle))
+            )),
+            "a no-obstacle veto must emit VetoedNoObstacle: {out:?}"
+        );
+        assert_eq!(s.zones[0].state, ZoneState::Consumed);
     }
 
     #[test]

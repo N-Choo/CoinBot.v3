@@ -212,7 +212,7 @@ fn mitigated_fixture_emits_mitigated_reason() {
 
 /// The obstacle-too-close fixture vetoes on the first touch and must CONSUME the zone with reason
 /// `vetoed_obstacle_too_close` (never leave it `Active`, never emit a `StateChange`): the veto is
-/// the zone's one entry attempt, so later/deeper ticks cannot re-trigger it. Exactly one such
+/// the zone's first touch, so later/deeper ticks cannot re-trigger it. Exactly one such
 /// emission — not two — and still 0 signals.
 #[test]
 fn obstacle_too_close_fixture_veto_consumes_zone_once() {

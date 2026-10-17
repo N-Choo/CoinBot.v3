@@ -42,8 +42,8 @@ fn consume_reason_tag(r: ConsumeReason) -> &'static str {
         ConsumeReason::EngineRejectedTransient => "engine_rejected_transient",
         ConsumeReason::ExpiredUndelivered => "expired_undelivered",
         ConsumeReason::VetoedObstacleTooClose => "vetoed_obstacle_too_close",
-        ConsumeReason::VetoedObstacleNone => "vetoed_obstacle_none",
-        ConsumeReason::VetoedRiskNonPositive => "vetoed_risk_non_positive",
+        ConsumeReason::VetoedNoObstacle => "vetoed_no_obstacle",
+        ConsumeReason::VetoedInvalidLevels => "vetoed_invalid_levels",
     }
 }
 
@@ -232,4 +232,28 @@ pub fn run(
         unfillable,
         reason_counts,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The per-reason report tags the CLI surfaces (`count-signals` / `backtest`) are the
+    /// `reason_counts` keys: pin the renamed first-touch vetoes so a serde/report rename cannot
+    /// silently drop them from the output.
+    #[test]
+    fn first_touch_veto_tags_are_stable() {
+        assert_eq!(
+            consume_reason_tag(ConsumeReason::VetoedObstacleTooClose),
+            "vetoed_obstacle_too_close"
+        );
+        assert_eq!(
+            consume_reason_tag(ConsumeReason::VetoedNoObstacle),
+            "vetoed_no_obstacle"
+        );
+        assert_eq!(
+            consume_reason_tag(ConsumeReason::VetoedInvalidLevels),
+            "vetoed_invalid_levels"
+        );
+    }
 }
