@@ -1,4 +1,4 @@
-PACKAGES = api-gateway share deposit trade-engine
+PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
 
 .PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
 

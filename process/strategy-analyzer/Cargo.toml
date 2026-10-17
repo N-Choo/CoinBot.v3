@@ -1,0 +1,23 @@
+[package]
+name = "strategy-analyzer"
+version = "0.1.0"
+edition = "2021"
+
+[features]
+default = []
+harness = ["dep:clap", "dep:ureq", "dep:csv", "dep:sha2"]
+
+[dependencies]
+rust_decimal = { version = "1", features = ["serde-with-str"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+sha2 = { version = "0.10", optional = true }
+clap = { version = "4", features = ["derive"], optional = true }
+ureq = { version = "2", optional = true }
+csv = { version = "1", optional = true }
+
+[[bin]]
+name = "backtest"
+path = "src/bin/backtest.rs"
+required-features = ["harness"]
