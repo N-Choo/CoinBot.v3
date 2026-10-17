@@ -223,3 +223,81 @@ def print_ledger(
     )
     print(wall)
     print()
+
+
+def main() -> None:
+    _load_dotenv()
+    cfg = Config()
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s  %(levelname)-7s  %(message)s",
+        datefmt="%H:%M:%S",
+    )
+    logger = logging.getLogger("benchmark")
+
+    logger.info(
+        "benchmark started  days=%d  init_fund=%.0f  fee=%.4f  tickers=%s",
+        cfg.benchmark_days,
+        cfg.benchmark_init_fund,
+        cfg.benchmark_fee_rate,
+        ", ".join(cfg.benchmark_tickers),
+    )
+    logger.info(
+        "rsi period=%d  order=%d  sma=%s  atr=%d sl=%.1fx tp=%.1fx high=%d%% adj=%.1fx",
+        cfg.rsi_period,
+        cfg.rsi_divergence_order,
+        "on" if cfg.sma_enabled else "off",
+        cfg.atr_period,
+        cfg.atr_sl_multiplier,
+        cfg.atr_tp_multiplier,
+        int(cfg.atr_pct_high),
+        cfg.atr_high_adjust,
+    )
+
+    min_len = _warmup(
+        cfg.rsi_period, cfg.atr_period, cfg.sma_period, cfg.sma_enabled
+    ) + 2
+
+    for ticker in cfg.benchmark_tickers:
+        logger.info("fetching %s klines...", ticker)
+        try:
+            df = fetch_klines(
+                ticker,
+                timeframe=cfg.kucoin_timeframe,
+                base_url=cfg.kuCoin_base_url,
+            )
+        except KuCoinFetchError as e:
+            logger.error("  skip %s - fetch error: %s", ticker, e)
+            continue
+
+        if len(df) < min_len:
+            logger.warning("  skip %s - only %d candles", ticker, len(df))
+            continue
+
+        trades, open_positions, summary = run_benchmark(
+            df,
+            ticker=ticker,
+            rsi_period=cfg.rsi_period,
+            rsi_order=cfg.rsi_divergence_order,
+            price_diff_threshold=cfg.price_diff_threshold,
+            sma_enabled=cfg.sma_enabled,
+            sma_period=cfg.sma_period,
+            atr_period=cfg.atr_period,
+            atr_sl_multiplier=cfg.atr_sl_multiplier,
+            atr_tp_multiplier=cfg.atr_tp_multiplier,
+            atr_pct_high=cfg.atr_pct_high,
+            atr_high_adjust=cfg.atr_high_adjust,
+            atr_sl_max_pct=cfg.atr_sl_max_pct,
+            init_fund=cfg.benchmark_init_fund,
+            fee_rate=cfg.benchmark_fee_rate,
+            benchmark_days=cfg.benchmark_days,
+        )
+
+        print_ledger(ticker, trades, open_positions, summary)
+
+    logger.info("done")
+
+
+if __name__ == "__main__":
+    main()
