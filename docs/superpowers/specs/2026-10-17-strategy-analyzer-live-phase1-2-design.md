@@ -45,7 +45,7 @@ A 4H candle is closed only when `open_time + 4h + settle <= exchange_now`, with 
 
 ### 3b. Config scope
 
-`config_version` hashes **strategy parameters only**. Per-symbol `price_scale` (from the symbol's price increment at activation) is **instance data** and is excluded from the hash. Otherwise adding a ticker changes the version on every signal and invalidates the freeze lock. This also requires a small change to the Phase 0 plan (Task 4), where `Config` currently holds the `price_scale` map and `default_for` hardcodes 4 dp.
+`config_version` hashes **strategy parameters only**. Per-symbol `price_scale` (from the symbol's price increment at activation) is **instance data** and is excluded from the hash. Otherwise adding a ticker changes the version on every signal and invalidates the freeze lock. Phase 0 was updated accordingly: `Config` still holds `price_scale` for level rounding, but `Config::canonical_params_json()` omits it from the hash input (`Config::config_version`), so the version is stable across tickers.
 
 ### 3c. Activation message + TTL
 
@@ -53,7 +53,7 @@ A 4H candle is closed only when `open_time + 4h + settle <= exchange_now`, with 
 ```json
 { "schema_version": 1, "symbols": ["XRP-USDT", "BTC-USDT"], "sent_at_ms": 1767225600000 }
 ```
-- **Activation TTL** well above the 24h refresh (proposed `activation_ttl = 72h`): on expiry the symbol is **deactivated** (loop stops; state retained until pruning). One missed message must not drop a symbol and its zone state.
+- **Activation TTL** well above the 24h refresh (`activation_ttl = 72h`, the concrete default): on expiry the symbol is **deactivated** (loop stops; state retained until pruning). One missed message must not drop a symbol and its zone state.
 - **Removal:** a symbol absent from the active set is deactivated (state retained, pruned per TTL).
 - **Re-add after a long gap:** treated as a **cold start** — re-warm from history and apply §4 (gap rule), so no fabricated first touch.
 
@@ -81,7 +81,7 @@ Poll `allTickers` every **5s** (proposed). A price older than **30s** (proposed)
 
 ## 6. Delivery semantics — Pub/Sub is at-most-once
 
-Phase 2 publishing via Redis **Pub/Sub** is **at-most-once**: if the engine is down at publish time, the signal is **lost** (and the zone is already consumed, so it will not be re-offered). Alternatives (decide before Phase 2 exit): **Redis Streams** with a consumer group + `XACK` (at-least-once; engine dedups on `signal_id`), or keep Pub/Sub with a **durable outbox** and engine-side idempotency. The engine currently has **no** dedup table.
+Phase 2 publishing via Redis **Pub/Sub** is **at-most-once**: if the engine is down at publish time, the signal is **lost** (and the zone is already consumed, so it will not be re-offered). Alternatives — **Redis Streams** with a consumer group + `XACK` (at-least-once; engine dedups on `signal_id`), or keeping Pub/Sub with a **durable outbox** plus engine-side idempotency — carry a delivery/idempotency contract that shapes the Phase 2 design (publisher, consumer, and dedup key). The **Streams-vs-outbox decision is therefore required before the Phase 2 design**, not at its exit. The engine currently has **no** dedup table.
 
 ## 7. `Signal → TradeSignal` mapping (Option A)
 
@@ -95,14 +95,17 @@ Phase 2 publishing via Redis **Pub/Sub** is **at-most-once**: if the engine is d
 | `tp_price` | `f64` | `take_profit` |
 | `reason` | String | `supply_demand_4h zone=<id> rr=<gross_rr> mode=<target_mode>` |
 
-The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used by `position_exit`). `Decimal`→`f64` conversion happens **only** at the publisher boundary; core and state stay `Decimal`. The stable `signal_id` is carried in `reason` until the engine schema gains a dedicated id field.
+The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used by `position_exit`). `Decimal`→`f64` conversion happens **only** at the publisher boundary (`harness::publish::price_f64`; core and state stay `Decimal`), and is pinned by a round-trip test across price scales.
+
+- `signal_id` **must become a first-class `TradeSignal` field before engine-side dedup** (Phase 2 §6/§11): dedup must key on the stable id, not on a `reason`-embedded string. Until the engine schema gains that field, the id is carried in `reason`.
+- `confidence` is **not gated by the engine**: the engine only logs it (`TradeSignal::log`), so it is fixed at `1.0` and must not be read as a filter or threshold.
 
 ## 8. Rate limiting, isolation, quarantine
 
 - **Shared limiter** for all loops; **per-symbol jitter** so the 4H boundary burst doesn't trip limits.
 - **Request budget (computed):** the Public pool is **2000 req / 30s (~66.7 req/s)** per IP at VIP0. Usage ≈ `0.2` (one shared allTickers poll / 5s) `+ N/60` (4H candle poll per symbol / minute) `+ N/300` (1m wick-comparison fetch per symbol / 5 min) req/s. For **N = 50** ≈ **1.2 req/s** (~2% of quota); **N = 200** ≈ **4.2 req/s** (~6%). Comfortably within quota at request *count*; per-endpoint **weights** must be confirmed from each endpoint's docs before relying on any headroom (assumption: small). If weights are heavier, reduce 1m fetch frequency first.
 - **Per-task failure:** a symbol whose candles keep erroring (e.g. `MalformedCandle`) is **quarantined with an alert**; a panicking task must not crash-loop replaying bad data.
-- **Quarantine exit:** a quarantined symbol leaves quarantine by **manual operator action**, or **automatically after a timed cooldown followed by a clean re-warm** (from history, applying §4). **Alerts go to** the structured log, and to an operator alerting hook if one is wired (none currently).
+- **Quarantine exit:** a quarantined symbol leaves quarantine by **manual operator action**, or **automatically after a timed cooldown followed by a clean re-warm** (from history, applying §4). The cooldown is a concrete, numeric default: **`quarantine_cooldown = 24h`**. **Alerts go to** the structured log, and to an operator alerting hook if one is wired (none currently).
 - **Observations to record:** per symbol, log the polled price next to the latest 1m candle's high/low, to quantify missed wicks.
 
 ## 9. Shadow outcome tracking (Phase 1)

@@ -357,17 +357,37 @@ impl Config {
         Ok(())
     }
 
-    /// Deterministic canonical JSON used for `config_version`.
-    pub fn canonical_json(&self) -> String {
-        serde_json::to_string(self).expect("config is serializable")
+    /// Deterministic canonical JSON of the **strategy parameters** used for `config_version`.
+    ///
+    /// `price_scale` is per-symbol **instance data** (the symbol's price increment), not a strategy
+    /// parameter: it is omitted here so adding a ticker (or refining a symbol's scale) does not
+    /// change the version and invalidate the freeze lock. `Config` still carries `price_scale` for
+    /// the core's level rounding — only the hash input excludes it. Decimal fields are normalized
+    /// (trailing zeros removed) so `"3"` and `"3.0"` hash identically.
+    pub fn canonical_params_json(&self) -> String {
+        let mut c = self.clone();
+        c.bos_min_distance_atr = c.bos_min_distance_atr.normalize();
+        c.impulse_body_threshold_atr = c.impulse_body_threshold_atr.normalize();
+        c.stop_buffer_atr = c.stop_buffer_atr.normalize();
+        c.min_zone_height_atr = c.min_zone_height_atr.normalize();
+        c.max_zone_height_atr = c.max_zone_height_atr.normalize();
+        c.target_r = c.target_r.normalize();
+        c.min_gross_rr = c.min_gross_rr.normalize();
+        c.structural_buffer_atr = c.structural_buffer_atr.normalize();
+        c.engine_net_floor = c.engine_net_floor.normalize();
+        let mut value = serde_json::to_value(&c).expect("config is serializable");
+        if let serde_json::Value::Object(map) = &mut value {
+            map.remove("price_scale");
+        }
+        serde_json::to_string(&value).expect("config is serializable")
     }
 }
 
-/// `config_version` = sha256 hex of the canonical config. Hashing lives at the edge.
-pub fn config_version(canonical_json: &str) -> String {
+/// `config_version` = sha256 hex of the canonical strategy parameters. Hashing lives at the edge.
+pub fn config_version(canonical_params_json: &str) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
-    h.update(canonical_json.as_bytes());
+    h.update(canonical_params_json.as_bytes());
     format!("{:x}", h.finalize())
 }
 
@@ -398,12 +418,28 @@ mod tests {
     #[test]
     fn config_version_hashes_json_stably() {
         let c = Config::default_for(&["XRP-USDT"]);
-        let j = c.canonical_json();
+        let j = c.canonical_params_json();
         assert_eq!(config_version(&j), config_version(&j));
         assert_ne!(config_version(&j), config_version("{}"));
     }
+
+    #[test]
+    fn config_version_excludes_price_scale() {
+        // `price_scale` is per-symbol instance data: adding a ticker or changing a symbol's scale
+        // must not move the version (which would invalidate the freeze lock, §10.4).
+        let a = Config::default_for(&["XRP-USDT"]);
+        let b = Config::default_for(&["XRP-USDT", "BTC-USDT"]);
+        let mut c = a.clone();
+        c.price_scale.insert("XRP-USDT".to_string(), 8);
+        assert_eq!(a.canonical_params_json(), b.canonical_params_json());
+        assert_eq!(a.canonical_params_json(), c.canonical_params_json());
+    }
 }
 ```
+
+Note: `Config` still holds `price_scale` for the core's level rounding; only `config_version` excludes it.
+Signals carry `config_version` computed from `cfg.canonical_params_json()`; changing the hashed input
+therefore changes the golden hash (`tests/golden/outs.hash`), which is regenerated once (see Task 19).
 
 Note: `sha2` is a harness feature dep but `config_version` uses it. Make `sha2` **non-optional** (move it out of the `harness` feature in `Cargo.toml`) so the core-only build compiles. Update the `[features]` line and `[dependencies]` accordingly:
 
@@ -1813,7 +1849,7 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
         schema_version: 1, event_type: "strategy.entry_signal".to_string(),
         signal_id: format!("{}:0", zone_snapshot.id),
         strategy: "supply_demand_4h".to_string(), strategy_version: "0.1.0".to_string(),
-        config_version: crate::strategy::config::config_version(&cfg.canonical_json()),
+        config_version: crate::strategy::config::config_version(&cfg.canonical_params_json()),
         symbol: state.symbol.clone(), market: "margin".to_string(), direction: dir,
         timeframe: "4hour".to_string(), trend_state: state.trend,
         zone_id: zone_snapshot.id.clone(), zone_low: zone_snapshot.low, zone_high: zone_snapshot.high,

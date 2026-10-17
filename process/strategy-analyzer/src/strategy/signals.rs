@@ -483,7 +483,7 @@ fn attempt_zone(
         signal_id: format!("{}:0", zone_snapshot.id),
         strategy: "supply_demand_4h".to_string(),
         strategy_version: "0.1.0".to_string(),
-        config_version: crate::strategy::config::config_version(&cfg.canonical_json()),
+        config_version: crate::strategy::config::config_version(&cfg.canonical_params_json()),
         symbol: state.symbol.clone(),
         market: "margin".to_string(),
         direction: dir,

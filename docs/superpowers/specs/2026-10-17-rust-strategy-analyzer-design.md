@@ -103,7 +103,7 @@ process/strategy-analyzer/
 - **No panics:** all `Decimal` operations use checked variants; overflow / divide-by-zero return `StrategyError`. **`ATR == 0` on a flat series is *not* an error** — it is handled in-band (§4) as a `StateChange`, so the stream does not stall.
 - **Serialization:** Decimals serialize as fixed-scale **strings**, never JSON numbers. Timestamps are `i64` UTC milliseconds internally; ISO-8601 only at the serialization edge.
 - **Float carve-out:** the harness's reporting statistics (expectancy, drawdown, Sharpe-style ratios, bootstrap bounds) may use `f64`. They never feed the core. The **trade ledger is `Decimal`**.
-- **`config_version` = hash of the canonical config.** The version attached to signals is derived by hashing the canonicalized config (deterministic field order), so it equals the freeze-lock value (§10.4).
+- **`config_version` = hash of the canonical strategy parameters.** The version attached to signals is derived by hashing the canonicalized strategy parameters (deterministic field order), **excluding per-symbol `price_scale` instance data** (`Config::canonical_params_json`), so it equals the freeze-lock value (§10.4) and does not move when a ticker is added or a symbol's scale is refined.
 - **State scale normalization:** when serializing state, every `Decimal` field is normalized to a fixed scale so snapshot round-trips are byte-identical (§10.2).
 
 ---
@@ -111,6 +111,8 @@ process/strategy-analyzer/
 ## 3. Strategy configuration
 
 All values configurable and versioned; `config_version` is attached to every signal. None hardcoded.
+
+`price_scale` is the one exception to "everything versioned": it is **per-symbol instance data** (the symbol's price increment, discovered at activation), not a strategy parameter. It stays on `Config` so the core can round levels, but it is **excluded from `config_version`** (via `canonical_params_json`). Hashing it would change the version — and invalidate the freeze lock (§10.4) — every time a ticker is added, **before the freeze lock is written** or after.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -135,10 +137,10 @@ All values configurable and versioned; `config_version` is attached to every sig
 | `entry_attempts` | one per zone | |
 | `re_arm_policy` | `none` | depends on `EngineAck` → not active in Phase 0 |
 | `working_scale` | 12 | dp for indicator math |
-| `price_scale` | per symbol | from config / tick size |
+| `price_scale` | per symbol | from config / tick size; **instance data — excluded from `config_version`** |
 | `ratio_serialization_scale` | 4 | dp, serialization only |
 | `rounding_strategy` | half-up | explicit via helper |
-| `config_version` | string (hash) | derived as a hash of the canonical config; matches the freeze lock (§10.4) |
+| `config_version` | string (hash) | hash of the canonical **strategy parameters** (excludes per-symbol `price_scale` instance data); matches the freeze lock (§10.4) |
 
 **Validation (reject config otherwise):** all periods ≥ 1; `min_zone_height <= max_zone_height`; positive ATR multipliers; `price_scale` present for each configured symbol; and **`target_r > engine_net_floor` and `min_gross_rr > engine_net_floor`** (`engine_net_floor = 2.5`, recorded in config) so a typo cannot undercut the cushion. (The earlier `target_r >= min_gross_rr` rule is **dropped**: `min_gross_rr` applies to `structural` only, and equality in `fixed_r` produced a rounding-sensitive tautology, see §7.5.)
 
@@ -174,7 +176,7 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 **Single touch code path:** the core detects touches **only** from `PriceTick`. Structure and zones come only from `ClosedCandle`. This is what makes the pure-core requirement pay off: backtest and live run identical logic.
 
-**State is per symbol.** The core holds no cross-symbol logic; correlation caps and portfolio risk are engine-side (later phase). A different symbol is a different `StrategyState` instance.
+**State is per symbol.** The core holds no cross-symbol logic; correlation caps and portfolio risk are engine-side (later phase). A different symbol is a different `StrategyState` instance. The per-symbol price scale is likewise **instance data** held on `Config` (for level rounding), and — unlike the strategy parameters — is excluded from `config_version` (§3).
 
 **Typed errors (data integrity):** `StrategyError` includes `OutOfOrderCandle`, `DuplicateCandle`, `GappedCandle`, `MalformedCandle` (negative/zero, `high < low`, non-finite), **`MalformedTick`** (zero/negative price), **`OutOfOrderTick`** (timestamp earlier than the previous tick or the last closed candle), plus `DecimalOverflow`, `DivideByZero`, `ConfigInvalid`. Candle **and tick** validation lives **in the core** so backtest and live behave identically — the core catches violations of the event-ordering contract rather than trusting the caller. On any of these the state is unchanged and no output is produced.
 

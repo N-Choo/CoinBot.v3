@@ -382,7 +382,7 @@ fn freeze_lock(
     let scales = parse_scales(price_scale)?;
     let symbols: Vec<String> = datasets.iter().map(|(s, _)| s.clone()).collect();
     let cfg = build_config(&symbols, &scales)?;
-    let cv = config_version(&cfg.canonical_json());
+    let cv = config_version(&cfg.canonical_params_json());
 
     let mut dataset_hashes: BTreeMap<String, String> = BTreeMap::new();
     for (symbol, path) in &datasets {
@@ -458,7 +458,7 @@ fn backtest(
     let scales = parse_scales(price_scale)?;
     let symbols: Vec<String> = datasets.iter().map(|(s, _)| s.clone()).collect();
     let cfg0 = build_config(&symbols, &scales)?;
-    let cv = config_version(&cfg0.canonical_json());
+    let cv = config_version(&cfg0.canonical_params_json());
     let policies = parse_policies(policy)?;
     let modes = parse_modes(mode)?;
 

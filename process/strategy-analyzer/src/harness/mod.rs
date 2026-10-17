@@ -4,6 +4,7 @@ pub mod dataset;
 pub mod fetch;
 pub mod lock;
 pub mod perturb;
+pub mod publish;
 pub mod replay;
 pub mod report;
 pub mod run;
