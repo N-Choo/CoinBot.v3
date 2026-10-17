@@ -63,3 +63,29 @@ def evaluate_exit_candle(
         if high >= sl:
             return STOP_LOSS
     return None
+
+
+def realized_pnl(
+    entry_side: str,
+    entry_basis: float,
+    close_proceeds: float,
+    fees_quote: float,
+) -> float:
+    """Realized PnL of a closed round trip, in quote currency, net of fees.
+
+    For a short, ``entry_basis`` is the proceeds of selling the borrowed base;
+    it profits when the close is cheaper.
+    """
+    if entry_side == "sell":
+        return entry_basis - close_proceeds - fees_quote
+    return close_proceeds - entry_basis - fees_quote
+
+
+def cap_loss(raw_pnl: float, committed: float) -> float:
+    """A loss cannot exceed the capital committed to the round trip."""
+    return max(raw_pnl, -committed)
+
+
+def close_credit(entry_funds: float, pnl: float) -> float:
+    """Credit returned to the contract on close: committed fund plus PnL."""
+    return entry_funds + pnl

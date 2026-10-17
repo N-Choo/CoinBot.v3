@@ -58,3 +58,26 @@ def test_evaluate_exit_candle_boundary_equality_hits():
 
 def test_evaluate_exit_candle_unknown_side_never_exits():
     assert evaluate_exit_candle("hold", high=999.0, low=0.0, tp=1.0, sl=2.0) is None
+
+
+from analyzer.benchmark.engine import cap_loss, close_credit, realized_pnl
+
+
+def test_realized_pnl_is_net_of_fees_for_both_sides():
+    assert realized_pnl("buy", 100.0, 120.0, 2.0) == pytest.approx(18.0)
+    assert realized_pnl("sell", 100.0, 80.0, 2.0) == pytest.approx(18.0)
+
+
+def test_realized_pnl_short_can_lose_more_than_capital():
+    assert realized_pnl("sell", 100.0, 250.0, 2.0) == pytest.approx(-152.0)
+
+
+def test_cap_loss_is_capped_at_committed_capital():
+    assert cap_loss(18.0, 100.0) == pytest.approx(18.0)
+    assert cap_loss(-50.0, 100.0) == pytest.approx(-50.0)
+    assert cap_loss(-250.0, 100.0) == pytest.approx(-100.0)
+
+
+def test_close_credit_is_entry_fund_plus_pnl():
+    assert close_credit(100.0, 18.0) == pytest.approx(118.0)
+    assert close_credit(100.0, -50.0) == pytest.approx(50.0)
