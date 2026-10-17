@@ -33,6 +33,9 @@ pub enum ZoneState { Active, Consumed, Invalidated, Expired }
 pub enum ConsumeReason {
     SignalPublished, MissedTouch, EngineAccepted,
     EngineRejectedStrategy, EngineRejectedTransient, ExpiredUndelivered,
+    // First-touch vetoes: the zone is consumed by the veto (spec §6 one attempt per zone,
+    // §7.1 first touch), so a later/deeper tick cannot re-trigger it.
+    VetoedObstacleTooClose, VetoedObstacleNone, VetoedRiskNonPositive,
 }
 
 /// Why a zone became terminal without a signal. Separate from `ConsumeReason`.

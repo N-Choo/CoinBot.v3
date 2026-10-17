@@ -210,8 +210,18 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
         Ok(l) => l,
         Err(tag) => {
-            // Veto: report the reason, leave the zone Active & unchanged (not consumption).
-            out.push(Output::StateChange { reason: tag });
+            // §7.1 first touch + §6 "one entry attempt per zone": a first-touch veto CONSUMES
+            // the zone (no `StateChange`), so a later/deeper tick cannot re-trigger it.
+            let reason = match tag {
+                "obstacle_too_close" => ConsumeReason::VetoedObstacleTooClose,
+                "obstacle_none" => ConsumeReason::VetoedObstacleNone,
+                "risk_nonpositive" => ConsumeReason::VetoedRiskNonPositive,
+                other => unreachable!("`compute_levels` veto tag `{other}` has no ConsumeReason"),
+            };
+            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+                z.state = ZoneState::Consumed; z.consume_reason = Some(reason); z.attempt_made = true;
+            }
+            out.push(Output::ZoneEvent(ZoneEvent { zone_id: zone_snapshot.id.clone(), kind: ZoneEventKind::Consumed, reason: Some(ZoneEventReason::Consumed(reason)) }));
             return out;
         }
     };
