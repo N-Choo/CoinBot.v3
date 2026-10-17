@@ -41,7 +41,7 @@ fn on_tick(state: &mut StrategyState, t: Tick, cfg: &Config) -> Result<Vec<Outpu
         }
     }
     let outputs =
-        crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg);
+        crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg)?;
     state.last_tick_time_ms = Some(t.time_ms);
     state.last_price = Some(t.price);
     Ok(outputs)

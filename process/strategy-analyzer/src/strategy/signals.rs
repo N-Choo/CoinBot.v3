@@ -1,6 +1,7 @@
 use crate::strategy::config::{Config, TargetMode};
-use crate::strategy::decimal::round_price;
-use crate::strategy::types::{Direction, Pivot, Zone, ZoneKind};
+use crate::strategy::decimal::{round_price, round_ratio_for_output, round_to};
+use crate::strategy::error::StrategyError;
+use crate::strategy::types::*;
 use rust_decimal::Decimal;
 
 pub struct Levels {
@@ -269,9 +270,6 @@ mod tests {
     }
 }
 
-use crate::strategy::types::*;
-use crate::strategy::zones::select_zone;
-
 pub fn is_first_touch(
     direction: Direction,
     zone: &Zone,
@@ -299,65 +297,88 @@ fn direction_for(trend: TrendState) -> Option<Direction> {
     }
 }
 
-/// Entry attempt on a tick. Mutates `state`, returns outputs.
-/// `tick_time_ms` is the touching tick's timestamp (becomes `triggered_at_ms`).
-pub fn try_entry(
-    state: &mut StrategyState,
-    prev_price: Option<Decimal>,
-    tick_time_ms: Ms,
-    price: Decimal,
-    cfg: &Config,
-) -> Vec<Output> {
+fn zone_kind_for(dir: Direction) -> ZoneKind {
+    match dir {
+        Direction::Long => ZoneKind::Demand,
+        Direction::Short => ZoneKind::Supply,
+    }
+}
+
+/// Distance from `prev_price` to the zone's proximal (touch) edge. Only meaningful for a crossed
+/// zone, where `prev_price` is already beyond that edge.
+fn touch_distance(dir: Direction, zone: &Zone, prev: Decimal) -> Decimal {
+    match dir {
+        Direction::Long => prev - zone.high,
+        Direction::Short => zone.low - prev,
+    }
+}
+
+/// On the first tick after activation, a freshly-created zone that is already inside/beyond is a
+/// `missed_touch` (spec §7.2). The awaiting set is cleared for **all** zones (not just one selected
+/// zone) and stale ids are dropped, so a deeper zone is not later judged against a much later price.
+fn observe_first_tick(state: &mut StrategyState, dir: Direction, price: Decimal) -> Vec<Output> {
     let mut out = Vec::new();
-    let dir = match direction_for(state.trend) {
-        Some(d) => d,
-        None => return out,
-    };
-    let atr = match state.atr {
-        Some(a) if a > Decimal::ZERO => a,
-        _ => return out,
-    };
-
-    // Select the nearest active zone in the trend direction (immutably first).
-    let zone_snapshot = match select_zone(&state.zones, state.trend, price) {
-        Some(z) => z.clone(),
-        None => return out,
-    };
-
-    // Missed touch: the first observed price after activation is already inside/beyond.
-    if state
-        .zones_awaiting_first_tick
-        .iter()
-        .any(|id| id == &zone_snapshot.id)
-    {
-        state
-            .zones_awaiting_first_tick
-            .retain(|id| id != &zone_snapshot.id);
-        if is_missed_touch(dir, &zone_snapshot, price) {
-            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
-                z.state = ZoneState::Consumed;
-                z.consume_reason = Some(ConsumeReason::MissedTouch);
-            }
+    let awaiting = std::mem::take(&mut state.zones_awaiting_first_tick);
+    for id in awaiting {
+        let Some(z) = state
+            .zones
+            .iter_mut()
+            .find(|z| z.id == id && z.state == ZoneState::Active)
+        else {
+            continue; // stale id: the zone no longer exists / is no longer Active
+        };
+        if is_missed_touch(dir, z, price) {
+            z.state = ZoneState::Consumed;
+            z.consume_reason = Some(ConsumeReason::MissedTouch);
             state.missed_touch_count += 1;
             out.push(Output::ZoneEvent(ZoneEvent {
-                zone_id: zone_snapshot.id.clone(),
+                zone_id: id,
                 kind: ZoneEventKind::Consumed,
                 reason: Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch)),
             }));
-            return out;
         }
     }
+    out
+}
 
-    let prev = match prev_price {
-        Some(p) => p,
-        None => return out,
+/// Evaluate one crossed `Active` zone for a first-touch entry. A signal or a veto **consumes** the
+/// zone (spec §6 one entry attempt per zone, §7.1 first touch). Returns the emitted output, or
+/// `None` when the tick is not actually a first touch for that zone.
+fn attempt_zone(
+    state: &mut StrategyState,
+    dir: Direction,
+    zone_id: &str,
+    prev: Decimal,
+    price: Decimal,
+    tick_time_ms: Ms,
+    cfg: &Config,
+) -> Result<Option<Output>, StrategyError> {
+    let zone_snapshot = match state
+        .zones
+        .iter()
+        .find(|z| z.id == zone_id && z.state == ZoneState::Active)
+    {
+        Some(z) => z.clone(),
+        None => return Ok(None),
     };
     if !is_first_touch(dir, &zone_snapshot, prev, price) {
-        return out;
+        return Ok(None);
     }
 
-    // Obstacle: swing levels + active opposite zones + the zone's window extremes (includes breakout candle).
-    let (swing_highs, swing_lows) = (&state.swing_highs, &state.swing_lows);
+    // A symbol with no configured price scale is a config error, never a silent default.
+    let price_scale = match cfg.price_scale.get(&state.symbol) {
+        Some(s) => *s,
+        None => {
+            return Err(StrategyError::ConfigInvalid(format!(
+                "no price_scale configured for symbol `{}`",
+                state.symbol
+            )))
+        }
+    };
+
+    // Obstacle: swing levels + active opposite zones + the zone's window extremes (includes the
+    // breakout candle). Every ATR-scaled level and the payload's `atr`/`zone_height_atr` use the
+    // zone's own pre-breakout ATR (`zone.atr`), never the latest `state.atr` (no look-ahead).
     let (active_supply, active_demand): (Vec<Zone>, Vec<Zone>) = (
         state
             .zones
@@ -375,15 +396,17 @@ pub fn try_entry(
     let obstacle = match dir {
         Direction::Long => obstacle_for_long(
             price,
-            swing_highs,
+            &state.swing_highs,
             &active_supply,
             zone_snapshot.window_high,
         ),
-        Direction::Short => {
-            obstacle_for_short(price, swing_lows, &active_demand, zone_snapshot.window_low)
-        }
+        Direction::Short => obstacle_for_short(
+            price,
+            &state.swing_lows,
+            &active_demand,
+            zone_snapshot.window_low,
+        ),
     };
-    let price_scale = cfg.price_scale.get(&state.symbol).copied().unwrap_or(4);
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
         Ok(l) => l,
         Err(tag) => {
@@ -395,21 +418,22 @@ pub fn try_entry(
                 "risk_nonpositive" => ConsumeReason::VetoedRiskNonPositive,
                 other => unreachable!("`compute_levels` veto tag `{other}` has no ConsumeReason"),
             };
-            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_id) {
                 z.state = ZoneState::Consumed;
                 z.consume_reason = Some(reason);
                 z.attempt_made = true;
             }
-            out.push(Output::ZoneEvent(ZoneEvent {
-                zone_id: zone_snapshot.id.clone(),
+            return Ok(Some(Output::ZoneEvent(ZoneEvent {
+                zone_id: zone_id.to_string(),
                 kind: ZoneEventKind::Consumed,
                 reason: Some(ZoneEventReason::Consumed(reason)),
-            }));
-            return out;
+            })));
         }
     };
-    let zone_height_atr = (zone_snapshot.high - zone_snapshot.low) / atr;
-    let trigger = crate::strategy::decimal::round_price(price, price_scale);
+    // Payload ratios are rounded for serialization only (toward zero, 4 dp): no 28-digit noise.
+    let zone_height_atr =
+        round_ratio_for_output((zone_snapshot.high - zone_snapshot.low) / zone_snapshot.atr);
+    let trigger = round_price(price, price_scale);
     let signal = Signal {
         schema_version: 1,
         event_type: "strategy.entry_signal".to_string(),
@@ -426,7 +450,8 @@ pub fn try_entry(
         zone_low: zone_snapshot.low,
         zone_high: zone_snapshot.high,
         zone_height_atr,
-        atr,
+        // The pre-breakout ATR the zone was accepted / stop-buffered with (no look-ahead).
+        atr: zone_snapshot.atr,
         trigger_price: trigger,
         reference_entry_price: trigger,
         stop_loss: levels.stop_loss,
@@ -438,19 +463,67 @@ pub fn try_entry(
         .to_string(),
         target_r: cfg.target_r,
         min_gross_rr: cfg.min_gross_rr,
-        gross_rr: levels.gross_rr,
+        gross_rr: round_ratio_for_output(levels.gross_rr),
         structure_obstacle_price: levels.obstacle,
-        obstacle_rr: levels.obstacle_rr,
+        obstacle_rr: levels.obstacle_rr.map(round_ratio_for_output),
         triggered_at_ms: tick_time_ms,
         candle_timestamp_ms: state.last_candle_time_ms.unwrap_or(0),
     };
-    if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+    if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_id) {
         z.state = ZoneState::Consumed;
         z.consume_reason = Some(ConsumeReason::SignalPublished);
         z.attempt_made = true;
     }
-    out.push(Output::EntrySignal(signal));
-    out
+    Ok(Some(Output::EntrySignal(signal)))
+}
+
+/// Entry attempt on a tick. Mutates `state`, returns outputs.
+/// `tick_time_ms` is the touching tick's timestamp (becomes `triggered_at_ms`).
+///
+/// **Multi-zone first-touch:** every `Active` zone of the trend's kind crossed in the tick interval
+/// `[prev_price, price]` is evaluated, ordered by distance from `prev_price` (nearest first) — not
+/// just `select_zone`'s single nearest. The first signal wins; a veto consumes that zone and
+/// evaluation continues to the next crossed zone.
+pub fn try_entry(
+    state: &mut StrategyState,
+    prev_price: Option<Decimal>,
+    tick_time_ms: Ms,
+    price: Decimal,
+    cfg: &Config,
+) -> Result<Vec<Output>, StrategyError> {
+    let mut out = Vec::new();
+    let dir = match direction_for(state.trend) {
+        Some(d) => d,
+        None => return Ok(out),
+    };
+
+    // First observation after activation: missed-touch handling for freshly-created zones.
+    out.extend(observe_first_tick(state, dir, price));
+
+    let prev = match prev_price {
+        Some(p) => p,
+        None => return Ok(out),
+    };
+
+    let want = zone_kind_for(dir);
+    let mut crossed: Vec<(Decimal, String)> = state
+        .zones
+        .iter()
+        .filter(|z| z.state == ZoneState::Active && z.kind == want)
+        .filter(|z| is_first_touch(dir, z, prev, price))
+        .map(|z| (round_to(touch_distance(dir, z, prev), 8), z.id.clone()))
+        .collect();
+    crossed.sort_by_key(|a| a.0); // nearest to prev first; round_to keeps the key stable
+    for (_, id) in crossed {
+        if let Some(o) = attempt_zone(state, dir, &id, prev, price, tick_time_ms, cfg)? {
+            let is_signal = matches!(o, Output::EntrySignal(_));
+            out.push(o);
+            if is_signal {
+                break; // the nearest zone takes the entry: one signal per tick
+            }
+        }
+    }
+    Ok(out)
 }
 
 #[cfg(test)]
@@ -509,7 +582,7 @@ mod touch_tests {
             price: dec("2.30"),
             broken: false,
         }];
-        let out = try_entry(&mut s, Some(dec("2.05")), 12345, dec("2.00"), &cfg);
+        let out = try_entry(&mut s, Some(dec("2.05")), 12345, dec("2.00"), &cfg).unwrap();
         let sig = out
             .iter()
             .find_map(|o| {
@@ -532,9 +605,150 @@ mod touch_tests {
         s.trend = TrendState::Bullish;
         s.zones = vec![demand()];
         s.zones_awaiting_first_tick = vec!["z".into()];
-        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.98"), &cfg);
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.98"), &cfg).unwrap();
         assert!(out.iter().any(|o| matches!(o, Output::ZoneEvent(_))));
         assert_eq!(s.missed_touch_count, 1);
+    }
+
+    fn zone_id(id: &str, low: &str, high: &str, window_high: &str) -> Zone {
+        Zone {
+            id: id.into(),
+            kind: ZoneKind::Demand,
+            low: dec(low),
+            high: dec(high),
+            atr: dec("0.1"),
+            breakout_time_ms: 0,
+            zone_candle_time_ms: 0,
+            activated_at_index: 0,
+            state: ZoneState::Active,
+            terminal_reason: None,
+            consume_reason: None,
+            attempt_made: false,
+            window_high: dec(window_high),
+            window_low: dec(low),
+        }
+    }
+
+    #[test]
+    fn payload_uses_the_zone_pre_breakout_atr_not_state_atr() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("2.0")); // latest ATR (after the breakout): must NOT reach the payload
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // zone.atr = 0.1; height 2.00 - 1.96 = 0.04 -> 0.04 / 0.1 = 0.4 ATR.
+        s.zones = vec![zone_id("z", "1.96", "2.00", "1.0")];
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("2.00"), &cfg).unwrap();
+        let sig = out
+            .iter()
+            .find_map(|o| {
+                if let Output::EntrySignal(sig) = o {
+                    Some(sig)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(sig.atr, dec("0.1"), "payload ATR is the zone's pre-breakout ATR");
+        assert_eq!(sig.zone_height_atr, dec("0.4"), "0.04 / 0.1 = 0.4");
+    }
+
+    #[test]
+    fn missing_price_scale_is_a_config_error_not_a_default() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("OTHER-USDT", 1); // not in cfg.price_scale
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        s.zones = vec![zone_id("z", "1.96", "2.00", "1.0")];
+        let err = try_entry(&mut s, Some(dec("2.05")), 1, dec("2.00"), &cfg).unwrap_err();
+        assert!(matches!(err, StrategyError::ConfigInvalid(_)));
+    }
+
+    #[test]
+    fn first_tick_clears_awaiting_for_all_created_zones() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        s.zones = vec![
+            zone_id("a", "1.98", "2.00", "1.0"),
+            zone_id("b", "1.90", "1.92", "1.0"),
+        ];
+        s.zones_awaiting_first_tick = vec!["a".into(), "b".into()];
+        // The first tick sits above both zones: neither is missed, and BOTH leave the awaiting set.
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("2.05"), &cfg).unwrap();
+        assert!(out.is_empty());
+        assert!(
+            s.zones_awaiting_first_tick.is_empty(),
+            "all created zones must be observed on the first tick"
+        );
+        assert!(s.zones.iter().all(|z| z.state == ZoneState::Active));
+    }
+
+    #[test]
+    fn multi_zone_first_touch_takes_the_nearest_to_prev() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // shallow [1.98,2.00] (dist 0.10 from 2.10) and deep [1.95,1.995] (dist 0.105); the tick
+        // 1.995 crosses both. Only the nearest (shallow) may be consumed.
+        s.zones = vec![
+            zone_id("shallow", "1.98", "2.00", "1.0"),
+            zone_id("deep", "1.95", "1.995", "1.0"),
+        ];
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.995"), &cfg).unwrap();
+        let sigs: Vec<_> = out
+            .iter()
+            .filter_map(|o| {
+                if let Output::EntrySignal(sig) = o {
+                    Some(sig)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        assert_eq!(sigs.len(), 1, "exactly one signal for the crossed pair");
+        assert_eq!(sigs[0].zone_id, "shallow", "nearest to prev wins");
+        assert!(
+            s.zones.iter().find(|z| z.id == "deep").unwrap().state == ZoneState::Active,
+            "the deeper zone stays Active"
+        );
+    }
+
+    #[test]
+    fn veto_on_the_nearest_zone_continues_to_the_next_crossed_zone() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // shallow [2.00,2.01] (dist 0.09) vetoes: trigger 1.985 <= stop 2.00 - 0.01 -> risk <= 0.
+        // deep [1.95,1.99] (dist 0.11) is crossed too and must still be evaluated after the veto.
+        s.zones = vec![
+            zone_id("shallow", "2.00", "2.01", "1.0"),
+            zone_id("deep", "1.95", "1.99", "1.0"),
+        ];
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.985"), &cfg).unwrap();
+        assert!(out.iter().any(|o| matches!(
+            o,
+            Output::ZoneEvent(ev) if ev.zone_id == "shallow"
+                && ev.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedRiskNonPositive))
+        )));
+        let sig = out
+            .iter()
+            .find_map(|o| {
+                if let Output::EntrySignal(sig) = o {
+                    Some(sig)
+                } else {
+                    None
+                }
+            })
+            .expect("the deeper crossed zone must still signal after the veto");
+        assert_eq!(sig.zone_id, "deep");
     }
 }
 

@@ -6,12 +6,18 @@
 use rust_decimal::Decimal;
 use std::str::FromStr;
 use strategy_analyzer::harness::dataset::load_csv;
+use strategy_analyzer::harness::run::run;
+use strategy_analyzer::harness::sim::SimParams;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
 use strategy_analyzer::strategy::types::{
     ConsumeReason, Input, Output, Signal, StrategyState, ZoneEvent, ZoneEventKind, ZoneEventReason,
 };
+
+fn dec(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap()
+}
 
 /// Count `EntrySignal` outputs while replaying a cached OHLCV file under one path policy.
 fn count_signals(path: &str, policy: PathPolicy) -> usize {
@@ -141,6 +147,28 @@ fn signal_fixture_yields_exactly_one_signal() {
         1,
         "hand-derived fixture must produce exactly one signal"
     );
+}
+
+/// `run` must count `missed_touch` from the **tick** steps (it read candle steps before and was
+/// always 0). Re-opening candle 21 inside the zone makes the first observed tick after activation
+/// already inside it -> `missed_touch` (§7.2), not a late signal.
+#[test]
+fn run_counts_missed_touch_from_tick_steps() {
+    let mut candles = load_csv("tests/fixtures/signal_4h.csv").unwrap();
+    let last = candles.len() - 1;
+    candles[last].open = dec("104.5");
+    candles[last].low = dec("104.0");
+    let cfg = Config::default_for(&["XRP-USDT"]);
+    let params = SimParams {
+        fee_bps: Decimal::from(5),
+        entry_slip_bps: Decimal::from(5),
+        stop_slip_bps: Decimal::from(15),
+        borrow_bps_per_day: Decimal::from(2),
+    };
+    let res = run("XRP-USDT", &candles, PathPolicy::LowFirst, &cfg, params).unwrap();
+    assert_eq!(res.signals, 0, "a missed first touch must not publish a signal");
+    assert_eq!(res.missed_touch, 1);
+    assert_eq!(res.reason_counts.get("missed_touch"), Some(&1));
 }
 
 #[test]
