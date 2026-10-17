@@ -3,11 +3,13 @@
 //! core-only `--no-default-features` test run still compiles.
 #![cfg(feature = "harness")]
 
+use rust_decimal::Decimal;
+use std::str::FromStr;
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
-use strategy_analyzer::strategy::types::{Input, Output, StrategyState};
+use strategy_analyzer::strategy::types::{Input, Output, Signal, StrategyState};
 
 /// Count `EntrySignal` outputs while replaying a cached OHLCV file under one path policy.
 fn count_signals(path: &str, policy: PathPolicy) -> usize {
@@ -26,6 +28,44 @@ fn count_signals(path: &str, policy: PathPolicy) -> usize {
         st = ns;
     }
     n
+}
+
+/// Replay a fixture and return its first emitted `EntrySignal`.
+fn emitted_signal(path: &str, policy: PathPolicy, cfg: &Config) -> Signal {
+    let candles = load_csv(path).unwrap();
+    let mut st = StrategyState::new("XRP-USDT", 1);
+    let mut src = Ohlcv4hSynthesis::new(candles, policy);
+    let mut found: Option<Signal> = None;
+    while let Some((ticks, candle)) = src.next_candle() {
+        for t in ticks {
+            let (ns, outs) = step(&st, Input::PriceTick(t), cfg).unwrap();
+            st = ns;
+            for out in outs {
+                if let Output::EntrySignal(sig) = out {
+                    found = Some(sig);
+                }
+            }
+        }
+        let (ns, _) = step(&st, Input::ClosedCandle(candle), cfg).unwrap();
+        st = ns;
+    }
+    found.expect("fixture must emit a signal")
+}
+
+/// Hard-coded field asserts for the happy fixture's emitted signal, taken from the plan's
+/// hand-derivation (candle-21 touch at 104.5; stop = zone.low 104.0 − 0.1·ATR19 1.2929 =
+/// 103.8707 → 103.9 at 1 dp; risk 0.6; TP = 104.5 + 3·0.6 = 106.3; obstacle = breakout high
+/// 109.0 → rr = (109.0 − 104.5)/0.6 = 7.5). These are NOT re-derived from the golden hash.
+#[test]
+fn happy_fixture_signal_fields_are_hard_coded() {
+    let mut cfg = Config::default_for(&["XRP-USDT"]);
+    cfg.price_scale.insert("XRP-USDT".to_string(), 1); // 1 dp, per the fixture derivation
+    let sig = emitted_signal("tests/fixtures/signal_4h.csv", PathPolicy::LowFirst, &cfg);
+    let dec = |s: &str| Decimal::from_str(s).unwrap();
+    assert_eq!(sig.trigger_price, dec("104.5"), "trigger");
+    assert_eq!(sig.stop_loss, dec("103.9"), "stop");
+    assert_eq!(sig.take_profit, dec("106.3"), "take-profit");
+    assert_eq!(sig.obstacle_rr, Some(dec("7.5")), "obstacle R:R");
 }
 
 #[test]
