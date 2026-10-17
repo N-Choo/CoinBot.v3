@@ -14,13 +14,13 @@ pub fn step(
 ) -> Result<(StrategyState, Vec<Output>), StrategyError> {
     let mut next = state.clone();
     let outputs = match input {
-        Input::PriceTick(t) => on_tick(&mut next, t)?,
+        Input::PriceTick(t) => on_tick(&mut next, t, cfg)?,
         Input::ClosedCandle(c) => on_candle(&mut next, c, cfg)?,
     };
     Ok((next, outputs))
 }
 
-fn on_tick(state: &mut StrategyState, t: Tick) -> Result<Vec<Output>, StrategyError> {
+fn on_tick(state: &mut StrategyState, t: Tick, cfg: &Config) -> Result<Vec<Output>, StrategyError> {
     if t.price <= Decimal::ZERO {
         return Err(StrategyError::MalformedTick { price: t.price.to_string() });
     }
@@ -30,9 +30,10 @@ fn on_tick(state: &mut StrategyState, t: Tick) -> Result<Vec<Output>, StrategyEr
             return Err(StrategyError::OutOfOrderTick { got_ms: t.time_ms, last_ms: prev });
         }
     }
+    let outputs = crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg);
     state.last_tick_time_ms = Some(t.time_ms);
     state.last_price = Some(t.price);
-    Ok(vec![]) // touch detection added in Task 15
+    Ok(outputs)
 }
 
 fn on_candle(

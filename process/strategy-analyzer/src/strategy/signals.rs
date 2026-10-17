@@ -150,3 +150,133 @@ mod tests {
         assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &deny).is_none());
     }
 }
+
+use crate::strategy::types::*;
+use crate::strategy::zones::select_zone;
+
+pub fn is_first_touch(direction: Direction, zone: &Zone, prev_price: Decimal, price: Decimal) -> bool {
+    match direction {
+        Direction::Long => prev_price > zone.high && price <= zone.high,
+        Direction::Short => prev_price < zone.low && price >= zone.low,
+    }
+}
+
+pub fn is_missed_touch(direction: Direction, zone: &Zone, price: Decimal) -> bool {
+    match direction { Direction::Long => price <= zone.high, Direction::Short => price >= zone.low }
+}
+
+fn direction_for(trend: TrendState) -> Option<Direction> {
+    match trend { TrendState::Bullish => Some(Direction::Long), TrendState::Bearish => Some(Direction::Short), TrendState::Unknown => None }
+}
+
+/// Entry attempt on a tick. Mutates `state`, returns outputs.
+/// `tick_time_ms` is the touching tick's timestamp (becomes `triggered_at_ms`).
+pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_time_ms: Ms, price: Decimal, cfg: &Config) -> Vec<Output> {
+    let mut out = Vec::new();
+    let dir = match direction_for(state.trend) { Some(d) => d, None => return out };
+    let atr = match state.atr { Some(a) if a > Decimal::ZERO => a, _ => return out };
+
+    // Select the nearest active zone in the trend direction (immutably first).
+    let zone_snapshot = match select_zone(&state.zones, state.trend, price) { Some(z) => z.clone(), None => return out };
+
+    // Missed touch: the first observed price after activation is already inside/beyond.
+    if state.zones_awaiting_first_tick.iter().any(|id| id == &zone_snapshot.id) {
+        state.zones_awaiting_first_tick.retain(|id| id != &zone_snapshot.id);
+        if is_missed_touch(dir, &zone_snapshot, price) {
+            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+                z.state = ZoneState::Consumed; z.consume_reason = Some(ConsumeReason::MissedTouch);
+            }
+            state.missed_touch_count += 1;
+            out.push(Output::ZoneEvent(ZoneEvent { zone_id: zone_snapshot.id.clone(), kind: ZoneEventKind::Consumed, reason: Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch)) }));
+            return out;
+        }
+    }
+
+    let prev = match prev_price { Some(p) => p, None => return out };
+    if !is_first_touch(dir, &zone_snapshot, prev, price) { return out; }
+
+    // Obstacle: swing levels + active opposite zones + the zone's window extremes (includes breakout candle).
+    let (swing_highs, swing_lows) = (&state.swing_highs, &state.swing_lows);
+    let (active_supply, active_demand): (Vec<Zone>, Vec<Zone>) = (
+        state.zones.iter().filter(|z| z.state == ZoneState::Active && z.kind == ZoneKind::Supply).cloned().collect(),
+        state.zones.iter().filter(|z| z.state == ZoneState::Active && z.kind == ZoneKind::Demand).cloned().collect(),
+    );
+    let obstacle = match dir {
+        Direction::Long => obstacle_for_long(price, swing_highs, &active_supply, zone_snapshot.window_high),
+        Direction::Short => obstacle_for_short(price, swing_lows, &active_demand, zone_snapshot.window_low),
+    };
+    let price_scale = cfg.price_scale.get(&state.symbol).copied().unwrap_or(4);
+    let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
+        Some(l) => l, None => return out, // veto; zone stays Active
+    };
+    let zone_height_atr = (zone_snapshot.high - zone_snapshot.low) / atr;
+    let trigger = crate::strategy::decimal::round_price(price, price_scale);
+    let signal = Signal {
+        schema_version: 1, event_type: "strategy.entry_signal".to_string(),
+        signal_id: format!("{}:0", zone_snapshot.id),
+        strategy: "supply_demand_4h".to_string(), strategy_version: "0.1.0".to_string(),
+        config_version: crate::strategy::config::config_version(&cfg.canonical_json()),
+        symbol: state.symbol.clone(), market: "margin".to_string(), direction: dir,
+        timeframe: "4hour".to_string(), trend_state: state.trend,
+        zone_id: zone_snapshot.id.clone(), zone_low: zone_snapshot.low, zone_high: zone_snapshot.high,
+        zone_height_atr, atr, trigger_price: trigger, reference_entry_price: trigger,
+        stop_loss: levels.stop_loss, take_profit: levels.take_profit,
+        target_mode: match cfg.target_mode { TargetMode::FixedR => "fixed_r", TargetMode::Structural => "structural" }.to_string(),
+        target_r: cfg.target_r, min_gross_rr: cfg.min_gross_rr, gross_rr: levels.gross_rr,
+        structure_obstacle_price: levels.obstacle, obstacle_rr: levels.obstacle_rr,
+        triggered_at_ms: tick_time_ms,
+        candle_timestamp_ms: state.last_candle_time_ms.unwrap_or(0),
+    };
+    if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+        z.state = ZoneState::Consumed; z.consume_reason = Some(ConsumeReason::SignalPublished); z.attempt_made = true;
+    }
+    out.push(Output::EntrySignal(signal));
+    out
+}
+
+#[cfg(test)]
+mod touch_tests {
+    use super::*;
+    use crate::strategy::types::{Pivot, ZoneState};
+    use std::str::FromStr;
+    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn demand() -> Zone {
+        Zone { id:"z".into(), kind:ZoneKind::Demand, low: dec("1.96"), high: dec("2.00"), atr: dec("0.1"),
+            breakout_time_ms:0, zone_candle_time_ms:0, activated_at_index:0, state: ZoneState::Active,
+            terminal_reason:None, consume_reason:None, attempt_made:false,
+            window_high: dec("2.00"), window_low: dec("1.96") }
+    }
+
+    #[test]
+    fn first_touch_requires_crossing_from_above() {
+        assert!(is_first_touch(Direction::Long, &demand(), dec("2.01"), dec("2.00")));
+        assert!(!is_first_touch(Direction::Long, &demand(), dec("2.01"), dec("2.02")));
+    }
+
+    #[test]
+    fn emits_signal_on_first_touch_with_tick_time() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.zones = vec![demand()];
+        s.swing_highs = vec![Pivot { index:0, time_ms:0, price: dec("2.30"), broken:false }];
+        let out = try_entry(&mut s, Some(dec("2.05")), 12345, dec("2.00"), &cfg);
+        let sig = out.iter().find_map(|o| if let Output::EntrySignal(sig) = o { Some(sig) } else { None }).unwrap();
+        assert_eq!(sig.triggered_at_ms, 12345); // the TOUCHING tick's time, not the previous one
+        assert!(s.zones[0].state == ZoneState::Consumed);
+    }
+
+    #[test]
+    fn missed_touch_on_first_observation() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.zones = vec![demand()];
+        s.zones_awaiting_first_tick = vec!["z".into()];
+        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.98"), &cfg);
+        assert!(out.iter().any(|o| matches!(o, Output::ZoneEvent(_))));
+        assert_eq!(s.missed_touch_count, 1);
+    }
+}
