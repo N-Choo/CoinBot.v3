@@ -183,11 +183,11 @@ def print_ledger(
     summary: dict[str, Any],
 ) -> None:
     """Print one ticker's round-trip ledger and account summary."""
-    W = "\u2550" * 66
-    H = "\u2500" * 66
+    rule = "\u2500" * 66
+    wall = "\u2550" * 66
     print()
     print(f"  {ticker}")
-    print(H)
+    print(rule)
 
     if not trades and not open_positions:
         print("  (no trades)")
@@ -203,8 +203,15 @@ def print_ledger(
                 f"{t['exit_date']:<10} {_fmt_price(t['exit_price']):>10} "
                 f"{t['pnl_pct']:>+6.1f}% {t['pnl']:>+8.2f}  {t['reason']}"
             )
+        for p in open_positions:
+            print(
+                f"  {p['entry_date']:<10} {p['side'].upper()[:4]:<4} "
+                f"{_fmt_price(p['entry_price']):>10} "
+                f"{'open':<10} {'-':>10} "
+                f"{'-':>7} {'-':>8}  open"
+            )
 
-    print(H)
+    print(rule)
     print(
         f"  open: {summary['open_count']}  |  "
         f"trades {summary['trades']}  "
@@ -214,5 +221,5 @@ def print_ledger(
         f"equity {summary['equity']:.2f} "
         f"(init {summary['init_fund']:.0f})"
     )
-    print(W)
+    print(wall)
     print()

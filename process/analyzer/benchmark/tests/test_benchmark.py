@@ -1,8 +1,8 @@
 import numpy as np
-import pytest
 import pandas as pd
+import pytest
 
-from analyzer.benchmark.main import run_benchmark
+from analyzer.benchmark.main import _fmt_price, print_ledger, run_benchmark
 from analyzer.models.types import Signal
 
 
@@ -90,9 +90,6 @@ def test_run_benchmark_simulates_trades_end_to_end(monkeypatch):
     assert all(t["pnl"] > 0 for t in trades)
 
 
-from analyzer.benchmark.main import print_ledger
-
-
 def _summary(**overrides):
     base = {
         "ticker": "BTC-USDT",
@@ -136,3 +133,32 @@ def test_print_ledger_with_trades(capsys):
     assert "TP" in out
     assert "SL" in out
     assert "50%" in out
+    assert "$91,200" in out
+    assert "+50.00" in out
+    assert "realized" in out
+    assert "equity" in out
+    assert "open: 0" in out
+
+
+def test_fmt_price_buckets():
+    assert _fmt_price(None) == "-"
+    assert _fmt_price(91200.0) == "$91,200"
+    assert _fmt_price(912.5) == "$912.50"
+    assert _fmt_price(0.5) == "$0.5000"
+    assert _fmt_price(0.001) == "$0.001000"
+
+
+def test_print_ledger_open_positions_without_trades(capsys):
+    open_positions = [
+        {
+            "side": "buy", "entry_price": 91200.0, "exit_price": 0.0,
+            "E": 500.0, "pnl": 0.0, "pnl_pct": 0.0, "reason": "open",
+            "entry_date": "2026-06-01", "exit_date": "",
+            "entry_idx": 9, "exit_idx": 0,
+        }
+    ]
+    print_ledger("BTC-USDT", [], open_positions, _summary(open_count=1))
+    out = capsys.readouterr().out
+    assert "2026-06-01" in out
+    assert "open" in out
+    assert "(no trades)" not in out
