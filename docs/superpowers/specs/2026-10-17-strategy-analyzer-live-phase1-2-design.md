@@ -16,6 +16,8 @@
 
 **Unverified (not read this session — `unverified`):** the engine's health/alerting wiring (whether any alert hook exists), the engine's exact contract-signature check flow, and any existing signal dedup. Treat engine-side items in §8 as requirements to confirm against the engine code.
 
+**Spot-checked this session (the two that matter most):** action handling — `trader/mod.rs:26` **uppercases** `signal.action` before `order_side`, and `order.rs:39-46` matches only `"BUY"`/`"SELL"` (so lowercase is tolerated but uppercase is the convention); SL/TP — `trader/mod.rs:69-79` validates and `position_exit/mod.rs:88` consumes `entry.tp_price`/`entry.sl_price`.
+
 ---
 
 ## 1. Objective / integration shape
@@ -52,13 +54,14 @@ A 4H candle is closed only when `open_time + 4h + settle <= exchange_now`, `sett
 
 `config_version` hashes **strategy parameters only**. Per-symbol `price_scale` and `price_increment` are **instance data**, excluded from the hash (`Config::canonical_params_json()` omits them), so adding a ticker does not change the version or invalidate the freeze lock.
 
-A dp `price_scale` alone cannot express a step-5/step-25 grid (`priceIncrement` can be `0.0005` at 4 dp), so the **core carries each symbol's `price_increment` and snaps** `stop_loss`/`take_profit`/reference levels to valid multiples — stop **away from** entry, take-profit **toward** entry — before publishing. Fallback: dp `round_price` when no increment is configured.
+A dp `price_scale` alone cannot express a step-5/step-25 grid (`priceIncrement` can be `0.0005` at 4 dp), so the **core carries each symbol's `price_increment` and snaps** `stop_loss`/`take_profit`/reference levels to valid multiples — stop **away from** entry, take-profit **toward** entry — before publishing. Fallback: dp `round_price` when no increment is configured. **Snapping the stop away from entry widens risk**, so the **obstacle check and the R:R gate must evaluate the snapped levels** (add a test) so the published R:R reflects what is actually sent.
 
 ### 3c. Activation
 
 There is no `tickers:analyze` message; the **`Analyze(tickers, after_seq)` call is the activation** — each call refreshes the active ticker set. One call carries all symbols; one reply can contain signals for several.
 - **`activation_ttl = 5 min (proposed)`** (replaces the earlier 72 h, which was sized for the coarse 24 h Redis trigger). A symbol **not mentioned for `activation_ttl` is deactivated** (loop stops; state retained until pruning).
 - **Re-add after a long gap is a cold start:** re-warm from candle history, then apply the restart/gap rule (§4).
+- **Phase 1 (shadow) has no `Analyze` call** (no gRPC), so its symbol list is an **explicit input** — a **config list**, or the engine's **active contract tickers read at startup** — not an RPC.
 
 ## 4. Persistence and restart/gap safety (Phase 1)
 
@@ -91,17 +94,18 @@ Runs continuously while the symbol is active. **Stops** when: activation expires
 
 ## 6. RPC shape and delivery (gRPC `Analyze`)
 
-`Analyze(tickers, after_seq)` returns the signals with **`seq > after_seq`**, in **ascending `seq`** order. Semantics:
+`Analyze(tickers, after_seq)` returns the signals with **`seq > after_seq`**, in **ascending `seq`** order; the response also carries the analyzer's **`epoch`** (below). Semantics:
 - **`seq` is ONE global monotonic counter across all symbols** (assigned at emission), **not per symbol**. It **must be persisted** so a restart does not reset it.
-- The engine **acknowledges by sending a higher `after_seq`** on its next call. There is **no separate ack RPC**.
-- The analyzer **keeps a signal until acknowledged or expired**. Repeating the same `after_seq` **replays** the same pending signals, so a lost response loses nothing.
-- The engine **must dedup on `signal_id`** regardless (replay and retries).
-- **`after_seq` ahead of the analyzer's counter** (engine state lost, or the analyzer reset): *proposed* — the analyzer returns an empty page plus its current `latest_seq`, and the engine **resets `after_seq = latest_seq`**. Whether to add a response field for this (`latest_seq` and/or an explicit `reset` flag) is an **open question** (§13); today the proto has no such field.
+- **`epoch` is a random instance ID** (generated once, persisted). The engine stores the epoch alongside its `after_seq`; when a response's epoch **differs**, the engine **resets `after_seq` to the response's `latest_seq`**. This covers an analyzer reset/restore whose counter went backwards, without hiding new signals. `latest_seq` (the current counter value) is returned on every response.
+- **Ack rule:** `after_seq = N` acknowledges **every signal with `seq <= N`**. The engine may advance `after_seq` **only after it has durably recorded each such signal** (dedup row written) — **including the ones it decides to skip**. Advancing early silently drops signals.
+- The analyzer **holds pending signals until acknowledged or expired**; repeating the same `after_seq` (same epoch) **replays** them, so a lost response loses nothing. The engine **must dedup on `signal_id`** regardless.
+- **Atomicity:** a zone's consume, the `seq` increment, and the pending-signal record must **commit together**; otherwise a crash between them loses the signal (zone consumed, nothing queued) or duplicates it. In Phase 2 (Postgres/Redis state) this needs an explicit **transaction or outbox** (§11).
+- **Ownership (simplification):** `seq`, the pending queue, the `epoch`, and the expiry timer live in the **adapter**; the **core only emits signals and stays pure** (Phase 0 unchanged). The core would need `EngineAck`/`Clock` only for **re-arm/TTL**, which stays out of scope — so the earlier "EngineAck/Clock deferred" conflict is resolved by keeping them adapter-side.
 - **Streaming** can be added later over the **same `Signal` message**; it needs reconnect logic in an engine with no tonic dependency today, so **unary ships first**.
 
 ## 7. `Signal → proto Signal` mapping
 
-**Extend `analyzer.proto` additively** — never renumber or reuse fields 1–4. Add: `schema_version`, `signal_id`, `seq`, `sl_price`, `tp_price`, `zone_id`, `reason`, `expires_at_ms`, `trigger_time_ms`; add `after_seq` to `AnalyzeRequest`. Keep prices as `double` (to match the engine's `TradeSignal`). `snap to priceIncrement` stays an **engine-side** job. Adding fields breaks any generated-`Signal` struct literal without `..Default::default()` → **require a workspace-wide grep before the proto change merges** (currently clean).
+**Extend `analyzer.proto` additively** — never renumber or reuse fields 1–4. Add to `Signal`: `schema_version`, `signal_id`, `seq`, `sl_price`, `tp_price`, `zone_id`, `reason`, `expires_at_ms`, `trigger_time_ms`. Add `after_seq` (uint64) to `AnalyzeRequest`, and `epoch` (string) + `latest_seq` (uint64) to `AnalyzeResponse` (§6). Keep prices as `double` (to match the engine's `TradeSignal`). `snap to priceIncrement` stays an **engine-side** job. Adding fields breaks any generated-`Signal` struct literal without `..Default::default()` → **require a workspace-wide grep before the proto change merges** (currently clean).
 
 | proto `Signal` field | type | from Phase-0 `Signal` |
 | --- | --- | --- |
@@ -111,7 +115,7 @@ Runs continuously while the symbol is active. **Stops** when: activation expires
 | `expires_at_ms` (new) | int64 | emission time + expiry (§ below) |
 | `trigger_time_ms` (new) | int64 | `signal.triggered_at_ms` |
 | `ticker` | string | `signal.symbol` (KuCoin form) |
-| `action` | string `"buy"`/`"sell"` | `Long → "buy"`, `Short → "sell"` |
+| `action` | string **`"BUY"`/`"SELL"`** | `Long → "BUY"`, `Short → "SELL"`. The engine **uppercases then matches** (`trader/mod.rs:26` → `order_side`), so lowercase would also work end-to-end, but use uppercase to match the engine's convention and the `TradeSignal` doc. |
 | `confidence` | double | fixed `1.0` (engine does NOT gate on it) |
 | `entry_price` | double | `reference_entry_price` (Decimal→f64 at the boundary; round-trip pinned) |
 | `sl_price` (new) | double | `stop_loss` |
@@ -119,7 +123,7 @@ Runs continuously while the symbol is active. **Stops** when: activation expires
 | `zone_id` (new) | string | `signal.zone_id` |
 | `reason` (new) | string | `supply_demand_4h rr=<gross_rr> mode=<target_mode>` |
 
-**Expiry.** Signal expiry = **60 s (proposed)**. An unacknowledged signal that expires is **dropped**, and its zone is recorded as **`expired_undelivered`** (the zone was already consumed at emission, so it never re-fires). This requires the core's **`EngineAck`/`Clock`** inputs, which are **Phase 2 work** (Phase 0 defers them).
+**Expiry.** Signal expiry = **60 s (proposed)**. An unacknowledged signal that expires is **dropped** and recorded as **`expired_unacked`** (the analyzer cannot distinguish "never received" from "received but not acknowledged" — so `expired_unacked`, not `expired_undelivered`). If the zone record carries it, that is an **adapter-side** record, not a core change. `seq`/pending/expiry live in the adapter (§6); the core stays pure.
 
 `Decimal`→`f64` conversion happens **only** at the RPC boundary (`harness::publish::price_f64`), pinned by a round-trip test across price scales.
 
@@ -171,7 +175,7 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) over the rec
 ## 13. Open items and conflicts
 
 **Undecided (do not resolve silently):**
-1. **`latest_seq` / reset indication:** if `after_seq` is ahead of the analyzer's counter, how does the engine learn the analyzer's current `latest_seq`? Proposed: add a response field; **not decided**. (§6)
+1. **`epoch`/`latest_seq` proto names/types:** the reset mechanism is **decided** — the response carries `epoch` (random, persisted instance id) and `latest_seq`; a changed `epoch` makes the engine reset `after_seq`. The exact field names/types are to confirm at implementation. (§6/§7)
 2. **Global-`seq` persistence:** where the single monotonic counter lives across restart (state file vs a small DB row) is unspecified. (§6)
 3. **Engine skip tolerance** for a moved price / past-stop signal — **TBD**, not invented. (§8)
 4. **Engine health threshold** (3 failed calls) and **quarantine cooldown** (24 h) and **activation TTL** (5 min) and **expiry** (60 s) and **poll cadence** (5–10 s) are **proposed**. (§3c/§5a/§6/§7/§8)
@@ -179,7 +183,7 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) over the rec
 6. **Per-endpoint rate-limit weights** — unverified; needed for the §8 budget. (§8)
 
 **Conflicts with existing text:**
-- Phase 0 §12 lists `EngineAck`/`Clock` as deferred, but §7 (expiry → `expired_undelivered`) **requires** them; this doc assigns that work to **Phase 2**. (Not a contradiction if Phase 2 owns it; flagging.)
+- **Resolved:** `seq`, the pending queue, `epoch`, and the expiry timer live in the **adapter**; the core only emits signals and stays pure. Phase 0 §12's deferral of `EngineAck`/`Clock` therefore still holds (the core needs them only for re-arm/TTL, which is out of scope).
 - Phase 0's `Signal` has no `seq`; the global counter and its persistence are net-new (Phase 2), and `seq` is not something the pure core currently emits. (Phase 0 plan unchanged.)
 - The earlier Redis-based §6 (at-most-once / Streams-vs-outbox) is **superseded** by this gRPC design.
 
