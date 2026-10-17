@@ -17,6 +17,8 @@ pub fn step(
     cfg: &Config,
 ) -> Result<(StrategyState, Vec<Output>), StrategyError> {
     cfg.validate()?;
+    // Per-tick state clone is O(window): the rolling window is bounded (WINDOW_CANDLES), so this is
+    // not O(history). Left as-is; revisit only if 1m profiling shows the clone dominates.
     let mut next = state.clone();
     let outputs = match input {
         Input::PriceTick(t) => on_tick(&mut next, t, cfg)?,

@@ -112,8 +112,11 @@ fn backtest_labels_in_sample_output_exploratory() {
         "--mode",
         "fixed_r",
     ]);
-    // The run may exit non-zero because the *diagnostics* pass panics on a perturbed config
-    // (deferred to a later batch); what matters here is that the header labels it exploratory.
+    assert!(
+        out.status.success(),
+        "backtest must now exit 0 (the perturbation panic is fixed): {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
         stdout.contains("EXPLORATORY (in-sample; not a confirmatory result)"),
@@ -123,4 +126,78 @@ fn backtest_labels_in_sample_output_exploratory() {
         !stdout.contains("CONFIRMATORY OOS run"),
         "in-sample must not be labelled confirmatory: {stdout}"
     );
+    // The diagnostics section is present and reports its invalid-cell counts and budget.
+    assert!(stdout.contains("diagnostics variants_tried="), "{stdout}");
+    assert!(stdout.contains("within_budget="), "{stdout}");
+}
+
+/// ITEM 5: `--oos` must name exactly one explicit mode; `both` would select the mode on OOS.
+#[test]
+fn backtest_oos_refuses_mode_both() {
+    let out = run(&[
+        "backtest",
+        "--data",
+        "XRP-USDT=tests/fixtures/signal_4h.csv",
+        "--price-scale",
+        "XRP-USDT=4",
+        "--oos",
+        "--lock",
+        "/tmp/strategy-analyzer-nonexistent.lock",
+        "--mode",
+        "both",
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(stderr.contains("exactly one explicit --mode"), "{stderr}");
+}
+
+/// ITEM 5: `--oos` must match the mode frozen in the lock; a different mode is refused with the
+/// locked mode named (not just a bare hash mismatch).
+#[test]
+fn backtest_oos_refuses_a_mode_that_differs_from_the_lock() {
+    let lock = std::env::temp_dir().join(format!(
+        "strategy_analyzer_oos_mode_{}.lock",
+        std::process::id()
+    ));
+    let _ = std::fs::remove_file(&lock);
+    let lock_path = lock.to_str().unwrap();
+    let freeze = run(&[
+        "freeze-lock",
+        "--data",
+        "XRP-USDT=tests/fixtures/signal_4h.csv",
+        "--price-scale",
+        "XRP-USDT=4",
+        "--mode",
+        "fixed_r",
+        "--policy",
+        "both",
+        "--out",
+        lock_path,
+    ]);
+    assert!(
+        freeze.status.success(),
+        "freeze-lock failed: {}",
+        String::from_utf8_lossy(&freeze.stderr)
+    );
+
+    let out = run(&[
+        "backtest",
+        "--data",
+        "XRP-USDT=tests/fixtures/signal_4h.csv",
+        "--price-scale",
+        "XRP-USDT=4",
+        "--oos",
+        "--lock",
+        lock_path,
+        "--mode",
+        "structural",
+    ]);
+    assert!(!out.status.success());
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("does not match the frozen lock mode"),
+        "{stderr}"
+    );
+    let _ = std::fs::remove_file(&lock);
+    let _ = std::fs::remove_file(format!("{lock_path}.oos.log"));
 }

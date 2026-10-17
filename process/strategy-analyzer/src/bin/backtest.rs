@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -17,17 +18,21 @@ use strategy_analyzer::harness::report::{
 };
 use strategy_analyzer::harness::run::{count_signals, run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
-use strategy_analyzer::harness::tick_source::{aggregate_4h, PathPolicy};
+use strategy_analyzer::harness::tick_source::{aggregate_4h_bucket, group_4h_buckets, PathPolicy};
 use strategy_analyzer::harness::verdict::{
     verdict, Regime, VerdictInputs, VerdictOutcome, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED,
 };
 use strategy_analyzer::strategy::config::{config_version, Config, TargetMode};
+use strategy_analyzer::strategy::decimal::round_to;
 use strategy_analyzer::strategy::error::StrategyError;
 use strategy_analyzer::strategy::types::Candle;
 
 const KUCOIN_BASE: &str = "https://api.kucoin.com";
 
 type Res<T> = Result<T, Box<dyn std::error::Error>>;
+
+/// One cached OHLCV row: `(open_time_ms, open, high, low, close)`.
+type CacheRow = (i64, String, String, String, String);
 
 #[derive(Parser)]
 struct Cli {
@@ -478,6 +483,21 @@ fn backtest(
     let mut non_confirmatory = false;
     let oos_log: Option<String> = if oos {
         let path = lock_path.as_deref().ok_or("--oos requires --lock <path>")?;
+        // ITEM 5: OOS must name exactly one mode that matches the frozen lock. `both` would let the
+        // target mode be chosen on OOS (a hidden degree of freedom); any other mismatch is drift.
+        if mode == "both" {
+            return Err(
+                "--oos requires exactly one explicit --mode (fixed_r or structural); --mode both would select the mode on OOS".into(),
+            );
+        }
+        let locked = lock::read_lock(path)?;
+        if locked.params.mode != mode {
+            return Err(format!(
+                "--oos mode {mode:?} does not match the frozen lock mode {:?}",
+                locked.params.mode
+            )
+            .into());
+        }
         lock::check_lock(path, &expected_lock.hash())?;
         let log = format!("{path}.oos.log");
         match lock::oos_gate(&log, oos_consumed)? {
@@ -626,55 +646,93 @@ fn backtest(
             }
 
             // Perturbation diagnostics: 4H synthesis only, seeded and reproducible, never a
-            // selector. (Cell validation/clamping is deferred to a later batch.)
-            let axis = diagnostic_axis(&cfg);
-            let eval = |vals: &[Decimal]| -> Decimal {
-                let c = apply_diagnostic_axis(&cfg, vals);
+            // selector. Every perturbed cell is validated; an invalid one is skipped and counted,
+            // never panicked on (the pass stops at its pre-registered wall-clock budget).
+            let axis = diagnostic_axis(&cfg, *m);
+            let eval = |vals: &[Decimal]| -> Option<Decimal> {
+                // `apply_diagnostic_axis` validates the rebuilt config; a cell that violates a
+                // config rule (e.g. a −20% target_r below the engine floor) returns `None`.
+                let c = apply_diagnostic_axis(&cfg, *m, vals).ok()?;
                 let mut all: Vec<TradeRecord> = Vec::new();
                 for l in &loaded {
-                    // Diagnostics only: the same validated dataset cannot make the core error here.
-                    let lf = run(&l.symbol, &l.candles, PathPolicy::LowFirst, &c, params)
-                        .expect("run over the same validated dataset");
-                    let hf = run(&l.symbol, &l.candles, PathPolicy::HighFirst, &c, params)
-                        .expect("run over the same validated dataset");
+                    // Diagnostics only, 4H synthesis: a validated config over the same validated
+                    // dataset must not error. If it ever did, skip the cell rather than panic.
+                    let lf = run(&l.symbol, &l.candles, PathPolicy::LowFirst, &c, params).ok()?;
+                    let hf = run(&l.symbol, &l.candles, PathPolicy::HighFirst, &c, params).ok()?;
                     all.extend(adversarial_composite(&lf.trades, &hf.trades));
                 }
-                mean_r(&all)
+                Some(mean_r(&all))
             };
             let rep = perturb::run_diagnostics(&axis, &eval);
-            println!("  diagnostics variants_tried={} oat={}/{} ({:.3}) joint={}/{} ({:.3}) elapsed={:?} budget={}s within_budget={} oat_gate_met={} joint_gate_met={}",
-                rep.variants_tried(), rep.oat_positive_cells, rep.oat_cells, rep.oat_positive_fraction,
-                rep.joint_positive_draws, rep.joint_draws, rep.joint_positive_fraction,
-                rep.elapsed, perturb::DIAGNOSTICS_BUDGET_SECS, rep.within_budget(),
+            println!("  diagnostics variants_tried={} oat={}/{} invalid={} ({:.3}) joint={}/{} invalid={} ({:.3}) elapsed={:?} budget={}s within_budget={} oat_gate_met={} joint_gate_met={}",
+                rep.variants_tried(), rep.oat_positive_cells, rep.oat_cells, rep.oat_invalid_cells, rep.oat_positive_fraction,
+                rep.joint_positive_draws, rep.joint_draws, rep.joint_invalid_draws, rep.joint_positive_fraction,
+                rep.elapsed, perturb::DIAGNOSTICS_BUDGET_SECS, rep.within_budget,
                 rep.oat_gate_met(), rep.joint_gate_met());
         }
     }
     Ok(())
 }
 
-/// The fixed diagnostics parameter axis (config multipliers the ±20% perturbation perturbs).
-fn diagnostic_axis(cfg: &Config) -> Vec<Decimal> {
-    vec![
+/// Integer-parameter rounding rule for the diagnostics axis (documented, pre-registered): a ±20%
+/// perturbation of an integer parameter (ATR period, zone-search lookback) is rounded **half-up**
+/// (`MidpointAwayFromZero`) to the nearest whole number, then floored at 1 so a perturbed period
+/// can never be zero. E.g. `atr_period` 14 → 11.2 → 11 and → 16.8 → 17.
+fn round_axis_integer(v: Decimal) -> u32 {
+    round_to(v, 0).max(Decimal::ONE).to_u32().unwrap_or(1)
+}
+
+/// The diagnostics parameter axis, in a fixed documented order:
+/// `0` `bos_min_distance_atr`, `1` `impulse_body_threshold_atr`, `2` `stop_buffer_atr`,
+/// `3` `min_zone_height_atr`, `4` `max_zone_height_atr`, `5` `target_r`,
+/// `6` `atr_period` (integer), `7` `zone_search_lookback` (integer),
+/// `8` `min_gross_rr` (**`structural` mode only**).
+///
+/// `min_gross_rr` gates `structural` only, so it is added to the axis only there; perturbing an
+/// unused parameter in `fixed_r` would just dilute the diagnostic.
+fn diagnostic_axis(cfg: &Config, mode: TargetMode) -> Vec<Decimal> {
+    let mut axis = vec![
         cfg.bos_min_distance_atr,
         cfg.impulse_body_threshold_atr,
         cfg.stop_buffer_atr,
         cfg.min_zone_height_atr,
         cfg.max_zone_height_atr,
         cfg.target_r,
-    ]
+        Decimal::from(cfg.atr_period),
+        Decimal::from(cfg.zone_search_lookback),
+    ];
+    if mode == TargetMode::Structural {
+        axis.push(cfg.min_gross_rr);
+    }
+    axis
 }
 
-/// Rebuild a config with the diagnostics axis values applied (all other fields held).
-fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
-    Config {
+/// Rebuild a config from a diagnostics-axis vector (see `diagnostic_axis` for the slot order) and
+/// **validate** it. Integer slots are rounded by `round_axis_integer`. An invalid cell is returned
+/// as `Err` so the caller can skip and count it instead of panicking.
+fn apply_diagnostic_axis(
+    cfg: &Config,
+    mode: TargetMode,
+    v: &[Decimal],
+) -> Result<Config, StrategyError> {
+    let mut c = Config {
         bos_min_distance_atr: v[0],
         impulse_body_threshold_atr: v[1],
         stop_buffer_atr: v[2],
         min_zone_height_atr: v[3],
         max_zone_height_atr: v[4],
         target_r: v[5],
+        atr_period: round_axis_integer(v[6]),
+        zone_search_lookback: round_axis_integer(v[7]),
         ..cfg.clone()
+    };
+    if mode == TargetMode::Structural {
+        if let Some(m) = v.get(8) {
+            c.min_gross_rr = *m;
+        }
     }
+    c.validate()?;
+    Ok(c)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -683,20 +741,33 @@ fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
 
 /// True when the low of `chunk` is visited before its high (intrabar order observed in 1m data).
 /// `None` for a degenerate chunk where the low and high share a minute.
+///
+/// Ties use the **first occurrence of both extremes** (`min_by_key` already picks the first minimum,
+/// but `max_by_key` picks the *last* maximum, which would make the tie rule asymmetric).
 fn observed_low_first(chunk: &[Candle]) -> Option<bool> {
-    let lo = chunk.iter().enumerate().min_by_key(|(_, c)| c.low)?.0;
-    let hi = chunk.iter().enumerate().max_by_key(|(_, c)| c.high)?.0;
-    if lo == hi {
-        None
-    } else {
-        Some(lo < hi)
+    let mut lo: Option<usize> = None;
+    let mut hi: Option<usize> = None;
+    for (i, c) in chunk.iter().enumerate() {
+        if lo.is_none_or(|j| c.low < chunk[j].low) {
+            lo = Some(i);
+        }
+        if hi.is_none_or(|j| c.high > chunk[j].high) {
+            hi = Some(i);
+        }
+    }
+    match (lo, hi) {
+        (Some(l), Some(h)) if l != h => Some(l < h),
+        _ => None,
     }
 }
 
 fn calibrate(one_minute: &str, fetched_4h: &str) -> Res<()> {
     let minutes = load_csv_with_policy(one_minute, GapPolicy::ForwardFill, 60_000)?;
     let fetched = load_csv(fetched_4h)?;
-    let aggregated: Vec<Candle> = minutes.chunks(240).map(aggregate_4h).collect();
+    // Bucket the 1m candles by their 4H grid cell (open_time_ms / 4h), not by a 240-count from the
+    // start, so a series that begins mid-bucket still aggregates each grid cell correctly.
+    let buckets = group_4h_buckets(&minutes);
+    let aggregated: Vec<Candle> = buckets.iter().map(|b| aggregate_4h_bucket(b)).collect();
 
     let mismatches = validate_aggregates(&aggregated, &fetched)?;
     println!("# 1m calibration");
@@ -710,7 +781,10 @@ fn calibrate(one_minute: &str, fetched_4h: &str) -> Res<()> {
     }
 
     if aggregated.len() == fetched.len() {
-        let observed: Vec<bool> = minutes.chunks(240).filter_map(observed_low_first).collect();
+        let observed: Vec<bool> = buckets
+            .iter()
+            .filter_map(|b| observed_low_first(b))
+            .collect();
         for (name, assumed) in [("low_first", true), ("high_first", false)] {
             let assumed_flags = vec![assumed; observed.len()];
             println!(
@@ -763,29 +837,80 @@ fn fetch_data(
         std::thread::sleep(Duration::from_millis(250)); // throttle: respect rate limits
     }
     // KuCoin columns: time,open,close,high,low,volume,turnover -> ms + OHLC cache order.
-    let mut candles: Vec<[String; 5]> = raw
-        .iter()
-        .map(|r| {
-            let ms = r[0].parse::<i64>().unwrap_or(0) * 1000;
-            [
-                ms.to_string(),
-                r[1].clone(),
-                r[3].clone(),
-                r[4].clone(),
-                r[2].clone(),
-            ]
-        })
-        .collect();
-    candles.sort_by_key(|r| r[0].parse::<i64>().unwrap_or(0)); // oldest first
-    candles.dedup_by_key(|r| r[0].clone()); // de-duplicate across page boundaries
+    let mut rows = rows_to_candles(&raw)?;
+    rows.sort_by_key(|r| r.0); // oldest first
+    rows.dedup_by_key(|r| r.0); // de-duplicate across page boundaries
+
     let mut wtr = csv::Writer::from_path(out)?;
     wtr.write_record(["open_time_ms", "open", "high", "low", "close"])?;
-    for r in &candles {
-        wtr.write_record(r)?;
+    for (ms, open, high, low, close) in &rows {
+        wtr.write_record([
+            ms.to_string(),
+            open.clone(),
+            high.clone(),
+            low.clone(),
+            close.clone(),
+        ])?;
     }
     wtr.flush()?;
-    println!("{}", dataset_hash(out)?);
+
+    let hash = dataset_hash(out)?;
+    let provenance_path =
+        write_provenance(out, symbol, interval, start_s, end_s, rows.len(), &hash)?;
+    println!("# provenance written to {provenance_path}");
+    println!("{hash}");
     Ok(())
+}
+
+/// Convert raw KuCoin rows (`time,open,close,high,low,volume,turnover`; time in seconds) to
+/// `(open_time_ms, open, high, low, close)`. A malformed timestamp is an **error** — never a silent
+/// `0`, which would inject a bogus 1970 candle and corrupt the dataset hash.
+fn rows_to_candles(raw: &[[String; 7]]) -> Res<Vec<CacheRow>> {
+    let mut out = Vec::with_capacity(raw.len());
+    for r in raw {
+        let sec: i64 = r[0]
+            .parse()
+            .map_err(|e| format!("fetch-data: bad timestamp {:?}: {e}", r[0]))?;
+        let ms = sec
+            .checked_mul(1000)
+            .ok_or_else(|| format!("fetch-data: timestamp out of range {:?}", r[0]))?;
+        out.push((ms, r[1].clone(), r[3].clone(), r[4].clone(), r[2].clone()));
+    }
+    Ok(out)
+}
+
+/// Provenance sidecar written next to the cached CSV (symbol, interval, requested range, row count,
+/// dataset hash) so a cache file's origin can be audited without re-fetching.
+#[derive(serde::Serialize)]
+struct Provenance<'a> {
+    symbol: &'a str,
+    interval: &'a str,
+    start_s: i64,
+    end_s: i64,
+    row_count: usize,
+    dataset_hash: &'a str,
+}
+
+fn write_provenance(
+    out: &str,
+    symbol: &str,
+    interval: &str,
+    start_s: i64,
+    end_s: i64,
+    row_count: usize,
+    dataset_hash: &str,
+) -> Res<String> {
+    let path = format!("{out}.provenance.json");
+    let p = Provenance {
+        symbol,
+        interval,
+        start_s,
+        end_s,
+        row_count,
+        dataset_hash,
+    };
+    std::fs::write(&path, serde_json::to_string_pretty(&p)?)?;
+    Ok(path)
 }
 
 fn fetch_with_retry(symbol: &str, interval: &str, s: i64, e: i64) -> Res<Vec<[String; 7]>> {
@@ -801,4 +926,107 @@ fn fetch_with_retry(symbol: &str, interval: &str, s: i64, e: i64) -> Res<Vec<[St
         }
     }
     Err("fetch-data: exhausted retries on rate limit".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::str::FromStr;
+
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
+    }
+
+    #[test]
+    fn integer_axis_rounds_half_up_with_a_floor_of_one() {
+        assert_eq!(round_axis_integer(dec("11.2")), 11); // 14 × 0.8
+        assert_eq!(round_axis_integer(dec("16.8")), 17); // 14 × 1.2
+        assert_eq!(round_axis_integer(dec("2.5")), 3, "half-up, not half-even");
+        assert_eq!(round_axis_integer(dec("0.4")), 1, "floored at 1");
+        assert_eq!(round_axis_integer(dec("0")), 1);
+    }
+
+    #[test]
+    fn diagnostic_axis_adds_min_gross_rr_only_in_structural() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        assert_eq!(diagnostic_axis(&cfg, TargetMode::FixedR).len(), 8);
+        let structural = diagnostic_axis(&cfg, TargetMode::Structural);
+        assert_eq!(structural.len(), 9);
+        assert_eq!(structural[8], cfg.min_gross_rr);
+    }
+
+    #[test]
+    fn apply_diagnostic_axis_validates_and_reports_invalid_cells() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        // The base axis is valid in both modes.
+        for mode in [TargetMode::FixedR, TargetMode::Structural] {
+            let base = diagnostic_axis(&cfg, mode);
+            assert!(apply_diagnostic_axis(&cfg, mode, &base).is_ok());
+        }
+        // A −20% target_r (2.4) falls below the engine net floor (2.5): invalid, not a panic.
+        let mut v = diagnostic_axis(&cfg, TargetMode::FixedR);
+        v[5] = dec("2.4");
+        assert!(apply_diagnostic_axis(&cfg, TargetMode::FixedR, &v).is_err());
+        // A −20% min_gross_rr (2.4) is invalid in structural mode.
+        let mut s = diagnostic_axis(&cfg, TargetMode::Structural);
+        s[8] = dec("2.4");
+        assert!(apply_diagnostic_axis(&cfg, TargetMode::Structural, &s).is_err());
+    }
+
+    #[test]
+    fn apply_diagnostic_axis_applies_the_integer_rounding_rule() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut v = diagnostic_axis(&cfg, TargetMode::FixedR);
+        v[6] = dec("11.2");
+        v[7] = dec("12.0");
+        let applied = apply_diagnostic_axis(&cfg, TargetMode::FixedR, &v).unwrap();
+        assert_eq!(applied.atr_period, 11);
+        assert_eq!(applied.zone_search_lookback, 12);
+    }
+
+    #[test]
+    fn observed_low_first_uses_the_first_occurrence_of_each_extreme() {
+        let mk = |h: &str, l: &str| Candle {
+            open_time_ms: 0,
+            open: dec("5"),
+            high: dec(h),
+            low: dec(l),
+            close: dec("5"),
+        };
+        // First low at index 1, first high at index 2 (both duplicated later).
+        let low_first = vec![mk("6", "1"), mk("10", "2"), mk("6", "1"), mk("10", "2")];
+        assert_eq!(observed_low_first(&low_first), Some(true));
+        // Swap so the first high precedes the first low.
+        let high_first = vec![mk("10", "2"), mk("6", "1"), mk("10", "2"), mk("6", "1")];
+        assert_eq!(observed_low_first(&high_first), Some(false));
+        // Degenerate: a single minute holds both extremes (nothing observed).
+        assert_eq!(observed_low_first(&[mk("10", "2")]), None);
+        assert_eq!(observed_low_first(&[]), None);
+    }
+
+    #[test]
+    fn rows_to_candles_rejects_a_bad_timestamp() {
+        let mut good = std::array::from_fn(|_| String::new());
+        good[0] = "1700000000".to_string(); // seconds
+        good[1] = "10.0".to_string(); // open
+        good[2] = "12.0".to_string(); // close
+        good[3] = "13.0".to_string(); // high
+        good[4] = "9.0".to_string(); // low
+        let rows = rows_to_candles(&[good]).unwrap();
+        assert_eq!(rows[0].0, 1_700_000_000_000);
+        // KuCoin column order is time,open,close,high,low -> cached open,high,low,close.
+        assert_eq!(
+            (
+                rows[0].1.as_str(),
+                rows[0].2.as_str(),
+                rows[0].3.as_str(),
+                rows[0].4.as_str()
+            ),
+            ("10.0", "13.0", "9.0", "12.0")
+        );
+
+        let mut bad = std::array::from_fn(|_| String::new());
+        bad[0] = "not-a-number".to_string();
+        assert!(rows_to_candles(&[bad]).is_err());
+    }
 }

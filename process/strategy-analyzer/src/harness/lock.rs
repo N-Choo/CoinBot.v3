@@ -120,6 +120,15 @@ pub fn git_commit_hash() -> Result<String, String> {
     Ok(String::from_utf8_lossy(&out.stdout).trim().to_string())
 }
 
+/// Parse a lock file's contents **without** verifying its hash. Used to read the frozen parameters
+/// (e.g. the locked target mode) before the full hash check, so a mismatch can be reported against
+/// the specific field rather than as a bare hash mismatch. Use `check_lock` for verification.
+pub fn read_lock(lock_path: &str) -> Result<LockContents, String> {
+    let raw = std::fs::read_to_string(lock_path)
+        .map_err(|_| format!("no lock file at {lock_path}; in-sample exploration only"))?;
+    serde_json::from_str(raw.trim()).map_err(|e| format!("malformed lock at {lock_path}: {e}"))
+}
+
 /// Parse the lock file and verify its hash matches `expected`; returns the parsed contents on
 /// success. A missing file is an error (no lock => exploration only).
 pub fn check_lock(lock_path: &str, expected: &str) -> Result<LockContents, String> {
