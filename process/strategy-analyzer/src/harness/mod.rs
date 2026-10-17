@@ -8,3 +8,4 @@ pub mod report;
 pub mod lock;
 pub mod fetch;
 pub mod run;
+pub mod verdict;
