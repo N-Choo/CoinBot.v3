@@ -472,6 +472,8 @@ pub enum ZoneState { Active, Consumed, Invalidated, Expired }
 pub enum ConsumeReason {
     SignalPublished, MissedTouch, EngineAccepted,
     EngineRejectedStrategy, EngineRejectedTransient, ExpiredUndelivered,
+    // First-touch vetoes consume the zone (§6 one attempt per zone, §7.1 first touch).
+    VetoedObstacleTooClose, VetoedObstacleNone, VetoedRiskNonPositive,
 }
 
 /// Why a zone became terminal without a signal. Separate from `ConsumeReason`.
@@ -1782,7 +1784,22 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
     };
     let price_scale = cfg.price_scale.get(&state.symbol).copied().unwrap_or(4);
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
-        Some(l) => l, None => return out, // veto; zone stays Active
+        Ok(l) => l,
+        Err(tag) => {
+            // §7.1 first touch + §6 "one entry attempt per zone": the first-touch veto CONSUMES
+            // the zone (no StateChange), so a later/deeper tick cannot re-trigger it.
+            let reason = match tag {
+                "obstacle_too_close" => ConsumeReason::VetoedObstacleTooClose,
+                "obstacle_none" => ConsumeReason::VetoedObstacleNone,
+                "risk_nonpositive" => ConsumeReason::VetoedRiskNonPositive,
+                other => unreachable!("`compute_levels` veto tag `{other}` has no ConsumeReason"),
+            };
+            if let Some(z) = state.zones.iter_mut().find(|z| z.id == zone_snapshot.id) {
+                z.state = ZoneState::Consumed; z.consume_reason = Some(reason); z.attempt_made = true;
+            }
+            out.push(Output::ZoneEvent(ZoneEvent { zone_id: zone_snapshot.id.clone(), kind: ZoneEventKind::Consumed, reason: Some(ZoneEventReason::Consumed(reason)) }));
+            return out;
+        }
     };
     let zone_height_atr = (zone_snapshot.high - zone_snapshot.low) / atr;
     let trigger = crate::strategy::decimal::round_price(price, price_scale);
@@ -3165,7 +3182,7 @@ fn signal_fixture_yields_exactly_one_signal() {
   Candles 20 (close 105.4) and 21 (close 105.0) stay below the BOS level (105.63), so no BOS precedes 22; candle 21 is bullish (so the demand candle is still 19). **Candle 20 also enters the zone** — its low 104.8 ≤ zone_high 105.0 — but it is skipped as the single grace candle: with `mitigation_grace_candles = 1` the mitigation scan starts at `zi + 1 + 1 = 21`, i.e. it runs over `[21, 22)` only. Candle 21 (low 104.0 ≤ zone_high 105.0) is inside that window → `mitigated` at the breakout on 22 → **0**. (So the derivation is correct not because candle 20 stays out of the zone, but because the grace window deliberately ignores it. Do NOT use a close ≥ 105.63 on candle 20 — that BOSes early and rejects the zone as `weak_impulse` instead, so the `mitigated` path is never exercised.)
 - `signal_obstacle_too_close_4h.csv` — a lower breakout high keeps the obstacle within 3R:
   `19:104.5,105.0,104.0,104.2, 20:104.0,106.2,103.9,106.0, 21:106.0,106.1,104.9,105.0`.
-  Candle 20 body 2.0 passes the impulse gate and close 106.0 passes the BOS level (105.63); the touch at 21 triggers 104.9; obstacle = window_high 106.2 → rr = (106.2 − 104.9)/risk < 3 → veto → **0**.
+  Candle 20 body 2.0 passes the impulse gate and close 106.0 passes the BOS level (105.63); the touch at 21 triggers 104.9; obstacle = window_high 106.2 → rr = (106.2 − 104.9)/risk < 3 → veto → **0**. The first-touch veto consumes the zone (`vetoed_obstacle_too_close`), exactly once.
 
 > Send all three derivations to the human reviewer alongside the happy path before locking the golden hash.
 
