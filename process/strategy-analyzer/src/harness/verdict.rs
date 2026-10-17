@@ -20,12 +20,25 @@ pub fn is_uptrend(closes: &[Decimal]) -> bool {
     closes.last().is_some_and(|c| *c >= mean200)
 }
 
+/// Three-state outcome of the pre-registered §10.4 bar. `Insufficient` is deliberately distinct
+/// from `Fail`: below `MIN_EXECUTED_TRADES` the bar cannot be evaluated, so the result is neither
+/// a pass nor a failure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum VerdictOutcome {
+    /// Fewer than `MIN_EXECUTED_TRADES` executed trades: the bar cannot be evaluated.
+    Insufficient,
+    /// Enough executed trades, but at least one gate failed.
+    Fail,
+    /// Enough executed trades and every gate passed.
+    Pass,
+}
+
 #[derive(Debug, PartialEq)]
 pub struct Verdict {
     pub n: usize,
     pub mean_r: f64,
     pub lower_95: f64,
-    pub passes: bool,
+    pub outcome: VerdictOutcome,
     pub inconclusive_single_regime: bool,
     pub concentrated: bool,
     pub cost_stress_ok: bool,
@@ -35,8 +48,10 @@ pub struct Verdict {
 /// composite mean net R > 0, time-blocked bootstrap 5th-percentile lower bound > 0, not a single
 /// regime, no pair supplying more than 50% of total R, and the mean still positive at 1.5x costs.
 ///
-/// The bootstrap is **calendar-blocked**: it resamples whole blocks assigned by
-/// `TradeRecord.entry_time_ms` over the pre-registered `BOOTSTRAP_BLOCK_MS` window.
+/// `n < MIN_EXECUTED_TRADES` returns `Insufficient` (neither `Pass` nor `Fail`); otherwise the
+/// outcome is `Pass`/`Fail` per the gates. The bootstrap is **calendar-blocked**: it resamples
+/// whole blocks assigned by `TradeRecord.entry_time_ms` over the pre-registered
+/// `BOOTSTRAP_BLOCK_MS` window.
 pub fn verdict(
     composite: &[TradeRecord],
     one_regime_only: bool,
@@ -49,17 +64,17 @@ pub fn verdict(
     let half = Decimal::new(5, 1); // 0.5
     let concentrated = total_r > Decimal::ZERO && (max_pair_r / total_r) > half;
     let cost_stress_ok = mean_r_at_1_5x_cost > 0.0;
-    let passes = composite.len() >= MIN_EXECUTED_TRADES
-        && mean_r > 0.0
-        && lower_95 > 0.0
-        && !one_regime_only
-        && !concentrated
-        && cost_stress_ok;
+    let outcome = if composite.len() < MIN_EXECUTED_TRADES {
+        VerdictOutcome::Insufficient
+    } else {
+        let all_gates_pass = mean_r > 0.0 && lower_95 > 0.0 && !one_regime_only && !concentrated && cost_stress_ok;
+        if all_gates_pass { VerdictOutcome::Pass } else { VerdictOutcome::Fail }
+    };
     Verdict {
         n: composite.len(),
         mean_r,
         lower_95,
-        passes,
+        outcome,
         inconclusive_single_regime: one_regime_only,
         concentrated,
         cost_stress_ok,
@@ -87,7 +102,7 @@ mod tests {
         let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
         let total = sum_r(&data);
         let v = verdict(&data, false, total, total / Decimal::from(2), 0.5);
-        assert!(v.passes, "{v:?}");
+        assert_eq!(v.outcome, VerdictOutcome::Pass, "{v:?}");
         assert_eq!(v.n, 220);
         assert!(!v.concentrated);
         assert!(v.cost_stress_ok);
@@ -95,15 +110,35 @@ mod tests {
 
     #[test]
     fn trade_count_gate_is_a_hard_200() {
-        // 199 executed trades is below the pre-registered bar.
+        // 199 executed trades is below the pre-registered bar: Insufficient, not Fail.
         let data: Vec<_> = (0..199).map(|_| rec("3.0")).collect();
         let total = sum_r(&data);
-        assert!(!verdict(&data, false, total, total / Decimal::from(2), 0.5).passes);
+        assert_eq!(verdict(&data, false, total, total / Decimal::from(2), 0.5).outcome, VerdictOutcome::Insufficient);
         // exactly 200 passes.
         let data: Vec<_> = (0..200).map(|_| rec("3.0")).collect();
         let total = sum_r(&data);
         let v = verdict(&data, false, total, total / Decimal::from(2), 0.5);
-        assert!(v.passes, "n=200 must pass: {v:?}");
+        assert_eq!(v.outcome, VerdictOutcome::Pass, "n=200 must pass: {v:?}");
+    }
+
+    #[test]
+    fn below_min_trades_is_insufficient_never_pass_or_fail() {
+        let data: Vec<_> = (0..199).map(|_| rec("3.0")).collect();
+        let total = sum_r(&data);
+        let v = verdict(&data, false, total, total / Decimal::from(2), 0.5);
+        assert_eq!(v.outcome, VerdictOutcome::Insufficient);
+        assert_ne!(v.outcome, VerdictOutcome::Pass);
+        assert_ne!(v.outcome, VerdictOutcome::Fail);
+    }
+
+    #[test]
+    fn negative_cost_stress_fails_a_healthy_base_series() {
+        // The base series is healthy at 1x cost, but its mean at 1.5x costs is negative -> Fail.
+        let data: Vec<_> = (0..220).map(|_| rec("3.0")).collect();
+        let total = sum_r(&data);
+        let v = verdict(&data, false, total, total / Decimal::from(2), -0.5);
+        assert!(!v.cost_stress_ok);
+        assert_eq!(v.outcome, VerdictOutcome::Fail);
     }
 
     #[test]
@@ -113,11 +148,11 @@ mod tests {
         // Exactly 50% is allowed (the gate is "> 50%").
         let at_half = verdict(&data, false, total, total / Decimal::from(2), 0.5);
         assert!(!at_half.concentrated);
-        assert!(at_half.passes, "{at_half:?}");
+        assert_eq!(at_half.outcome, VerdictOutcome::Pass, "{at_half:?}");
         // Just over 50% trips the gate.
         let over = verdict(&data, false, total, total / Decimal::from(2) + Decimal::new(1, 3), 0.5);
         assert!(over.concentrated);
-        assert!(!over.passes);
+        assert_eq!(over.outcome, VerdictOutcome::Fail);
     }
 
     #[test]
@@ -126,8 +161,8 @@ mod tests {
         let total = sum_r(&data);
         let flat = verdict(&data, false, total, total / Decimal::from(2), 0.0);
         assert!(!flat.cost_stress_ok);
-        assert!(!flat.passes);
-        assert!(verdict(&data, false, total, total / Decimal::from(2), 0.01).passes);
+        assert_eq!(flat.outcome, VerdictOutcome::Fail);
+        assert_eq!(verdict(&data, false, total, total / Decimal::from(2), 0.01).outcome, VerdictOutcome::Pass);
     }
 
     #[test]
@@ -135,11 +170,11 @@ mod tests {
         let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
         let total = sum_r(&data);
         let one_regime = verdict(&data, true, total, total / Decimal::from(2), 0.5);
-        assert!(!one_regime.passes); // a single regime is inconclusive
+        assert_eq!(one_regime.outcome, VerdictOutcome::Fail); // a single regime is inconclusive
         assert!(one_regime.inconclusive_single_regime);
         let concentrated = verdict(&data, false, total, total, 0.5); // one pair holds 100% of R
         assert!(concentrated.concentrated);
-        assert!(!concentrated.passes);
+        assert_eq!(concentrated.outcome, VerdictOutcome::Fail);
     }
 
     #[test]

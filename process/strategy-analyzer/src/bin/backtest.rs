@@ -1,4 +1,5 @@
 use clap::{Parser, Subcommand};
+use std::collections::BTreeMap;
 use std::time::Duration;
 use strategy_analyzer::harness::dataset::{dataset_hash, load_csv, load_csv_with_policy, GapPolicy};
 use strategy_analyzer::harness::fetch;
@@ -11,6 +12,7 @@ use strategy_analyzer::harness::report::{
 use strategy_analyzer::harness::run::{run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
 use strategy_analyzer::harness::tick_source::{aggregate_4h, PathPolicy};
+use strategy_analyzer::harness::verdict::{verdict, VerdictOutcome};
 use strategy_analyzer::strategy::config::{config_version, Config, TargetMode};
 use strategy_analyzer::strategy::types::Candle;
 use rust_decimal::Decimal;
@@ -75,6 +77,17 @@ fn zero_cost_params(p: SimParams) -> SimParams {
     SimParams { fee_bps: Decimal::ZERO, entry_slip_bps: Decimal::ZERO, stop_slip_bps: Decimal::ZERO, borrow_bps_per_day: Decimal::ZERO, latency_ticks: p.latency_ticks }
 }
 
+/// Scale every cost rate by `num/den` (used for the pre-registered 1.5× cost stress).
+fn scaled_cost_params(p: SimParams, num: Decimal, den: Decimal) -> SimParams {
+    SimParams {
+        fee_bps: p.fee_bps * num / den,
+        entry_slip_bps: p.entry_slip_bps * num / den,
+        stop_slip_bps: p.stop_slip_bps * num / den,
+        borrow_bps_per_day: p.borrow_bps_per_day * num / den,
+        latency_ticks: p.latency_ticks,
+    }
+}
+
 /// Decimal portfolio mean R (0 when there are no trades).
 fn mean_r(trades: &[TradeRecord]) -> Decimal {
     if trades.is_empty() { return Decimal::ZERO; }
@@ -105,6 +118,10 @@ fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
         target_r: v[5],
         ..cfg.clone()
     }
+}
+
+fn outcome_name(o: VerdictOutcome) -> &'static str {
+    match o { VerdictOutcome::Insufficient => "insufficient", VerdictOutcome::Fail => "fail", VerdictOutcome::Pass => "pass" }
 }
 
 /// True when the low of `chunk` is visited before its high (intrabar order observed in 1m data).
@@ -307,6 +324,24 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
                 Some(w) => println!("  cushion mean_cost_r={mean_cost_r:.4} WARNING: {w}"),
                 None => println!("  cushion mean_cost_r={mean_cost_r:.4} ok (<= 0.5R)"),
             }
+
+            // Verdict (pre-registered §10.4 bar) on the adversarial composite. The 1.5× cost
+            // stress reruns both policies at scaled costs.
+            let stress = scaled_cost_params(params, Decimal::from(3), Decimal::from(2));
+            let l15 = run(SYMBOL, &candles, PathPolicy::LowFirst, &cfg, stress);
+            let h15 = run(SYMBOL, &candles, PathPolicy::HighFirst, &cfg, stress);
+            let mean15 = summarize(&adversarial_composite(&l15.trades, &h15.trades)).mean_r;
+            let total_r: Decimal = composite.iter().map(|t| t.r).sum();
+            let mut pair_totals: BTreeMap<String, Decimal> = BTreeMap::new();
+            for t in &composite { *pair_totals.entry(t.pair.clone()).or_default() += t.r; }
+            let max_pair_r = pair_totals.values().copied().max().unwrap_or(Decimal::ZERO);
+            // Regime segmentation needs the pre-registered in-sample/OOS boundary (§10.4), which
+            // the CLI cannot derive from a single cached file; not flagged until that is wired.
+            let one_regime_only = false;
+            let v = verdict(&composite, one_regime_only, total_r, max_pair_r, mean15);
+            println!("  verdict n={} outcome={} mean_r={:.4} lower_95={:.4} single_regime={} concentrated={} cost_stress_ok={}",
+                v.n, outcome_name(v.outcome), v.mean_r, v.lower_95,
+                v.inconclusive_single_regime, v.concentrated, v.cost_stress_ok);
 
             // Perturbation diagnostics: 4H synthesis only (`run` always synthesizes 4H candles),
             // seeded and reproducible, and never used to select parameters.
