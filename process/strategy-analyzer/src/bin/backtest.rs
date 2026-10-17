@@ -153,7 +153,7 @@ fn calibrate(one_minute: &str, fetched_4h: &str) -> Result<(), Box<dyn std::erro
     if aggregated.len() == fetched.len() {
         let observed: Vec<bool> = minutes.chunks(240).filter_map(observed_low_first).collect();
         for (name, assumed) in [("low_first", true), ("high_first", false)] {
-            let assumed_flags: Vec<bool> = std::iter::repeat(assumed).take(observed.len()).collect();
+            let assumed_flags = vec![assumed; observed.len()];
             println!("#   intrabar_{name}_wrong_fraction={:.4}", calibration_wrong_fraction(&assumed_flags, &observed));
         }
     }

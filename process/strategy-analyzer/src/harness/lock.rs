@@ -59,6 +59,15 @@ mod tests {
     }
 
     #[test]
+    fn present_but_mismatched_lock_is_error() {
+        let path = std::env::temp_dir().join(format!("strategy_analyzer_lock_{}.txt", std::process::id()));
+        std::fs::write(&path, "deadbeef").unwrap();
+        let err = check_lock(path.to_str().unwrap(), "cafef00d").unwrap_err();
+        assert!(err.contains("lock mismatch"), "wrong hash must be a mismatch, got: {err}");
+        std::fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
     fn oos_gate_covers_all_three_branches() {
         let marker = std::env::temp_dir().join(format!("strategy_analyzer_oos_gate_{}.marker", std::process::id()));
         let _ = std::fs::remove_file(&marker);

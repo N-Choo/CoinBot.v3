@@ -51,11 +51,9 @@ fn golden_hash_is_stable() {
         format!("{:x}", h.finalize())
     };
     let path = "tests/golden/outs.hash";
-    let golden = std::fs::read_to_string(path).unwrap_or_default();
-    if golden.trim().is_empty() {
-        std::fs::create_dir_all("tests/golden").unwrap();
-        std::fs::write(path, &digest).unwrap();
-    } else {
-        assert_eq!(golden.trim(), digest, "cross-platform golden hash mismatch");
-    }
+    // No write-if-empty fallback: the golden hash is committed and must be compared on every CI
+    // matrix leg (x86_64 and arm64). A missing golden file is a hard failure, never a silent pass.
+    let golden = std::fs::read_to_string(path)
+        .unwrap_or_else(|e| panic!("required golden hash {path} is missing ({e}); it is never written by the test"));
+    assert_eq!(golden.trim(), digest, "cross-platform golden hash mismatch");
 }

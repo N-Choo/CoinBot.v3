@@ -4779,10 +4779,12 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "csv",
+ "proc-macro2",
  "rust_decimal",
  "serde",
  "serde_json",
  "sha2",
+ "syn 2.0.117",
  "thiserror 1.0.69",
  "ureq",
 ]

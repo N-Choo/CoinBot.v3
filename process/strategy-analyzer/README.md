@@ -87,9 +87,11 @@ side by side. `fetch-data` is throttled and retries with exponential backoff on 
 
 ## Numeric & determinism policy (short form)
 
-- **No floats in the core.** CI greps *code* under `src/strategy/` for `f32|f64` and for
-  `HashMap|HashSet` (matches inside `//` comments are ignored) and fails on any hit. Use
-  `BTreeMap`/`Vec`; randomized iteration order is hidden nondeterminism.
+- **No floats in the core.** CI runs a `syn`-based token-level purity test over `src/strategy/`
+  that fails on any `f32`/`f64` token; fast greps (comment-stripped) are kept only as pre-filters
+  for `f32|f64` and `HashMap|HashSet`. The token test catches a real `f64` on a line that also
+  carries a trailing comment, while an `f64` mentioned only in a comment or a string literal is
+  not flagged. Use `BTreeMap`/`Vec`; randomized iteration order is hidden nondeterminism.
 - **One rounding helper:** `decimal::round_price(value, price_scale)`, half-up
   (`rust_decimal`'s default is half-even, so it is requested explicitly). Price scale is
   **per-symbol** (ideally the exchange tick size), applied only to levels that appear in signals.
@@ -114,10 +116,22 @@ run on the same data is **refused** unless `--oos-consumed` is passed, and an ov
 stamped **NON-CONFIRMATORY** and records the earlier run's hash. After a failure, further tuning
 requires fresh data.
 
+## CI: a two-architecture matrix
+
+The Rust job runs on a two-leg **architecture** matrix — `x86_64` (`ubuntu-latest`) and `arm64`
+(`ubuntu-24.04-arm`) — so the cross-platform golden hash (`replay_equivalence`) is compared on both
+architectures on every run. The golden file `tests/golden/outs.hash` is committed and is **never
+written by the test**: a missing golden file fails the leg.
+
+Caveat: `ubuntu-24.04-arm` is a GitHub-hosted arm64 runner, and its availability depends on the
+account/plan (it may also need enabling for forks or private repositories). If the arm64 runner is
+unavailable in a given context, that leg must be enabled or replaced with an equivalent arm64
+runner — the cross-platform golden-hash check is not meaningful with a single architecture.
+
 ## Open item to confirm (§6.3)
 
 The §6.3 **valid high / valid low** definition (which confirmed pivot anchors a trend, and the
 fallback when none exists) is implemented as the spec's working definition, but is marked
-**TO-CONFIRM**: it must be verified against the source video (~00:29–02:36) **before** the OOS
-run, by a human. If the video differs, capture the difference as a config option and document
-the deviation. Phase 0 does not perform that video check.
+**TO-CONFIRM**. This is a **human gate**: watch the source video at **00:29–04:30** (or use a
+transcript) **before** the OOS run. If the video differs, capture the difference as a config
+option and document the deviation. Phase 0 does not perform that video check.

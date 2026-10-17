@@ -17,6 +17,11 @@ clap = { version = "4", features = ["derive"], optional = true }
 ureq = { version = "2", features = ["json"], optional = true }
 csv = { version = "1", optional = true }
 
+[dev-dependencies]
+# `syn`-based purity test (tests/purity.rs): parses the core and fails on any f32/f64 token.
+syn = { version = "2", features = ["full"] }
+proc-macro2 = { version = "1", features = ["span-locations"] }
+
 [[bin]]
 name = "backtest"
 path = "src/bin/backtest.rs"

@@ -75,12 +75,14 @@ test:
 		exit $$(( rst + pst ))
 
 # Purity gate for the deterministic core: no float arithmetic and no hash-map iteration
-# under src/strategy. Matches inside `//` comments are ignored, then the core-only and
-# all-features builds must both succeed.
+# under src/strategy. The greps below are fast pre-filters that strip trailing `//` comments;
+# the authoritative check is the `syn` token-level test (tests/purity.rs), which still catches
+# a real `f64` on a line that carries a trailing comment and does not flag comments/strings.
 strategy-check:
 	@echo "checking strategy core purity..."
-	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "float type in core" && exit 1)
-	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "hash-map in core" && exit 1)
+	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(f32|f64)\b' || (echo "float type in core" && exit 1)
+	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(HashMap|HashSet)\b' || (echo "hash-map in core" && exit 1)
+	cargo test -p strategy-analyzer --no-default-features --test purity
 	cargo build -p strategy-analyzer --no-default-features
 	cargo build -p strategy-analyzer --all-features
 

@@ -8,13 +8,19 @@ on:
 
 jobs:
   # --- Backend Checks ---
+  # The Rust matrix is an **architecture** matrix (x86_64 vs arm64), not an OS matrix: it exists
+  # so the cross-platform golden-hash check (replay_equivalence) compares on both architectures.
   backend-test:
-    name: Rust (Server, ${{ matrix.os }})
+    name: Rust (Server, ${{ matrix.arch }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, ubuntu-24.04-arm]
-    runs-on: ${{ matrix.os }}
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
