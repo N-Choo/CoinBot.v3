@@ -38,6 +38,64 @@ fn replay_all_outputs(path: &str, policy: PathPolicy) -> Vec<Output> {
     outs
 }
 
+/// The fixture's event stream: four ticks then the `ClosedCandle`, per candle (spec §4 ordering).
+fn fixture_events(path: &str, policy: PathPolicy) -> Vec<Input> {
+    let candles = load_csv(path).unwrap();
+    let mut src = Ohlcv4hSynthesis::new(candles, policy);
+    let mut ev = Vec::new();
+    while let Some((ticks, candle)) = src.next_candle() {
+        for t in ticks {
+            ev.push(Input::PriceTick(t));
+        }
+        ev.push(Input::ClosedCandle(candle));
+    }
+    ev
+}
+
+/// Drive a state through `events`, returning the final state and the outputs *per event*.
+fn run_events(
+    state: StrategyState,
+    events: &[Input],
+    cfg: &Config,
+) -> (StrategyState, Vec<Vec<Output>>) {
+    let mut st = state;
+    let mut per = Vec::with_capacity(events.len());
+    for ev in events {
+        let (ns, outs) = step(&st, ev.clone(), cfg).unwrap();
+        st = ns;
+        per.push(outs);
+    }
+    (st, per)
+}
+
+#[test]
+fn snapshot_resume_matches_uninterrupted_on_signal_fixture() {
+    let cfg = Config::default_for(&["XRP-USDT"]);
+    let all = fixture_events("tests/fixtures/signal_4h.csv", PathPolicy::LowFirst);
+    let (full_state, full_per) = run_events(StrategyState::new("XRP-USDT", 1), &all, &cfg);
+
+    // 5 events per candle: snapshot after candle 20 (zone active) and mid-candle-21 (after its
+    // first tick), i.e. splits 105 and 106.
+    for split in [21 * 5, 21 * 5 + 1] {
+        let (mid_state, _) = run_events(StrategyState::new("XRP-USDT", 1), &all[..split], &cfg);
+        // Compare serialized JSON strings, not `==`: Decimal equality ignores scale, so `==` would
+        // pass even if the snapshot round-trip changed a scale (which would break byte-equality).
+        let snapshot = serde_json::to_string(&mid_state).unwrap();
+        let resumed: StrategyState = serde_json::from_str(&snapshot).unwrap();
+        let (tail_state, tail_per) = run_events(resumed, &all[split..], &cfg);
+        assert_eq!(
+            serde_json::to_string(&tail_state).unwrap(),
+            serde_json::to_string(&full_state).unwrap(),
+            "state after resume must match the uninterrupted run (split {split})"
+        );
+        assert_eq!(
+            serde_json::to_string(&tail_per).unwrap(),
+            serde_json::to_string(&full_per[split..]).unwrap(),
+            "outputs after resume must match the uninterrupted run (split {split})"
+        );
+    }
+}
+
 #[test]
 fn golden_hash_is_stable() {
     let mut outs: Vec<Output> = Vec::new();
