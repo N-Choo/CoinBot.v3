@@ -754,6 +754,67 @@ mod touch_tests {
             .expect("the deeper crossed zone must still signal after the veto");
         assert_eq!(sig.zone_id, "deep");
     }
+
+    #[test]
+    fn first_tick_non_nearest_zone_touch_is_not_missed() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        // Two demand zones are awaiting their first tick at the same time. The deeper zone is, by
+        // proximal-edge distance, the nearest one to the tick price (1.93), but the tick never
+        // reaches it (1.93 > 1.90). The tick instead first-touches the *other* zone [1.90, 2.00]
+        // from above (prev 2.05 > zone_high 2.00, price 1.93 <= zone_high): a normal first touch.
+        s.zones = vec![
+            zone_id("deeper", "1.70", "1.90", "1.90"),
+            zone_id("touched", "1.90", "2.00", "2.20"),
+        ];
+        s.zones_awaiting_first_tick = vec!["deeper".into(), "touched".into()];
+
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("1.93"), &cfg).unwrap();
+
+        let sig = out
+            .iter()
+            .find_map(|o| {
+                if let Output::EntrySignal(sig) = o {
+                    Some(sig)
+                } else {
+                    None
+                }
+            })
+            .expect("first tick on a legitimate first touch must publish an entry signal");
+        assert_eq!(sig.zone_id, "touched");
+        assert_eq!(sig.direction, Direction::Long);
+
+        // It must not be recorded as a missed touch: the price crossed the proximal edge from the
+        // correct side on this very tick.
+        assert!(
+            !out.iter().any(|o| matches!(
+                o,
+                Output::ZoneEvent(ev)
+                    if ev.zone_id == "touched"
+                        && ev.reason
+                            == Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch))
+            )),
+            "the touched zone must not be consumed as missed_touch"
+        );
+        assert_eq!(s.missed_touch_count, 0);
+        assert_eq!(
+            s.zones
+                .iter()
+                .find(|z| z.id == "touched")
+                .unwrap()
+                .consume_reason,
+            Some(ConsumeReason::SignalPublished)
+        );
+
+        // The other awaiting zone was never reached, so it must stay Active (not be consumed as a
+        // missed touch just because it was still awaiting its first tick).
+        let deeper = s.zones.iter().find(|z| z.id == "deeper").unwrap();
+        assert_eq!(deeper.state, ZoneState::Active);
+        assert_eq!(deeper.consume_reason, None);
+    }
 }
 
 /// Edge-case accuracy tests (Task 28): the supply (short) path end to end through `step`, and a
