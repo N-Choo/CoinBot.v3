@@ -149,11 +149,15 @@ fn signal_fixture_yields_exactly_one_signal() {
     );
 }
 
-/// `run` must count `missed_touch` from the **tick** steps (it read candle steps before and was
-/// always 0). Re-opening candle 21 inside the zone makes the first observed tick after activation
-/// already inside it -> `missed_touch` (§7.2), not a late signal.
+/// A zone activated on a candle close and first observed on the very next tick, already inside it,
+/// is judged by the normal crossing logic: a trustworthy previous price (the prior tick) is known,
+/// so this is a legitimate first touch that publishes a signal (§7.1). `run` must therefore publish
+/// it and must NOT record a `missed_touch` (§7.2, reserved for a cold start / restart / data-gap
+/// where there is no previous price; that path is covered by the `signals` unit tests). The earlier
+/// version of this fixture expected `missed_touch` here, which encoded the bug: forcing a
+/// first-tick `missed_touch` even though the price crossed the proximal edge from the correct side.
 #[test]
-fn run_counts_missed_touch_from_tick_steps() {
+fn run_does_not_miss_a_continuous_first_touch() {
     let mut candles = load_csv("tests/fixtures/signal_4h.csv").unwrap();
     let last = candles.len() - 1;
     candles[last].open = dec("104.5");
@@ -167,11 +171,11 @@ fn run_counts_missed_touch_from_tick_steps() {
     };
     let res = run("XRP-USDT", &candles, PathPolicy::LowFirst, &cfg, params).unwrap();
     assert_eq!(
-        res.signals, 0,
-        "a missed first touch must not publish a signal"
+        res.signals, 1,
+        "a continuous first touch must publish a signal"
     );
-    assert_eq!(res.missed_touch, 1);
-    assert_eq!(res.reason_counts.get("missed_touch"), Some(&1));
+    assert_eq!(res.missed_touch, 0);
+    assert_eq!(res.reason_counts.get("missed_touch"), None);
 }
 
 #[test]

@@ -314,9 +314,18 @@ fn touch_distance(dir: Direction, zone: &Zone, prev: Decimal) -> Decimal {
 }
 
 /// On the first tick after activation, a freshly-created zone that is already inside/beyond is a
-/// `missed_touch` (spec §7.2). The awaiting set is cleared for **all** zones (not just one selected
-/// zone) and stale ids are dropped, so a deeper zone is not later judged against a much later price.
-fn observe_first_tick(state: &mut StrategyState, dir: Direction, price: Decimal) -> Vec<Output> {
+/// `missed_touch` (spec §7.2) **only when there is no trustworthy previous price** (`prev` is
+/// `None`: a cold start / restart / reconnect / data-gap, §4), because then the normal crossing
+/// logic cannot judge the zone. In continuous operation `prev` is always known, so the zone is left
+/// `Active` and evaluated by the normal first-touch path (`try_entry`). The awaiting set is cleared
+/// for **all** zones (not just one selected zone) and stale ids are dropped, so a deeper zone is not
+/// later judged against a much later price.
+fn observe_first_tick(
+    state: &mut StrategyState,
+    dir: Direction,
+    prev: Option<Decimal>,
+    price: Decimal,
+) -> Vec<Output> {
     let mut out = Vec::new();
     let awaiting = std::mem::take(&mut state.zones_awaiting_first_tick);
     for id in awaiting {
@@ -327,7 +336,7 @@ fn observe_first_tick(state: &mut StrategyState, dir: Direction, price: Decimal)
         else {
             continue; // stale id: the zone no longer exists / is no longer Active
         };
-        if is_missed_touch(dir, z, price) {
+        if prev.is_none() && is_missed_touch(dir, z, price) {
             z.state = ZoneState::Consumed;
             z.consume_reason = Some(ConsumeReason::MissedTouch);
             state.missed_touch_count += 1;
@@ -497,8 +506,9 @@ pub fn try_entry(
         None => return Ok(out),
     };
 
-    // First observation after activation: missed-touch handling for freshly-created zones.
-    out.extend(observe_first_tick(state, dir, price));
+    // First observation after activation: missed-touch handling for freshly-created zones (only
+    // when there is no trustworthy previous price, i.e. a cold start / gap / restart).
+    out.extend(observe_first_tick(state, dir, prev_price, price));
 
     let prev = match prev_price {
         Some(p) => p,
@@ -605,7 +615,9 @@ mod touch_tests {
         s.trend = TrendState::Bullish;
         s.zones = vec![demand()];
         s.zones_awaiting_first_tick = vec!["z".into()];
-        let out = try_entry(&mut s, Some(dec("2.10")), 1, dec("1.98"), &cfg).unwrap();
+        // No previous price (cold start / restart / gap, §4): the first observed price is already
+        // inside the zone, so it is a `missed_touch` (§7.2), not an entry.
+        let out = try_entry(&mut s, None, 1, dec("1.98"), &cfg).unwrap();
         assert!(out.iter().any(|o| matches!(o, Output::ZoneEvent(_))));
         assert_eq!(s.missed_touch_count, 1);
     }
