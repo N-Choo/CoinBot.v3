@@ -2,7 +2,7 @@ name: Full-Stack CI
 
 on:
   push:
-    branches: [main, "feature/**", "FEAT/**"]
+    branches: [main, "feature/**", "FEAT/**", "feat/**"]
   pull_request:
     branches: [main]
 
