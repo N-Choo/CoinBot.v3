@@ -16,6 +16,7 @@ pub fn step(
     input: Input,
     cfg: &Config,
 ) -> Result<(StrategyState, Vec<Output>), StrategyError> {
+    cfg.validate()?;
     let mut next = state.clone();
     let outputs = match input {
         Input::PriceTick(t) => on_tick(&mut next, t, cfg)?,
@@ -171,11 +172,25 @@ fn on_candle(
         .map(Output::ZoneEvent),
     );
 
-    // Bound state growth so per-tick cloning stays small at 1m volume: drop terminal zones
-    // and broken pivots (never needed again), then clear any valid index whose pivot was pruned.
+    // Bound state growth so per-tick cloning stays small at 1m volume: drop terminal zones and
+    // broken pivots (never needed again), and age out unbroken pivots that have fallen out of the
+    // retained candle window. Keep only *eligible* pivots: a pivot is eligible while its absolute
+    // index is still inside the last `WINDOW_CANDLES` candles, so a long trend cannot grow
+    // `swing_highs`/`swing_lows` without bound. Then clear any valid index whose pivot was pruned.
     state.zones.retain(|z| !z.is_terminal());
-    state.swing_highs.retain(|p| !p.broken);
-    state.swing_lows.retain(|p| !p.broken);
+    let cutoff = state.candle_count.saturating_sub(WINDOW_CANDLES as u64);
+    state.swing_highs.retain(|p| !p.broken && p.index >= cutoff);
+    state.swing_lows.retain(|p| !p.broken && p.index >= cutoff);
+
+    // Prune stale ids whose zone no longer exists / is no longer Active.
+    let live: Vec<String> = state
+        .zones
+        .iter()
+        .filter(|z| z.state == ZoneState::Active)
+        .map(|z| z.id.clone())
+        .collect();
+    state.zones_awaiting_first_tick.retain(|id| live.contains(id));
+
     if state
         .valid_low_idx
         .is_some_and(|i| !state.swing_lows.iter().any(|p| p.index == i))
@@ -328,6 +343,54 @@ mod tests {
             }
         }
         panic!("expected atr_zero state change");
+    }
+
+    #[test]
+    fn old_unbroken_pivots_are_aged_out() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.candle_count = 100;
+        s.last_candle_time_ms = Some(0);
+        s.window.push_back(candle(0));
+        // index 5 is outside the retained 64-candle window for candle_count 100; index 99 is inside.
+        s.swing_highs = vec![Pivot {
+            index: 5,
+            time_ms: 0,
+            price: dec("1.2"),
+            broken: false,
+        }];
+        s.swing_lows = vec![Pivot {
+            index: 99,
+            time_ms: 0,
+            price: dec("0.9"),
+            broken: false,
+        }];
+        s.valid_low_idx = Some(5); // points at the aged-out pivot
+        let (ns, _) = step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS)), &cfg).unwrap();
+        assert!(ns.swing_highs.is_empty(), "old unbroken high aged out");
+        assert_eq!(ns.swing_lows.len(), 1, "in-window pivot kept");
+        assert_eq!(ns.swing_lows[0].index, 99);
+        assert_eq!(ns.valid_low_idx, None, "valid index cleared with its pivot");
+    }
+
+    #[test]
+    fn stale_awaiting_first_tick_ids_are_pruned() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.zones_awaiting_first_tick = vec!["gone".into()];
+        let (ns, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
+        assert!(ns.zones_awaiting_first_tick.is_empty());
+    }
+
+    #[test]
+    fn step_rejects_invalid_config() {
+        let mut cfg = Config::default_for(&["XRP-USDT"]);
+        cfg.target_r = dec("1.0"); // below engine_net_floor -> invalid
+        let s = StrategyState::new("XRP-USDT", 1);
+        assert!(matches!(
+            step(&s, Input::ClosedCandle(candle(0)), &cfg),
+            Err(StrategyError::ConfigInvalid(_))
+        ));
     }
 
     #[test]

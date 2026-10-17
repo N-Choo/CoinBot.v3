@@ -92,9 +92,21 @@ impl Config {
         Ok(())
     }
 
-    /// Deterministic canonical JSON used for `config_version`.
+    /// Deterministic canonical JSON used for `config_version`. Decimal fields are normalized
+    /// (trailing zeros removed) before serialization, so `"3"` and `"3.0"` hash identically: the
+    /// strategy places no meaning on a Decimal's scale, only on its value.
     pub fn canonical_json(&self) -> String {
-        serde_json::to_string(self).expect("config is serializable")
+        let mut c = self.clone();
+        c.bos_min_distance_atr = c.bos_min_distance_atr.normalize();
+        c.impulse_body_threshold_atr = c.impulse_body_threshold_atr.normalize();
+        c.stop_buffer_atr = c.stop_buffer_atr.normalize();
+        c.min_zone_height_atr = c.min_zone_height_atr.normalize();
+        c.max_zone_height_atr = c.max_zone_height_atr.normalize();
+        c.target_r = c.target_r.normalize();
+        c.min_gross_rr = c.min_gross_rr.normalize();
+        c.structural_buffer_atr = c.structural_buffer_atr.normalize();
+        c.engine_net_floor = c.engine_net_floor.normalize();
+        serde_json::to_string(&c).expect("config is serializable")
     }
 }
 
@@ -138,5 +150,18 @@ mod tests {
         let j = c.canonical_json();
         assert_eq!(config_version(&j), config_version(&j));
         assert_ne!(config_version(&j), config_version("{}"));
+    }
+
+    #[test]
+    fn config_version_normalizes_decimal_scale() {
+        // `"3"` and `"3.0"` are the same value (Decimal Eq ignores scale) and must hash identically.
+        let a = Config::default_for(&["XRP-USDT"]);
+        let mut b = a.clone();
+        b.target_r = dec("3");
+        assert_eq!(a.target_r, b.target_r);
+        assert_eq!(
+            config_version(&a.canonical_json()),
+            config_version(&b.canonical_json())
+        );
     }
 }
