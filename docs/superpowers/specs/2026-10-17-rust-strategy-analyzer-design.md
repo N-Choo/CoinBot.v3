@@ -359,7 +359,7 @@ Structured logs (harness side; the core returns typed `Output`/`StrategyError` r
 4. **Engine-side risk** the v2 doc assumed but which does not exist: daily-DD, total open-risk, correlation caps, net-R:R with fees/slippage/borrow, protective-order placement + fill capture.
 5. **`EngineAck` / `Clock`** inputs, re-arm policy, and signal TTL.
 6. **Analyzer topology:** whether this crate replaces or coexists with the Python `process/analyzer/`, and which backtest harness is authoritative.
-7. **Deep 1m acquisition** is a data-fetch cost, not a blocker: spot klines page by time with no historical range limit (≈ 700 throttled requests/pair for 2 years). If 1m-grade headline results are wanted, this belongs in **Phase 0** (`fetch-data --interval 1min`), not deferred; otherwise 1m serves calibration only (§8.5).
+7. **Deep 1m acquisition** is a data-fetch cost, not a blocker. **Decision:** Phase 0 *does* include the `OneMinuteExpansion` `TickSource` and `fetch-data --interval 1min` (paged by time; ~700 throttled requests/pair for 2 years). The only thing deferred is running that acquisition over full multi-year history — which is a runtime cost, not a code deliverable. When 1m data is present, Task 31's intrabar calibration runs against it; otherwise headline results come from 4H synthesis (with the caveat stamped).
 
 ---
 

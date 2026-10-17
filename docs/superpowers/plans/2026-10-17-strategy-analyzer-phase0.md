@@ -448,7 +448,7 @@ pub const WINDOW_CANDLES: usize = 64;
 pub struct Candle { pub open_time_ms: Ms, pub open: Decimal, pub high: Decimal, pub low: Decimal, pub close: Decimal }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Tick { pub time_ms: Ms, pub price: Decimal }
+pub struct Tick { pub time_ms: Ms, pub price: Decimal, pub is_bar_open: bool }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -580,7 +580,7 @@ impl StrategyState {
             missed_touch_count: 0,
         }
     }
-}'
+}
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Input { ClosedCandle(Candle), PriceTick(Tick) }
@@ -710,8 +710,10 @@ fn on_candle(
             return Err(StrategyError::GappedCandle { expected_ms: prev + TIMEFRAME_MS, got_ms: c.open_time_ms });
         }
     }
+    state.window.push_back(c);
+    if state.window.len() > crate::strategy::types::WINDOW_CANDLES { state.window.pop_front(); }
+    state.candle_count += 1;
     state.last_candle_time_ms = Some(c.open_time_ms);
-    state.candles.push(c);
     Ok(vec![]) // structure/ATR wired in Task 16
 }
 
@@ -764,9 +766,9 @@ mod tests {
     fn rejects_malformed_and_out_of_order_tick() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let s = StrategyState::new("XRP-USDT", 1);
-        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 1, price: dec("-1") }), &cfg), Err(StrategyError::MalformedTick { .. })));
-        let (s, _) = step(&s, Input::PriceTick(Tick { time_ms: 10, price: dec("1.0") }), &cfg).unwrap();
-        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 5, price: dec("1.0") }), &cfg), Err(StrategyError::OutOfOrderTick { .. })));
+        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 1, price: dec("-1"), is_bar_open: false }), &cfg), Err(StrategyError::MalformedTick { .. })));
+        let (s, _) = step(&s, Input::PriceTick(Tick { time_ms: 10, price: dec("1.0"), is_bar_open: true }), &cfg).unwrap();
+        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 5, price: dec("1.0"), is_bar_open: false }), &cfg), Err(StrategyError::OutOfOrderTick { .. })));
     }
 }
 ```
@@ -1108,7 +1110,7 @@ git commit -m "feat(strategy-analyzer): BOS detection against pre-breakout ATR"
 
 Append:
 ```rust
-use crate::strategy::types::TrendState;
+// `StrategyState` and `TrendState` are already in scope from Task 9.
 
 /// Apply a BOS: mark EVERY cleared level broken, set trend + valid low/high per §6.3.
 /// If no valid low/high can be assigned, the trend is left unchanged (state stays Unknown).
@@ -1124,7 +1126,7 @@ pub fn apply_bos(state: &mut StrategyState, kind: BosKind, broken_idx: u64) {
                 .filter(|l| l.index > broken_idx && l.index < breakout).map(|l| l.index).max()
                 .or_else(|| state.swing_lows.iter().filter(|l| l.index < broken_idx).map(|l| l.index).max());
             state.valid_low_idx = vl;
-            if vl.is_some() { state.trend = TrendState::Bullish; }
+            state.trend = if vl.is_some() { TrendState::Bullish } else { TrendState::Unknown };
         }
         BosKind::Bearish => {
             for l in state.swing_lows.iter_mut() {
@@ -1134,7 +1136,7 @@ pub fn apply_bos(state: &mut StrategyState, kind: BosKind, broken_idx: u64) {
                 .filter(|h| h.index > broken_idx && h.index < breakout).map(|h| h.index).max()
                 .or_else(|| state.swing_highs.iter().filter(|h| h.index < broken_idx).map(|h| h.index).max());
             state.valid_high_idx = vh;
-            if vh.is_some() { state.trend = TrendState::Bearish; }
+            state.trend = if vh.is_some() { TrendState::Bearish } else { TrendState::Unknown };
         }
     }
 }
@@ -1207,7 +1209,7 @@ Create `src/strategy/zones.rs`:
 ```rust
 use crate::strategy::config::Config;
 use crate::strategy::structure::BosKind;
-use crate::strategy::types::{Zone, ZoneKind, ZoneState};
+use crate::strategy::types::{Candle, Zone, ZoneKind, ZoneState};
 use rust_decimal::Decimal;
 use std::collections::VecDeque;
 
@@ -1262,7 +1264,6 @@ pub fn create_zone(window: &VecDeque<Candle>, kind: BosKind, atr: Decimal, symbo
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::strategy::types::Candle;
     use std::str::FromStr;
     fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
     fn candle(o: &str, h: &str, l: &str, c: &str) -> Candle {
@@ -1306,30 +1307,41 @@ mod tests {
         assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0"), "XRP-USDT", &cfg).unwrap_err(), "atr_zero");
     }
 
+    // Breakout body is large (0.34) so the impulse gate never fires before the height bound.
+    fn base_big_breakout() -> Vec<Candle> {
+        vec![
+            candle("1.00","1.05","0.95","1.00"),
+            candle("1.02","1.06","0.98","0.99"), // bearish demand candle: h 1.06, l 0.98
+            candle("1.02","1.07","1.00","1.05"),
+            candle("1.05","1.12","1.08","1.11"), // low 1.08 > 1.06 -> not mitigated
+            candle("1.11","1.46","1.10","1.45"), // breakout: body 0.34
+        ]
+    }
+
     #[test]
     fn rejects_zone_too_small_and_too_large() {
         let cfg = Config::default_for(&["XRP-USDT"]);
-        // zone height 0.08; with atr 0.2 -> 0.4 < min 0.5 -> too small
-        assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_small");
-        // with atr 0.02 -> height 4.0 > max 3.0 -> too large
-        assert_eq!(create_zone(&win(base()), BosKind::Bullish, dec("0.02"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_large");
+        // impulse 1.5*0.2 = 0.30 <= body 0.34 (passes); height 0.08/0.2 = 0.4 < 0.5 -> too small
+        assert_eq!(create_zone(&win(base_big_breakout()), BosKind::Bullish, dec("0.2"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_small");
+        // impulse 1.5*0.02 = 0.03 <= body 0.34 (passes); height 0.08/0.02 = 4.0 > 3.0 -> too large
+        assert_eq!(create_zone(&win(base_big_breakout()), BosKind::Bullish, dec("0.02"), "XRP-USDT", &cfg).unwrap_err(), "zone_too_large");
     }
 
     #[test]
     fn creates_supply_zone_on_bearish_bos() {
         let cfg = Config::default_for(&["XRP-USDT"]);
-        // index 1 is the bullish supply candle (high 1.06); breakout is a strong down candle.
+        // The most recent bullish candle before the breakout is index 3 (height 0.10 -> 1.0 ATR, in bounds).
         let v = vec![
-            candle("1.00","1.05","0.95","1.00"),
-            candle("0.99","1.10","0.98","1.09"), // bullish supply candle
-            candle("1.09","1.12","1.07","1.10"),
-            candle("1.10","1.13","1.09","1.12"),
-            candle("1.12","1.13","0.95","0.96"), // bearish breakout, body 0.16
+            candle("1.00","1.05","0.95","1.00"), // 0
+            candle("1.00","1.03","0.98","1.02"), // 1
+            candle("1.02","1.05","1.00","1.04"), // 2
+            candle("1.06","1.14","1.04","1.12"), // 3 bullish supply candle: h 1.14, l 1.04
+            candle("1.12","1.13","0.93","0.94"), // 4 bearish breakout: body 0.18
         ];
         let z = create_zone(&win(v), BosKind::Bearish, dec("0.1"), "XRP-USDT", &cfg).unwrap();
         assert_eq!(z.kind, ZoneKind::Supply);
-        assert_eq!(z.low, dec("0.98"));
-        assert_eq!(z.high, dec("1.10"));
+        assert_eq!(z.low, dec("1.04"));
+        assert_eq!(z.high, dec("1.14"));
     }
 }
 ```
@@ -1959,6 +1971,14 @@ fn on_candle(state: &mut StrategyState, c: Candle, cfg: &Config) -> Result<Vec<O
     // Lifecycle (expiry + close-beyond-edge) for the just-closed candle.
     out.extend(update_lifecycle(&mut state.zones, &c, state.candle_count - 1, cfg.zone_expiry_candles));
 
+    // Bound state growth so per-tick cloning stays small at 1m volume: drop terminal zones
+    // and broken pivots (never needed again), then clear any valid index whose pivot was pruned.
+    state.zones.retain(|z| !z.is_terminal());
+    state.swing_highs.retain(|p| !p.broken);
+    state.swing_lows.retain(|p| !p.broken);
+    if state.valid_low_idx.map_or(false, |i| !state.swing_lows.iter().any(|p| p.index == i)) { state.valid_low_idx = None; }
+    if state.valid_high_idx.map_or(false, |i| !state.swing_highs.iter().any(|p| p.index == i)) { state.valid_high_idx = None; }
+
     state.prev_close = Some(c.close);
     Ok(out)
 }
@@ -2052,7 +2072,9 @@ use std::str::FromStr;
 pub enum GapPolicy { Reject, Skip, ForwardFill }
 
 pub fn load_csv(path: &str) -> Result<Vec<Candle>, String> {
-    load_csv_with_policy(path, GapPolicy::Skip, 4 * 60 * 60 * 1000)
+    // Forward-fill by default: KuCoin omits intervals with no trades, and the core rejects
+    // gaps, so a default `Reject`/`Skip` would abort a backtest at the first empty interval.
+    load_csv_with_policy(path, GapPolicy::ForwardFill, 4 * 60 * 60 * 1000)
 }
 
 pub fn load_csv_with_policy(path: &str, policy: GapPolicy, expected_interval_ms: i64) -> Result<Vec<Candle>, String> {
@@ -2151,11 +2173,11 @@ pub enum PathPolicy { LowFirst, HighFirst }
 /// Ordered intrabar path for a candle under a global policy. Deterministic (no RNG).
 pub fn synth_ticks(c: &Candle, policy: PathPolicy) -> Vec<Tick> {
     let (a, b) = match policy { PathPolicy::LowFirst => (c.low, c.high), PathPolicy::HighFirst => (c.high, c.low) };
-    let mut out = vec![
-        Tick { time_ms: c.open_time_ms, price: c.open },
-        Tick { time_ms: c.open_time_ms + 1, price: a },
-        Tick { time_ms: c.open_time_ms + 2, price: b },
-        Tick { time_ms: c.open_time_ms + 3, price: c.close },
+    let out = vec![
+        Tick { time_ms: c.open_time_ms, price: c.open, is_bar_open: true },
+        Tick { time_ms: c.open_time_ms + 1, price: a, is_bar_open: false },
+        Tick { time_ms: c.open_time_ms + 2, price: b, is_bar_open: false },
+        Tick { time_ms: c.open_time_ms + 3, price: c.close, is_bar_open: false },
     ];
     out
 }
@@ -2178,6 +2200,34 @@ impl TickSource for Ohlcv4hSynthesis {
         let c = self.candles.get(self.idx)?.clone();
         self.idx += 1;
         Some((synth_ticks(&c, self.policy), c))
+    }
+}
+
+/// Aggregate a contiguous run of 1m candles into one 4H candle.
+pub fn aggregate_4h(minutes: &[Candle]) -> Candle {
+    let first = &minutes[0];
+    let (mut high, mut low) = (first.high, first.low);
+    for m in minutes { if m.high > high { high = m.high; } if m.low < low { low = m.low; } }
+    Candle { open_time_ms: first.open_time_ms, open: first.open, high, low, close: minutes.last().unwrap().close }
+}
+
+/// 1m source (Phase 0): each 1m candle becomes a path; every 240 minutes are emitted as one
+/// 4H `ClosedCandle` (ticks first, §4 ordering). Boundaries align to the 4H epoch grid; the
+/// caller validates the aggregates against the fetched 4H series before trusting a 1m run.
+pub struct OneMinuteExpansion { minutes: Vec<Candle>, idx: usize, policy: PathPolicy }
+impl OneMinuteExpansion {
+    pub fn new(minutes: Vec<Candle>, policy: PathPolicy) -> Self { Self { minutes, idx: 0, policy } }
+}
+impl TickSource for OneMinuteExpansion {
+    fn policy(&self) -> PathPolicy { self.policy }
+    fn next_candle(&mut self) -> Option<(Vec<Tick>, Candle)> {
+        let end = (self.idx + 240).min(self.minutes.len());
+        if self.idx >= end { return None; }
+        let slice = &self.minutes[self.idx..end];
+        let ticks: Vec<Tick> = slice.iter().flat_map(|m| synth_ticks(m, self.policy)).collect();
+        let agg = aggregate_4h(slice);
+        self.idx = end;
+        Some((ticks, agg))
     }
 }
 
@@ -2271,7 +2321,7 @@ mod tests {
         let mut e = Vec::new();
         for i in 0..20i64 {
             let c = Candle { open_time_ms: i * 4*3600*1000, open: dec("1.0"), high: dec("1.1"), low: dec("0.9"), close: dec("1.0") };
-            e.push(Input::PriceTick(Tick { time_ms: c.open_time_ms, price: c.open }));
+            e.push(Input::PriceTick(Tick { time_ms: c.open_time_ms, price: c.open, is_bar_open: true }));
             e.push(Input::ClosedCandle(c));
         }
         e
@@ -2404,7 +2454,10 @@ pub fn simulate(sig: &Signal, ticks: &[Tick], params: SimParams) -> SimResult {
         let days = Decimal::from((t.time_ms - entry_ms).max(0)) / Decimal::from(86_400_000);
         let cost = entry * (params.fee_bps * Decimal::from(2) + params.borrow_bps_per_day * days) / Decimal::from(10_000);
         if hit_stop {
-            let base = match sig.direction { Direction::Long => sig.stop_loss.min(t.price), Direction::Short => sig.stop_loss.max(t.price) };
+            // Normal mid-bar touch fills AT the stop; only a tick that is a candle open already
+            // beyond the stop (a gap) fills at the tick price.
+            let gapped = t.is_bar_open && match sig.direction { Direction::Long => t.price < sig.stop_loss, Direction::Short => t.price > sig.stop_loss };
+            let base = if gapped { t.price } else { sig.stop_loss };
             let s = base * params.stop_slip_bps / Decimal::from(10_000);
             let fill = match sig.direction { Direction::Long => base - s, Direction::Short => base + s };
             let r = match sig.direction { Direction::Long => (entry - fill - cost) / risk, Direction::Short => (fill - entry - cost) / risk };
@@ -2444,7 +2497,11 @@ mod tests {
     #[test]
     fn take_profit_fills_at_limit_not_tick_extreme() {
         // TP is 2.15; the last tick is 2.20 (the synthetic extreme). The fill must be AT 2.15.
-        let t = vec![Tick{time_ms:0,price:dec("2.00")}, Tick{time_ms:1,price:dec("2.00")}, Tick{time_ms:2,price:dec("2.20")}];
+        let t = vec![
+            Tick{time_ms:0,price:dec("2.00"),is_bar_open:true},
+            Tick{time_ms:1,price:dec("2.00"),is_bar_open:false},
+            Tick{time_ms:2,price:dec("2.20"),is_bar_open:false},
+        ];
         match simulate(&long_sig(), &t, p()).outcome {
             SimOutcome::TakeProfit(x) => assert!(x > dec("2.9") && x <= dec("3.0"), "clean TP ~3R, got {x}"),
             other => panic!("{other:?}"),
@@ -2452,11 +2509,29 @@ mod tests {
     }
 
     #[test]
-    fn gapped_stop_fills_at_tick_price() {
-        // Price gaps to 1.90, past the 1.95 stop -> worse than -1R.
-        let t = vec![Tick{time_ms:0,price:dec("2.00")}, Tick{time_ms:1,price:dec("2.00")}, Tick{time_ms:2,price:dec("1.90")}];
+    fn midpath_stop_fills_at_stop_price() {
+        // The 1.90 tick is NOT a candle open: a normal mid-bar touch fills AT the 1.95 stop (~ -1R).
+        let t = vec![
+            Tick{time_ms:0,price:dec("2.00"),is_bar_open:true},
+            Tick{time_ms:1,price:dec("2.00"),is_bar_open:false},
+            Tick{time_ms:2,price:dec("1.90"),is_bar_open:false},
+        ];
         match simulate(&long_sig(), &t, p()).outcome {
-            SimOutcome::StopLoss(x) => assert!(x < dec("-1.0"), "gap worse than -1R, got {x}"),
+            SimOutcome::StopLoss(x) => assert!(x < dec("-1.0") && x > dec("-1.1"), "mid-bar stop ~-1R, got {x}"),
+            other => panic!("{other:?}"),
+        }
+    }
+
+    #[test]
+    fn gapped_stop_fills_at_open() {
+        // The next candle OPENS at 1.90, already beyond the 1.95 stop -> fill at 1.90 (~ -2R).
+        let t = vec![
+            Tick{time_ms:0,price:dec("2.00"),is_bar_open:true},
+            Tick{time_ms:1,price:dec("2.00"),is_bar_open:false},
+            Tick{time_ms:2,price:dec("1.90"),is_bar_open:true},
+        ];
+        match simulate(&long_sig(), &t, p()).outcome {
+            SimOutcome::StopLoss(x) => assert!(x < dec("-1.5"), "gap stop ~-2R, got {x}"),
             other => panic!("{other:?}"),
         }
     }
@@ -2538,10 +2613,11 @@ pub fn cushion_warning(mean_cost_r: f64) -> Option<&'static str> {
 }
 
 /// Deterministic tiny LCG (no `rand`). `state = state * 6364136223846793005 + 1442695040888963407`.
-struct Lcg(u64);
+pub(crate) struct Lcg(u64);
 impl Lcg {
-    fn next(&mut self) -> u64 { self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); self.0 }
-    fn below(&mut self, n: usize) -> usize { (self.next() % n as u64) as usize }
+    pub(crate) fn new(seed: u64) -> Self { Lcg(seed) }
+    pub(crate) fn next(&mut self) -> u64 { self.0 = self.0.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407); self.0 >> 33 }
+    pub(crate) fn below(&mut self, n: usize) -> usize { (self.next() % n as u64) as usize }
 }
 
 pub const BOOTSTRAP_BLOCK_MS: i64 = 14 * 86_400_000; // 2 weeks (pre-registered block length)
@@ -2852,9 +2928,86 @@ pub fn fetch_page(base_url: &str, symbol: &str, interval: &str, start_s: i64, en
 ```
 Wire `FetchData` in `bin/backtest.rs` to: page via `page_windows`; call `fetch_page` with a small `std::thread::sleep` between pages and **retry with exponential backoff on HTTP 429 / rate-limit responses**; then (a) convert KuCoin **seconds to milliseconds** (`* 1000`), (b) **sort rows oldest-first**, (c) **de-duplicate across page boundaries by open time**, (d) write the cache CSV (`open_time_ms,open,high,low,close`; KuCoin column order is `time,open,close,high,low,volume,turnover`), and finally print `dataset_hash(out)`.
 
-- [ ] **Step 4: Implement the full `Backtest` command**
+- [ ] **Step 4: Implement `harness/run.rs` (orchestration — coded, not prose)**
 
-Extend the `Backtest` arm to: load the dataset; compute `config_version`; if `--oos`, enforce `lock::check_lock`, and on `--oos-consumed` write the consumed marker + stamp the report non-confirmatory; run both policies × both target modes through the core; feed signals to `sim::simulate` with pre-registered `SimParams` (skip a signal while a position is open on the symbol → count `skipped_open_position`); accumulate `TradeRecord`s; print the §8.5 header (symbols, resolution, dataset hash, `config_version`, policy, mode, caveat) and the report (mode/path side-by-side, long/short + per-pair splits, cushion calibration, bootstrap bound). Diagnostics (OAT ±20% + 200-draw joint perturbation) run **on 4H synthesis only**, within a wall-clock budget.
+Create `process/strategy-analyzer/src/harness/run.rs`:
+
+```rust
+use crate::harness::report::TradeRecord;
+use crate::harness::sim::{simulate, SimOutcome, SimParams};
+use crate::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy};
+use crate::strategy::config::Config;
+use crate::strategy::step::step;
+use crate::strategy::types::{Candle, ConsumeReason, Input, Output, Signal, StrategyState, Tick, ZoneEvent, ZoneEventReason};
+use rust_decimal::Decimal;
+
+pub struct RunResult {
+    pub trades: Vec<TradeRecord>,
+    pub signals: usize,
+    pub skipped_open_position: usize,
+    pub missed_touch: u64,
+}
+
+/// Run one (policy) over a dataset. Signals are collected in pass 1; pass 2 simulates them
+/// in time order, opening at most one position at a time (later signals while a position is
+/// open are counted as `skipped_open_position`, mirroring the engine's caps).
+pub fn run(symbol: &str, candles: &[Candle], policy: PathPolicy, cfg: &Config, params: SimParams) -> RunResult {
+    let mut state = StrategyState::new(symbol, crate::strategy::STATE_SCHEMA_VERSION);
+    let mut src = Ohlcv4hSynthesis::new(candles.to_vec(), policy);
+    let mut flat_ticks: Vec<Tick> = Vec::new();
+    let mut signals: Vec<(Signal, usize)> = Vec::new();
+    let mut missed_touch = 0u64;
+
+    while let Some((ticks, candle)) = src.next_candle() {
+        for t in ticks {
+            let idx = flat_ticks.len();
+            let (ns, outs) = step(&state, Input::PriceTick(t), cfg).expect("core tick step");
+            state = ns;
+            flat_ticks.push(t);
+            for o in outs {
+                if let Output::EntrySignal(s) = o { signals.push((s, idx)); }
+            }
+        }
+        let (ns, outs) = step(&state, Input::ClosedCandle(candle), cfg).expect("core candle step");
+        state = ns;
+        missed_touch += outs.iter().filter(|o| matches!(
+            o,
+            Output::ZoneEvent(ZoneEvent { reason: Some(ZoneEventReason::Consumed(ConsumeReason::MissedTouch)), .. })
+        )).count() as u64;
+    }
+
+    let n_signals = signals.len();
+    let mut trades = Vec::new();
+    let mut skipped_open_position = 0usize;
+    let mut open_until_ms: Option<i64> = None;
+
+    for (sig, idx) in signals {
+        let entry_ms = flat_ticks.get(idx + params.latency_ticks as usize)
+            .map(|t| t.time_ms)
+            .unwrap_or(sig.triggered_at_ms);
+        if open_until_ms.map_or(false, |x| entry_ms < x) {
+            skipped_open_position += 1; // a position is still open; the engine would block this
+            continue;
+        }
+        let res = simulate(&sig, &flat_ticks[idx..], params);
+        match res.outcome {
+            SimOutcome::TakeProfit(r) | SimOutcome::StopLoss(r) => {
+                open_until_ms = Some(res.exit_ms);
+                trades.push(TradeRecord { direction: sig.direction, r, pair: symbol.to_string(), entry_time_ms: res.entry_ms, exit_time_ms: res.exit_ms });
+            }
+            SimOutcome::Unresolved => {
+                // Position never resolved within the data: counts as a trade of 0R, keeps the slot open to the end.
+                open_until_ms = Some(i64::MAX);
+                trades.push(TradeRecord { direction: sig.direction, r: Decimal::ZERO, pair: symbol.to_string(), entry_time_ms: res.entry_ms, exit_time_ms: res.exit_ms });
+            }
+        }
+    }
+
+    RunResult { trades, signals: n_signals, skipped_open_position, missed_touch }
+}
+```
+
+Then the `Backtest` arm runs `run(...)` for each `(policy in {LowFirst, HighFirst}) × (mode in {FixedR, Structural})`, prints the §8.5 header, and reports: mode × path side-by-side, long/short + per-pair splits, the adversarial composite, cushion calibration, and the bootstrap bound. Diagnostics (Tasks 29–31) run **on 4H synthesis only**, within the pre-registered wall-clock budget. If `--oos`, enforce `lock::check_lock`; on `--oos-consumed`, stamp non-confirmatory and record the prior run.
 
 - [ ] **Step 5: Run the CLI end to end**
 
@@ -2939,10 +3092,47 @@ git commit -m "docs(strategy-analyzer): crate README + spec implementation statu
 - Create: `process/strategy-analyzer/tests/fixtures/signal_4h.csv`
 - Create: `process/strategy-analyzer/tests/signal_fixture.rs`
 
-- [ ] **Step 1: Build a series that yields exactly one signal**
+- [ ] **Step 1: Hand-derive a series that yields exactly one signal**
 
-The existing fixtures are flat and shorter than the 14-candle ATR warm-up, so they exercise nothing. Create a 40-candle 4H series that satisfies: ≥14 candles warm-up → a confirmed swing high → a later candle closes ≥ `0.1·ATR` above it with body ≥ `1.5·ATR` (impulse) → a bearish candle within `zone_search_lookback` forms a demand zone that is NOT mitigated → then a tick crosses `zone_high` from above. Assert exactly one signal:
+Do **not** tune to a passing implementation — derive it from the spec, with the working in comments, and have a human check it before accepting the golden hash.
 
+Derivation (defaults: `atr_period` 14, `pivot_left/right` 2, `bos_min_distance` 0.1·ATR, `impulse_body` 1.5·ATR, `zone_search_lookback` 10, `zone_expiry` 30, `target_r` 3.0, `allow_no_obstacle` true; price scale 1 dp):
+
+- Candles 0–12 flat (`o=c=100.0, h=100.5, l=99.5`) → each true range ≈ 1.0, so the seeded ATR ≈ 1.0 and the 14-candle warm-up completes at index 13.
+- **Swing low at 13** (`l=99.0`): right lows 14 (`100.0`) and 15 (`100.5`) are higher; left lows 11/12 (`99.5`) are ≥ 99.0. Confirmed at candle 15.
+- **Swing high at 15** (`h=105.5`): right highs 16 (`105.2`) and 17 (`104.5`) are lower; left highs 13/14 (`100.5`/`101`) are ≤ 105.5. Confirmed at candle 17.
+- **Demand candle at 19** (`o=104.5, h=105.0, l=104.0, c=104.2`, bearish): the most recent bearish candle before the breakout. Zone = `[104.0, 105.0]`, height 1.0 → 1.0 ATR (inside [0.5, 3.0]). Not mitigated (no candles strictly between 19 and the breakout).
+- **Breakout candle at 20** (`o=105.0, h=109.0, l=104.9, c=108.0`): body 3.0 ≥ 1.5·ATR; close 108.0 ≥ 105.5 + 0.1·ATR (105.6) → bullish BOS. `apply_bos` marks the 105.5 high broken; valid low = the 99.0 low at index 13 (no swing low between 15 and 20) → trend Bullish.
+- **Touch at candle 21** (`o=107.5, h=108.0, l=104.5, c=105.5`): `low_first` path is O(107.5) → L(104.5): previous price 107.5 > zone_high 105.0, current 104.5 ≤ 105.0 → first touch. Trigger 104.5; stop = 104.0 − 0.1·ATR ≈ 103.9; risk ≈ 0.6; TP = 104.5 + 3·0.6 = 106.3. Obstacle = the breakout high 109.0 (no unbroken swing high or supply zone above 104.5) → `obstacle_rr ≈ (109.0 − 104.5)/0.6 ≈ 7.5 ≥ 3.0` → **signal emitted**. Exactly one signal in the series.
+
+`tests/fixtures/signal_4h.csv`:
+```csv
+open_time_ms,open,high,low,close
+0,100.0,100.5,99.5,100.0
+14400000,100.0,100.5,99.5,100.0
+28800000,100.0,100.5,99.5,100.0
+43200000,100.0,100.5,99.5,100.0
+57600000,100.0,100.5,99.5,100.0
+72000000,100.0,100.5,99.5,100.0
+86400000,100.0,100.5,99.5,100.0
+100800000,100.0,100.5,99.5,100.0
+115200000,100.0,100.5,99.5,100.0
+129600000,100.0,100.5,99.5,100.0
+144000000,100.0,100.5,99.5,100.0
+158400000,100.0,100.5,99.5,100.0
+172800000,100.0,100.5,99.5,100.0
+187200000,100.0,100.5,99.0,100.0
+201600000,100.0,101.0,100.0,101.0
+216000000,101.0,105.5,100.5,105.0
+230400000,105.0,105.2,104.0,104.2
+244800000,104.2,104.5,103.0,103.5
+259200000,103.5,104.0,103.0,103.6
+273600000,104.5,105.0,104.0,104.2
+288000000,105.0,109.0,104.9,108.0
+302400000,107.5,108.0,104.5,105.5
+```
+
+Test (assert exactly one signal):
 ```rust
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
@@ -2961,11 +3151,11 @@ fn signal_fixture_yields_exactly_one_signal() {
         for t in ticks { let (ns, o) = step(&st, Input::PriceTick(t), &cfg).unwrap(); st = ns; n += o.iter().filter(|o| matches!(o, Output::EntrySignal(_))).count(); }
         let (ns, _) = step(&st, Input::ClosedCandle(candle), &cfg).unwrap(); st = ns;
     }
-    assert_eq!(n, 1, "fixture must produce exactly one signal; tune the series if not");
+    assert_eq!(n, 1, "hand-derived fixture must produce exactly one signal");
 }
 ```
 
-> Implementer note: the fixture's exact OHLC values may need one or two tuning passes to satisfy every gate (impulse body, zone not mitigated, obstacle ≥ target, touch). The assertion is deterministic once it passes; do not weaken it.
+> If the derived series does not produce exactly one signal, fix the **series** (report the discrepancy), do not weaken the assertion. Send the fixture and this derivation to the human reviewer before locking the golden hash.
 
 - [ ] **Step 2: Reuse the fixture**
 
@@ -3041,7 +3231,7 @@ pub struct Verdict { pub n: usize, pub mean_r: f64, pub lower_95: f64, pub passe
 /// and mean still positive at 1.5x costs.
 pub fn verdict(composite: &[TradeRecord], one_regime_only: bool, total_r: Decimal, max_pair_r: Decimal, mean_r_at_1_5x_cost: f64) -> Verdict {
     let (mean_r, lower_95) = time_blocked_bootstrap(composite, BOOTSTRAP_BLOCK_MS, 10_000, 12345);
-    let concentrated = total_r > Decimal::ZERO && (max_pair_r / total_r) > Decimal::new(1, 1); // > 50%
+    let concentrated = total_r > Decimal::ZERO && (max_pair_r / total_r) > Decimal::new(5, 1); // > 50%
     let cost_stress_ok = mean_r_at_1_5x_cost > 0.0;
     let passes = composite.len() >= 200 && mean_r > 0.0 && lower_95 > 0.0 && !one_regime_only && !concentrated && cost_stress_ok;
     Verdict { n: composite.len(), mean_r, lower_95, passes, inconclusive_single_regime: one_regime_only, concentrated, cost_stress_ok }
@@ -3096,6 +3286,7 @@ git commit -m "feat(strategy-analyzer): verdict + regime + concentration + cost-
 - [ ] **Step 1: Write the failing tests + implementation**
 
 ```rust
+use crate::harness::report::Lcg;
 use rust_decimal::Decimal;
 
 /// One-at-a-time ±20% perturbation of a single parameter, passed through `eval`.
@@ -3112,7 +3303,7 @@ pub fn oat_positive_fraction(base: Decimal, eval: &dyn Fn(Decimal) -> Decimal) -
 /// Seeded joint perturbation: each parameter uniform in ±20%; returns the fraction of
 /// `draws` with positive expectancy.
 pub fn joint_positive_fraction(base: &[Decimal], draws: usize, seed: u64, eval: &dyn Fn(&[Decimal]) -> Decimal) -> f64 {
-    let mut rng = Lcg(seed);
+    let mut rng = Lcg::new(seed);
     let mut ok = 0;
     for _ in 0..draws {
         let v: Vec<Decimal> = base.iter().map(|b| {
