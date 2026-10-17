@@ -37,8 +37,11 @@ class Config:
             os.getenv("ATR_SL_MAX_PCT", "0.0")
         )
         self.benchmark_days = int(os.getenv("BENCHMARK_DAYS", "90"))
-        self.benchmark_forward_days = int(
-            os.getenv("BENCHMARK_FORWARD_DAYS", "7")
+        self.benchmark_init_fund = float(
+            os.getenv("BENCHMARK_INIT_FUND", "1000")
+        )
+        self.benchmark_fee_rate = float(
+            os.getenv("BENCHMARK_FEE_RATE", "0.001")
         )
         _tickers = os.getenv(
             "BENCHMARK_TICKERS",
