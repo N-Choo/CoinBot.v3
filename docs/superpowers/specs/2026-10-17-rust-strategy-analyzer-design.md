@@ -27,7 +27,7 @@
 | # | v2 issue | Resolution in this design |
 |---|---|---|
 | 1 | `target_r = min_rr = 2.5` gives no cost cushion; any fees/slippage/borrow push net R:R below the engine's 2.5 floor, so the engine would later veto every signal. Additionally, in `fixed_r` mode a `gross_rr >= min_gross_rr` gate is a **tautology** (TP is defined as `target_r` × risk). | Decouple target from floor. `fixed_r` uses `target_r` (3.0); its cushion comes from `target_r` exceeding the engine's net floor (2.5). `min_gross_rr` (3.0) gates **`structural` mode only**, evaluated on the rounded payload levels. The tautological fixed_r gross gate is removed. |
-| 2 | "Keep the old pull path behind a flag / remove in Phase 5" is premised on a pull path that does not exist. | Phase 0 has no transport at all. Push already exists; transport work is a separate phase (§12). |
+| 2 | "Keep the old pull path behind a flag / remove in Phase 5" is premised on a passive pull path that does not exist. | The real mechanism is **engine-triggered request/response** over Redis Pub/Sub (engine PUBs `tickers:analyze` → analyzer replies `signals:result`, §0.1); there is no "pull path" to keep or remove. Phase 0 has no transport at all; transport work is a separate phase (§12). |
 | 3 | The engine was assumed to enforce daily-DD / open-risk / correlation / net-R:R. None exist. | Out of scope for Phase 0; recorded as prerequisite/owner items for later phases (§12). |
 | 4 | Touch detection assumed a live feed that does not exist. | Phase 0 drives touches from a `TickSource`; live feed is a later-phase prerequisite (§12). |
 
@@ -81,14 +81,14 @@ process/strategy-analyzer/
 
 **Boundary invariants (enforced):**
 - `strategy/` carries `#![deny(clippy::float_arithmetic)]`.
-- **Extended float ban:** CI greps **code** under `strategy/` for `f32|f64` (comments and string literals excluded) and fails on any match (clippy only bans float *arithmetic*, not types/literals/casts).
+- **Extended float ban:** a `syn` **token-level** CI test (plan Task 29/CI hardening) parses every `strategy/**/*.rs` and fails on any `f32`/`f64` **token** (clippy only bans float *arithmetic*, not types/literals/casts). Comment-stripped greps are kept only as a fast pre-filter; the token test catches a real `f64` on a line that also has a trailing comment and does not flag `f64` inside comments or string literals.
 - **No `HashMap`/`HashSet` iteration in `strategy/`** — use `BTreeMap`/`Vec`. Randomized iteration order is the usual hidden nondeterminism. Enforced by CI grep/lint.
 - Harness deps are feature-gated: `#[cfg(feature = "harness")] pub mod harness;`. `cargo build -p strategy-analyzer --no-default-features` builds the pure core alone, with no `clap`/`csv`/HTTP deps compiled.
 - Config numbers parse as `Decimal`/strings, never through `f64`.
 
 **Workspace wiring:** add `process/strategy-analyzer` to root `Cargo.toml` `[workspace].members`; declare `[[bin]] name = "backtest", required-features = ["harness"]` so `--no-default-features` builds succeed; add `strategy-analyzer` to `Makefile` `PACKAGES`; extend `make ci` with the code-scoped float grep, the `HashMap` grep, and a `cargo build -p strategy-analyzer --no-default-features` step.
 
-**CI note:** the cross-platform golden-hash check (§10.2) needs a test matrix with **≥ 2 OS/arch entries**. `ci.yml` currently runs Rust tests only on `ubuntu-latest` (the `ubuntu-24.04-arm` runner is used solely for the `push-arm` image job on `main`), so a matrix must be added for that check to pass.
+**CI note:** the cross-platform golden-hash check (§10.2) needs a matrix with **≥ 2 architecture entries (x86_64 + arm64)**. `ci.yml` runs the Rust job on `ubuntu-latest` (x86_64) and `ubuntu-24.04-arm` (arm64), and the golden hash is compared on both legs. (`ubuntu-24.04-arm` is a GitHub-hosted arm64 runner whose availability depends on the account plan and may need enabling for forks/private repos.)
 
 ---
 
@@ -142,7 +142,7 @@ All values configurable and versioned; `config_version` is attached to every sig
 
 **Validation (reject config otherwise):** all periods ≥ 1; `min_zone_height <= max_zone_height`; positive ATR multipliers; `price_scale` present for each configured symbol; and **`target_r > engine_net_floor` and `min_gross_rr > engine_net_floor`** (`engine_net_floor = 2.5`, recorded in config) so a typo cannot undercut the cushion. (The earlier `target_r >= min_gross_rr` rule is **dropped**: `min_gross_rr` applies to `structural` only, and equality in `fixed_r` produced a rounding-sensitive tautology, see §7.5.)
 
-**Pre-registered backtest parameters** (recorded in the freeze lock, §10.4 — not strategy config): fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, bootstrap block length / resample count / seed, and the chosen `target_mode`.
+**Pre-registered backtest parameters** (recorded in the freeze lock, §10.4 — not strategy config): fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, bootstrap block length / resample count / seed, the chosen `target_mode`, and the **in-sample/OOS boundary timestamp**.
 
 **Deferred to transport phase:** live-price staleness (10s), closed-candle lateness alert (5m), signal TTL (60s), and all account-risk parameters (0.5% / 2% / 1%) — those are engine-side and out of scope.
 
@@ -177,7 +177,7 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 **Typed errors (data integrity):** `StrategyError` includes `OutOfOrderCandle`, `DuplicateCandle`, `GappedCandle`, `MalformedCandle` (negative/zero, `high < low`, non-finite), **`MalformedTick`** (zero/negative price), **`OutOfOrderTick`** (timestamp earlier than the previous tick or the last closed candle), plus `DecimalOverflow`, `DivideByZero`, `ConfigInvalid`. Candle **and tick** validation lives **in the core** so backtest and live behave identically — the core catches violations of the event-ordering contract rather than trusting the caller. On any of these the state is unchanged and no output is produced.
 
-**`ATR == 0` is in-band, not an error.** A flat warm-up series yields `ATR == 0`; it is emitted as a `StateChange` (reason `atr_zero`) with no zone/signal created, and the candle is **still recorded**. (Making it an `Err` would leave the candle unrecorded, so the next candle would read as `GappedCandle` and the stream would stall.)
+**`ATR == 0` is in-band, not an error.** A flat warm-up series yields `ATR == 0`; it is emitted as a `StateChange` (reason `atr_zero`). It skips **only** BOS detection and zone creation — pivot confirmation and zone lifecycle still run on that candle — and the candle is **still recorded**. (Making it an `Err` would leave the candle unrecorded, so the next candle would read as `GappedCandle` and the stream would stall.)
 
 **Gap recovery:** on `GappedCandle` the adapter **feeds the missing candles in order**, then resumes normal event delivery; the core treats the gap as an error only until the missing candles are supplied. Recovery never generates a historical entry (§7.2).
 
@@ -192,7 +192,7 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 - **Trend state machine:** `Unknown | Bullish | Bearish`, driven by BOS + valid high/low, not by counting pivot pairs. Any bullish BOS → `Bullish` and sets `valid_low`; any bearish BOS → `Bearish` and sets `valid_high`.
   - **valid_low (after bullish BOS):** most recent confirmed swing low formed after the broken swing high and before the breakout candle; else the most recent confirmed swing low before the broken swing high; else state stays `Unknown`. valid_high mirrored.
   - **Explicit same-candle branch:** if pivot confirmation and the BOS occur on the same candle (pivot available exactly on the breakout candle), the valid high/low is taken from candles strictly before the breakout candle; if none, fall back as above.
-  - > **TO-CONFIRM:** §6.3 valid high/low is the spec's working definition. Verify against the source video (~00:29–02:36) before the OOS run; if it differs, capture as a config option and document the deviation.
+  - > **TO-CONFIRM (human gate):** §6.3 valid high/low is the spec's working definition. A human must verify it against the source video at **00:29–04:30** (or a transcript) **before** the OOS run; if it differs, capture the difference as a **config option** and document the deviation. Phase 0 does not perform this check.
 - **Consequences:** only `Bullish` produces longs, only `Bearish` shorts, `Unknown` none. On trend flip, every `Active` zone in the now-wrong direction → `Invalidated` (reason `trend_flip`).
 
 ---
@@ -265,7 +265,7 @@ Two **global** policies — the harness does not need to know trade direction:
 **Both are run on every backtest.** Structure and zones depend only on closed candles, so the signal set is nearly identical across policies; the difference is touch/exit ordering. The **adversarial composite** is assembled in reporting (longs from `low_first`, shorts from `high_first`). Determinism: no RNG; replay must be byte-identical. The chosen policy is recorded per run.
 
 ### 8.4 Position simulation (harness-only, engine-standing-in)
-- **Entry:** at the first tick that crosses the zone boundary (not at the boundary price), plus a pre-registered **latency assumption expressed in ticks or wall-time** (proposed default: **1 tick** of the active resolution; for live, the poll interval from §0.1) and a configurable slippage model. For **4H synthesis** (≈ 4 ticks per candle) sub-candle latency is not representable, so those results are labeled **latency-insensitive**.
+- **Entry:** at the first tick that crosses the zone boundary (not at the boundary price), plus a pre-registered **latency assumption expressed in ticks or wall-time** (proposed default: **1 tick** of the active resolution; for live, the poll interval from §0.1) and a configurable slippage model. **4H synthesis expands each candle into 4 synthetic ticks** (`O→L/H→H/L→C`), so the default 1-tick latency is applied on that synthetic grid (≈ a quarter of a candle). That grid is a coarse, fictitious intrabar sequence, not the true 1m ordering, so 4H-synthesis results are labeled **latency-insensitive** (real wall-time latency is not recoverable from it); true sub-candle latency needs the 1m source (§8.1).
 - **Exit:** stop or take-profit resolved tick-by-tick along the same path, with costs applied. **Stop fills use a separate, worse slippage** than target fills (stops are hit in fast moves).
 - **Pre-registered sim parameters:** latency, entry slippage, stop slippage, and fee/borrow rates are all fixed in the freeze lock (§10.4), not chosen after seeing results.
 - **Open-position policy:** if a signal fires while a position is already open on that symbol, **skip it and count `skipped_open_position`** (otherwise the sim would take overlapping trades the engine's caps would block). These skips count against the trade bar.
@@ -313,7 +313,7 @@ Pivots incl. tie rule and confirmation delay; BOS thresholds + no-lookahead ATR;
 A pure function replayed on one machine usually matches itself, so add:
 1. **Determinism:** same input stream twice → byte-identical outputs.
 2. **Snapshot resume:** serialize `StrategyState` mid-stream (schema-versioned), deserialize, resume, and compare against an uninterrupted run — this is the §13 restart property, nearly free here.
-3. **Cross-platform golden hash:** golden-file hashes compared across CI platforms. **Requires a CI test matrix with ≥ 2 OS/arch entries — none exists today (§10.5); this check cannot pass until the matrix is added.**
+3. **Cross-platform golden hash:** the committed golden file `tests/golden/outs.hash` is compared on the two-leg **architecture** matrix in `ci.yml` (x86_64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm`). The test never writes the golden file: a missing file fails the leg (no write-if-empty fallback).
 4. **No `HashMap`/`HashSet` iteration in `strategy/`** (CI-enforced; use `BTreeMap`/`Vec`).
 
 ### 10.3 Harness tests
@@ -322,8 +322,12 @@ Event ordering (ticks before `ClosedCandle`); `low_first` vs `high_first`; both 
 ### 10.4 Backtest bar (pre-registered — fixed before the OOS run)
 Exploration is free **in-sample** (counts only, no PnL, to size pairs/history). The bar is frozen **before the OOS segment is first run**, and the harness enforces it:
 
+**In-sample/OOS boundary (pre-registered):** the split is a fixed UTC timestamp recorded in the lock **before any exploration**: data before the boundary is in-sample; data at/after it is OOS (the most recent **≥ 30%** of history). Because the boundary is a lock input, it cannot be moved after seeing OOS results.
+
+**Step 0 (before any PnL):** count **in-sample signals only** (counts, no PnL) to size pairs and history against the **≥ 200 executed-trade** bar below; do not lower the bar afterwards.
+
 - **Parameter-freeze lock file:** `lock = hash(config_version + backtest_params)` — a single hash over the canonical config **plus** the pre-registered backtest parameters (not "the config_version" alone). The OOS run **refuses to start** without a matching lock and **logs how many variants were tried**.
-- **Lock contents (pre-registered):** chosen `target_mode` (mode comparison is **in-sample only** — selecting on OOS is a hidden degree of freedom), fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, and the bootstrap settings below.
+- **Lock contents (pre-registered):** the **in-sample/OOS boundary timestamp**, chosen `target_mode` (mode comparison is **in-sample only** — selecting on OOS is a hidden degree of freedom), fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, and the bootstrap settings below.
 - **OOS is one-shot:** every OOS invocation is logged; a second run on the same data is refused without an explicit `--oos-consumed` override, and an overridden run is **stamped non-confirmatory** in its report and **records the earlier run's hash**. After a failure, further tuning requires **fresh data**.
 
 Proposed bar (thresholds are proposals; **"no edge" is a valid, documented Phase 0 outcome**):
@@ -343,8 +347,8 @@ Proposed bar (thresholds are proposals; **"no edge" is a valid, documented Phase
 Data/cost requirements: ≥ 2 years across ≥ 3 liquid pairs spanning up + down regimes (subject to the in-sample count above); OOS ≥ 30% (most recent); costs = fees + slippage + borrow interest; intrabar ambiguity = stop-first; paper-trading (≥ 4 weeks, ≥ 30 signals) is a **later phase**, not Phase 0.
 
 ### 10.5 Phase 0 exit criteria
-- The crate builds with `--no-default-features` (core only) and with the `harness` feature; `cargo clippy` passes with the float deny; the code-scoped `f32|f64` grep and the `HashMap` grep pass; `cargo test` green; all wired into `make ci` (`strategy-analyzer` added to `PACKAGES`, plus a `--no-default-features` core build step).
-- Replay equivalence (all four checks) passes. Check 3 (cross-platform golden hash) **requires adding a ≥ 2-entry OS/arch CI matrix** — `ci.yml` tests only on `ubuntu-latest` today.
+- The crate builds with `--no-default-features` (core only) and with the `harness` feature; `cargo clippy` passes with the float deny; the `syn` token-level purity test and the comment-stripped greps pass; `cargo test` green; all wired into `make ci` (`strategy-analyzer` added to `PACKAGES`, plus a `--no-default-features` core build step).
+- Replay equivalence (all four checks) passes. Check 3 (cross-platform golden hash) runs on the ≥ 2-entry **architecture** matrix (x86_64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm`) in `ci.yml`; the committed golden file is never written by the test (a missing file fails the leg).
 - A backtest report is produced and documented per §10.4, with its resolution + dataset-hash caveats stated.
 
 ---
@@ -368,7 +372,7 @@ Structured logs (harness side; the core returns typed `Output`/`StrategyError` r
 
 ## 13. Open items to confirm (all currently agreed)
 1. Zone max height stays 3.0 A, configurable and instrumented (both bounds).
-2. §6.3 valid high/low implemented as spec'd, marked to-verify against the source video.
+2. §6.3 valid high/low implemented as spec'd; verification against the source video (**00:29–04:30**, or a transcript) is a **human gate** before OOS, and any deviation is captured as a **config option**.
 3. `EngineAck`/`Clock` deferred; re-arm and TTL absent in Phase 0.
 4. Backtest bar pre-registered with a config-hash freeze lock (one-shot OOS).
 5. Path policy = two global policies run both, composite in reporting.
@@ -377,9 +381,9 @@ Structured logs (harness side; the core returns typed `Output`/`StrategyError` r
 8. `min_gross_rr` gates `structural` only; `fixed_r` uses the obstacle veto alone; gates evaluate rounded payload levels (§3, §7).
 9. Obstacle set includes the window from the breakout candle through the latest completed candle (highest high / lowest low, **including the breakout candle**) (§7.5).
 10. Per-symbol state; no cross-symbol logic in the core (§4).
-11. `bin/backtest.rs` requires the `harness` feature; cross-platform golden hash needs a ≥ 2-entry CI matrix (none exists today).
+11. `bin/backtest.rs` requires the `harness` feature; the cross-platform golden hash runs on the two-leg architecture matrix (x86_64 + arm64) in `ci.yml`.
 12. `config_version` = hash of canonical config; Decimal scale normalized on state store.
-13. `ATR == 0` handled in-band as a `StateChange` (candle still recorded); `GappedCandle` recovery = adapter feeds the missing candles in order, then resumes (§4).
+13. `ATR == 0` handled in-band as a `StateChange` (skips **only** BOS + zone creation; pivots/lifecycle still run; candle still recorded); `GappedCandle` recovery = adapter feeds the missing candles in order, then resumes (§4).
 14. Tick validation lives in the core: `MalformedTick`, `OutOfOrderTick` (§4).
 15. Latency assumption defined in ticks/wall-time (default 1 tick); 4H-synthesis results labeled latency-insensitive (§8.4).
 16. 1m mode builds 4H `ClosedCandle`s from the 1m series, aligned to the 4H grid, validated against the independently fetched 4H series (§8.1).
