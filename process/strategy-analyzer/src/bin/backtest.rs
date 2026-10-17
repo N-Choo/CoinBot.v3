@@ -384,14 +384,20 @@ fn backtest(
         };
         let mut runs: Vec<(PathPolicy, RunResult)> = Vec::new();
         for p in &policies {
-            runs.push((*p, run(SYMBOL, &candles, *p, &cfg, params)));
+            runs.push((*p, run(SYMBOL, &candles, *p, &cfg, params)?));
         }
         println!("\n## mode={}", mode_name(*m));
         for (p, r) in &runs {
             let s = summarize(&r.trades);
-            println!("  path={:<10} signals={} trades={} skipped_open_position={} missed_touch={} mean_r={:.4} win_rate={:.4} long_mean_r={:.4} short_mean_r={:.4}",
-                policy_name(*p), r.signals, s.n, r.skipped_open_position, r.missed_touch,
+            println!("  path={:<10} signals={} trades={} skipped_open_position={} unresolved={} unfillable={} missed_touch={} mean_r={:.4} win_rate={:.4} long_mean_r={:.4} short_mean_r={:.4}",
+                policy_name(*p), r.signals, s.n, r.skipped_open_position, r.unresolved, r.unfillable, r.missed_touch,
                 s.mean_r, s.win_rate, s.by_direction_long, s.by_direction_short);
+            let reasons: Vec<String> = r
+                .reason_counts
+                .iter()
+                .map(|(k, v)| format!("{k}={v}"))
+                .collect();
+            println!("    reason_counts [{}]", reasons.join(" "));
             for (pair, mean) in &s.by_pair {
                 println!("    pair={pair} mean_r={mean:.4}");
             }
@@ -414,8 +420,8 @@ fn backtest(
             // Cushion calibration: realized cost per trade in R, measured as the gap between a
             // zero-cost and the with-cost composite (both use the same pre-registered fill model).
             let zero = zero_cost_params(params);
-            let l0 = run(SYMBOL, &candles, PathPolicy::LowFirst, &cfg, zero);
-            let h0 = run(SYMBOL, &candles, PathPolicy::HighFirst, &cfg, zero);
+            let l0 = run(SYMBOL, &candles, PathPolicy::LowFirst, &cfg, zero)?;
+            let h0 = run(SYMBOL, &candles, PathPolicy::HighFirst, &cfg, zero)?;
             let comp0 = summarize(&adversarial_composite(&l0.trades, &h0.trades));
             let mean_cost_r = comp0.mean_r - cs.mean_r;
             match cushion_warning(mean_cost_r) {
@@ -426,8 +432,8 @@ fn backtest(
             // Verdict (pre-registered §10.4 bar) on the adversarial composite. The 1.5× cost
             // stress reruns both policies at scaled costs.
             let stress = scaled_cost_params(params, Decimal::from(3), Decimal::from(2));
-            let l15 = run(SYMBOL, &candles, PathPolicy::LowFirst, &cfg, stress);
-            let h15 = run(SYMBOL, &candles, PathPolicy::HighFirst, &cfg, stress);
+            let l15 = run(SYMBOL, &candles, PathPolicy::LowFirst, &cfg, stress)?;
+            let h15 = run(SYMBOL, &candles, PathPolicy::HighFirst, &cfg, stress)?;
             let mean15 = summarize(&adversarial_composite(&l15.trades, &h15.trades)).mean_r;
             let total_r: Decimal = composite.iter().map(|t| t.r).sum();
             let mut pair_totals: BTreeMap<String, Decimal> = BTreeMap::new();
@@ -448,8 +454,11 @@ fn backtest(
             let axis = diagnostic_axis(&cfg);
             let eval = |vals: &[Decimal]| -> Decimal {
                 let c = apply_diagnostic_axis(&cfg, vals);
-                let l = run(SYMBOL, &candles, PathPolicy::LowFirst, &c, params);
-                let h = run(SYMBOL, &candles, PathPolicy::HighFirst, &c, params);
+                // Diagnostics only: the same validated dataset cannot make the core error here.
+                let l = run(SYMBOL, &candles, PathPolicy::LowFirst, &c, params)
+                    .expect("run over the same validated dataset");
+                let h = run(SYMBOL, &candles, PathPolicy::HighFirst, &c, params)
+                    .expect("run over the same validated dataset");
                 mean_r(&adversarial_composite(&l.trades, &h.trades))
             };
             let rep = perturb::run_diagnostics(&axis, &eval);
