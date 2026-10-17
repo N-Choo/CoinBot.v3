@@ -99,7 +99,11 @@ fn second_signal_while_position_open_is_skipped() {
     // Position 1 never resolves within the data, so it is reported as `unresolved` and excluded
     // from `trades` (the verdict trade set); signal 2 arrives while that position is still open
     // and is skipped rather than traded.
-    assert_eq!(res.trades.len(), 0, "no signal resolves into a closed trade");
+    assert_eq!(
+        res.trades.len(),
+        0,
+        "no signal resolves into a closed trade"
+    );
     assert_eq!(res.unresolved, 1, "position 1 is still open at end of data");
     assert_eq!(
         res.skipped_open_position, 1,

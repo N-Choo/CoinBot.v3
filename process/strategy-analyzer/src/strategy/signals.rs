@@ -649,7 +649,11 @@ mod touch_tests {
                 }
             })
             .unwrap();
-        assert_eq!(sig.atr, dec("0.1"), "payload ATR is the zone's pre-breakout ATR");
+        assert_eq!(
+            sig.atr,
+            dec("0.1"),
+            "payload ATR is the zone's pre-breakout ATR"
+        );
         assert_eq!(sig.zone_height_atr, dec("0.4"), "0.04 / 0.1 = 0.4");
     }
 

@@ -189,7 +189,9 @@ fn on_candle(
         .filter(|z| z.state == ZoneState::Active)
         .map(|z| z.id.clone())
         .collect();
-    state.zones_awaiting_first_tick.retain(|id| live.contains(id));
+    state
+        .zones_awaiting_first_tick
+        .retain(|id| live.contains(id));
 
     if state
         .valid_low_idx

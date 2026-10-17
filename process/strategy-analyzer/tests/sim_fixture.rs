@@ -3,8 +3,8 @@
 //! produced. Gated behind `harness` so `--no-default-features` still compiles the target.
 #![cfg(feature = "harness")]
 
-use rust_decimal::RoundingStrategy;
 use rust_decimal::Decimal;
+use rust_decimal::RoundingStrategy;
 use std::str::FromStr;
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::sim::{simulate, SimOutcome, SimParams};
@@ -72,7 +72,10 @@ fn happy_fixture_signal_fills_sanely_under_both_policies() {
     assert_eq!(sig.trigger_price, dec("104.5"));
     match simulate(&sig, &ticks[idx..], params()).outcome {
         SimOutcome::TakeProfit(r) => {
-            assert!(r > Decimal::ZERO, "low_first TP R must be positive, got {r}");
+            assert!(
+                r > Decimal::ZERO,
+                "low_first TP R must be positive, got {r}"
+            );
             assert_eq!(
                 r.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero),
                 dec("2.74"),
