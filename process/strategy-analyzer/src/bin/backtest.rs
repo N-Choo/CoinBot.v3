@@ -3,7 +3,8 @@ use std::time::Duration;
 use strategy_analyzer::harness::dataset::{dataset_hash, load_csv};
 use strategy_analyzer::harness::fetch;
 use strategy_analyzer::harness::lock;
-use strategy_analyzer::harness::report::{adversarial_composite, cushion_warning, summarize, time_blocked_bootstrap, BOOTSTRAP_BLOCK_MS};
+use strategy_analyzer::harness::perturb;
+use strategy_analyzer::harness::report::{adversarial_composite, cushion_warning, summarize, time_blocked_bootstrap, TradeRecord, BOOTSTRAP_BLOCK_MS};
 use strategy_analyzer::harness::run::{run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
 use strategy_analyzer::harness::tick_source::PathPolicy;
@@ -60,6 +61,38 @@ fn default_sim_params() -> SimParams {
 
 fn zero_cost_params(p: SimParams) -> SimParams {
     SimParams { fee_bps: Decimal::ZERO, entry_slip_bps: Decimal::ZERO, stop_slip_bps: Decimal::ZERO, borrow_bps_per_day: Decimal::ZERO, latency_ticks: p.latency_ticks }
+}
+
+/// Decimal portfolio mean R (0 when there are no trades).
+fn mean_r(trades: &[TradeRecord]) -> Decimal {
+    if trades.is_empty() { return Decimal::ZERO; }
+    trades.iter().map(|t| t.r).sum::<Decimal>() / Decimal::from(trades.len() as u64)
+}
+
+/// The fixed diagnostics parameter axis (config multipliers the ±20% perturbation perturbs).
+/// Order is documented here; diagnostics only — never written back to the frozen config.
+fn diagnostic_axis(cfg: &Config) -> Vec<Decimal> {
+    vec![
+        cfg.bos_min_distance_atr,
+        cfg.impulse_body_threshold_atr,
+        cfg.stop_buffer_atr,
+        cfg.min_zone_height_atr,
+        cfg.max_zone_height_atr,
+        cfg.target_r,
+    ]
+}
+
+/// Rebuild a config with the diagnostics axis values applied (all other fields held).
+fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
+    Config {
+        bos_min_distance_atr: v[0],
+        impulse_body_threshold_atr: v[1],
+        stop_buffer_atr: v[2],
+        min_zone_height_atr: v[3],
+        max_zone_height_atr: v[4],
+        target_r: v[5],
+        ..cfg.clone()
+    }
 }
 
 fn policy_name(p: PathPolicy) -> &'static str {
@@ -226,6 +259,22 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
                 Some(w) => println!("  cushion mean_cost_r={mean_cost_r:.4} WARNING: {w}"),
                 None => println!("  cushion mean_cost_r={mean_cost_r:.4} ok (<= 0.5R)"),
             }
+
+            // Perturbation diagnostics: 4H synthesis only (`run` always synthesizes 4H candles),
+            // seeded and reproducible, and never used to select parameters.
+            let axis = diagnostic_axis(&cfg);
+            let eval = |vals: &[Decimal]| -> Decimal {
+                let c = apply_diagnostic_axis(&cfg, vals);
+                let l = run(SYMBOL, &candles, PathPolicy::LowFirst, &c, params);
+                let h = run(SYMBOL, &candles, PathPolicy::HighFirst, &c, params);
+                mean_r(&adversarial_composite(&l.trades, &h.trades))
+            };
+            let rep = perturb::run_diagnostics(&axis, &eval);
+            println!("  diagnostics variants_tried={} oat={}/{} ({:.3}) joint={}/{} ({:.3}) elapsed={:?} budget={}s within_budget={} oat_gate_met={} joint_gate_met={}",
+                rep.variants_tried(), rep.oat_positive_cells, rep.oat_cells, rep.oat_positive_fraction,
+                rep.joint_positive_draws, rep.joint_draws, rep.joint_positive_fraction,
+                rep.elapsed, perturb::DIAGNOSTICS_BUDGET_SECS, rep.within_budget(),
+                rep.oat_gate_met(), rep.joint_gate_met());
         }
     }
     Ok(())
