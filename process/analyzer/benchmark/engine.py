@@ -3,6 +3,7 @@
 Mirrors process/trade-engine:
   order_budget    <- trader/sizing.rs
   evaluate_exit   <- position_exit/decision.rs
+  evaluate_exit_candle <- position_exit/decision.rs (candle form)
   realized_pnl / cap_loss / close_credit <- reconciler/pnl.rs
   SimEngine       <- signal_handler + position_exit
 """
@@ -10,6 +11,7 @@ Mirrors process/trade-engine:
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 TAKE_PROFIT = "TP"
 STOP_LOSS = "SL"
@@ -154,7 +156,14 @@ class SimEngine:
         """Process one analyzer signal; open a position if funds allow."""
         if side not in ("buy", "sell"):
             return False
-        if entry_price <= 0 or tp <= 0 or sl <= 0:
+        if (
+            not math.isfinite(entry_price)
+            or not math.isfinite(tp)
+            or not math.isfinite(sl)
+            or entry_price <= 0
+            or tp <= 0
+            or sl <= 0
+        ):
             return False
         budget = self.budget
         if self.available_fund < budget:

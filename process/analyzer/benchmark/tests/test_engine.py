@@ -119,6 +119,7 @@ def test_tp_hit_closes_with_profit_and_restores_fund():
     assert t.reason == TAKE_PROFIT
     assert t.exit_price == pytest.approx(110.0)
     assert t.pnl == pytest.approx(50.0)
+    assert t.pnl_pct == pytest.approx(10.0)
     assert e.available_fund == pytest.approx(1050.0)
 
 
@@ -155,3 +156,36 @@ def test_short_tp_uses_inverted_levels():
     t = e.closed[0]
     assert t.reason == TAKE_PROFIT
     assert t.pnl == pytest.approx(50.0)  # E=500, (100-90)/100 * 500
+
+
+def test_position_not_evaluated_on_its_own_entry_candle():
+    e = SimEngine(init_fund=1000.0, fee_rate=0.0)
+    e.on_signal("buy", 100.0, 110.0, 90.0, idx=3, date="d3")
+    e.on_candle(3, high=120.0, low=80.0, date="d3")
+    assert e.closed == []
+    assert len(e.positions) == 1
+
+
+def test_total_traded_fund_accumulates():
+    e = SimEngine(init_fund=1000.0, fee_rate=0.0)
+    e.on_signal("buy", 100.0, 110.0, 90.0, 0, "d0")
+    e.on_signal("buy", 100.0, 110.0, 90.0, 1, "d1")
+    assert e.total_traded_fund == pytest.approx(1000.0)
+    e.on_candle(2, high=111.0, low=99.0, date="d2")
+    assert e.total_traded_fund == pytest.approx(1000.0)
+
+
+def test_short_sl_loss_is_capped_at_committed_fund():
+    e = SimEngine(init_fund=1000.0, fee_rate=0.0)
+    e.on_signal("sell", 100.0, 90.0, 300.0, 0, "d0")
+    e.on_candle(1, high=320.0, low=95.0, date="d1")
+    t = e.closed[0]
+    assert t.reason == STOP_LOSS
+    assert t.pnl == pytest.approx(-500.0)  # raw -1000, capped at -E
+
+
+def test_non_finite_prices_are_rejected():
+    e = SimEngine(init_fund=1000.0, fee_rate=0.0)
+    assert e.on_signal("buy", float("nan"), 110.0, 90.0, 0, "d0") is False
+    assert e.on_signal("buy", 100.0, float("inf"), 90.0, 0, "d0") is False
+    assert e.positions == []
