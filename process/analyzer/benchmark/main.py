@@ -162,3 +162,57 @@ def _summarize(
         "available_fund": engine.available_fund,
         "equity": engine.available_fund + reserved + unrealized,
     }
+
+
+def _fmt_price(p: float | None) -> str:
+    if p is None:
+        return "-"
+    if abs(p) >= 1000:
+        return f"${p:,.0f}"
+    if abs(p) >= 1:
+        return f"${p:,.2f}"
+    if abs(p) >= 0.01:
+        return f"${p:,.4f}"
+    return f"${p:,.6f}"
+
+
+def print_ledger(
+    ticker: str,
+    trades: list[dict[str, Any]],
+    open_positions: list[dict[str, Any]],
+    summary: dict[str, Any],
+) -> None:
+    """Print one ticker's round-trip ledger and account summary."""
+    W = "\u2550" * 66
+    H = "\u2500" * 66
+    print()
+    print(f"  {ticker}")
+    print(H)
+
+    if not trades and not open_positions:
+        print("  (no trades)")
+    else:
+        print(
+            f"  {'entry':<10} {'dir':<4} {'entry$':>10} "
+            f"{'exit':<10} {'exit$':>10} {'pnl%':>7} {'pnl$':>8}  why"
+        )
+        for t in trades:
+            print(
+                f"  {t['entry_date']:<10} {t['side'].upper()[:4]:<4} "
+                f"{_fmt_price(t['entry_price']):>10} "
+                f"{t['exit_date']:<10} {_fmt_price(t['exit_price']):>10} "
+                f"{t['pnl_pct']:>+6.1f}% {t['pnl']:>+8.2f}  {t['reason']}"
+            )
+
+    print(H)
+    print(
+        f"  open: {summary['open_count']}  |  "
+        f"trades {summary['trades']}  "
+        f"wins {summary['wins']}/{summary['trades']} "
+        f"({summary['win_rate']:.0f}%)  "
+        f"realized {summary['realized_pnl']:+.2f}  "
+        f"equity {summary['equity']:.2f} "
+        f"(init {summary['init_fund']:.0f})"
+    )
+    print(W)
+    print()

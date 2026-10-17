@@ -88,3 +88,51 @@ def test_run_benchmark_simulates_trades_end_to_end(monkeypatch):
     assert summary["trades"] >= 1
     assert all(t["reason"] == "TP" for t in trades)
     assert all(t["pnl"] > 0 for t in trades)
+
+
+from analyzer.benchmark.main import print_ledger
+
+
+def _summary(**overrides):
+    base = {
+        "ticker": "BTC-USDT",
+        "trades": 0,
+        "wins": 0,
+        "win_rate": 0.0,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "open_count": 0,
+        "init_fund": 1000.0,
+        "available_fund": 1000.0,
+        "equity": 1000.0,
+    }
+    base.update(overrides)
+    return base
+
+
+def test_print_ledger_no_trades(capsys):
+    print_ledger("BTC-USDT", [], [], _summary())
+    out = capsys.readouterr().out
+    assert "BTC-USDT" in out
+    assert "(no trades)" in out
+
+
+def test_print_ledger_with_trades(capsys):
+    trades = [
+        {
+            "side": "buy", "entry_price": 91200.0, "exit_price": 96000.0,
+            "E": 500.0, "pnl": 50.0, "pnl_pct": 5.0, "reason": "TP",
+            "entry_date": "2026-05-12", "exit_date": "2026-05-19",
+        },
+        {
+            "side": "buy", "entry_price": 88000.0, "exit_price": 85000.0,
+            "E": 500.0, "pnl": -50.0, "pnl_pct": -10.0, "reason": "SL",
+            "entry_date": "2026-05-28", "exit_date": "2026-06-02",
+        },
+    ]
+    summary = _summary(trades=2, wins=1, win_rate=50.0, realized_pnl=0.0)
+    print_ledger("BTC-USDT", trades, [], summary)
+    out = capsys.readouterr().out
+    assert "TP" in out
+    assert "SL" in out
+    assert "50%" in out
