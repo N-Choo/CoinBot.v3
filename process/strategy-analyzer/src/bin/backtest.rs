@@ -133,6 +133,44 @@ enum Cmd {
         #[arg(long, default_value = "4hour")]
         candle_interval: String,
     },
+    /// Fast candle-interval sweep. Per interval: the signal count and the net-of-cost R
+    /// (fees/slippage/borrow), with **no** perturbation/verdict diagnostics. In-sample/exploratory
+    /// only, so a long sweep cannot time out on the diagnostics the `backtest` command runs.
+    Benchmark {
+        #[arg(long)]
+        symbol: String,
+        #[arg(long = "price-scale", value_name = "SYMBOL=DP")]
+        price_scale: Vec<String>,
+        /// Comma-separated KuCoin intervals (unknown entries rejected), e.g. `5min,15min,1hour,4hour`.
+        #[arg(long, default_value = "5min,15min,1hour,4hour")]
+        intervals: String,
+        /// `INTERVAL=PATH`, repeatable: supply a cached CSV per interval (skips fetching it).
+        #[arg(long = "data", value_name = "INTERVAL=PATH")]
+        data: Vec<String>,
+        /// In-sample fetch range (seconds); used only when an interval actually needs fetching.
+        #[arg(long)]
+        start_s: Option<i64>,
+        /// In-sample fetch range (seconds); used only when an interval actually needs fetching.
+        #[arg(long)]
+        end_s: Option<i64>,
+        /// Cache directory for `{cache_dir}/{symbol}_{interval}.csv`.
+        #[arg(long, default_value = "data")]
+        cache_dir: String,
+        /// Use `--data`/cache only; never fetch. An interval with no cached file becomes a `no data`
+        /// row rather than aborting the run.
+        #[arg(long, default_value_t = false)]
+        no_fetch: bool,
+        #[arg(long, default_value = "5")]
+        fee_bps: String,
+        #[arg(long, default_value = "5")]
+        entry_slip_bps: String,
+        #[arg(long, default_value = "15")]
+        stop_slip_bps: String,
+        #[arg(long, default_value = "2")]
+        borrow_bps_per_day: String,
+        #[arg(long, default_value = "both")]
+        policy: String,
+    },
     /// Validate a 1m-derived 4H aggregate against an independently fetched 4H series (offline).
     /// Refuses the run above `AGG_TOLERANCE`; never silently patches. Network stays in `fetch-data`.
     Calibrate {
@@ -193,6 +231,35 @@ fn main() -> Res<()> {
             mode,
             candle_interval,
         } => dump_signals_cmd(&data, &price_scale, &policy, &mode, &candle_interval),
+        Cmd::Benchmark {
+            symbol,
+            price_scale,
+            intervals,
+            data,
+            start_s,
+            end_s,
+            cache_dir,
+            no_fetch,
+            fee_bps,
+            entry_slip_bps,
+            stop_slip_bps,
+            borrow_bps_per_day,
+            policy,
+        } => benchmark(
+            &symbol,
+            &price_scale,
+            &intervals,
+            &data,
+            start_s,
+            end_s,
+            &cache_dir,
+            no_fetch,
+            &fee_bps,
+            &entry_slip_bps,
+            &stop_slip_bps,
+            &borrow_bps_per_day,
+            &policy,
+        ),
         Cmd::Calibrate {
             one_minute,
             fetched_4h,
@@ -546,6 +613,294 @@ fn dump_signals_cmd(
         for p in &policies {
             for sig in emitted_signals(symbol, &candles, *p, &cfg)? {
                 println!("{}", serde_json::to_string(&sig)?);
+            }
+        }
+    }
+    Ok(())
+}
+
+// ---------------------------------------------------------------------------------------------
+// benchmark (fast interval sweep)
+// ---------------------------------------------------------------------------------------------
+
+/// Per-interval benchmark result: the signal count and the net-of-cost trade statistics.
+///
+/// `signals` is summed across the selected path policies; every R statistic pools the resolved trades
+/// of all selected policies (a single "aggregate over policies" view, rather than one line per
+/// policy). All values are net of fees, entry/stop slippage and borrow.
+struct IntervalStats {
+    signals: usize,
+    signals_per_day: f64,
+    trades: usize,
+    win_rate: f64,
+    mean_net_r: f64,
+    median_net_r: f64,
+    total_net_r: Decimal,
+    /// Realized fee/slippage/borrow drag per trade in R: mean gross R (a zero-cost replay on the same
+    /// signals) minus mean net R.
+    mean_cost_r: f64,
+}
+
+/// Median net R across `trades` (the mean of the two middle values for an even count).
+fn median_r(trades: &[TradeRecord]) -> Decimal {
+    if trades.is_empty() {
+        return Decimal::ZERO;
+    }
+    let mut rs: Vec<Decimal> = trades.iter().map(|t| t.r).collect();
+    rs.sort();
+    let n = rs.len();
+    if n % 2 == 1 {
+        rs[n / 2]
+    } else {
+        (rs[n / 2 - 1] + rs[n / 2]) / Decimal::from(2u64)
+    }
+}
+
+/// Parse the comma-separated `--intervals` list, rejecting any interval the shared `interval_to_ms`
+/// does not recognise (never a silent skip) and any empty entry.
+fn parse_intervals(spec: &str) -> Res<Vec<String>> {
+    let mut out = Vec::new();
+    for raw in spec.split(',') {
+        let iv = raw.trim();
+        if iv.is_empty() {
+            return Err(format!("--intervals has an empty entry: {spec:?}").into());
+        }
+        interval_to_ms(iv).map_err(|e| format!("--intervals {iv:?}: {e}"))?;
+        out.push(iv.to_string());
+    }
+    if out.is_empty() {
+        return Err("--intervals requires at least one interval".into());
+    }
+    Ok(out)
+}
+
+/// Parse repeatable `INTERVAL=PATH` `--data` mappings for `benchmark`; the interval key is validated
+/// with the shared parser.
+fn parse_interval_data(items: &[String]) -> Res<BTreeMap<String, String>> {
+    let mut out = BTreeMap::new();
+    for item in items {
+        let (interval, path) = item
+            .split_once('=')
+            .ok_or_else(|| format!("--data must be INTERVAL=PATH, got {item:?}"))?;
+        if interval.is_empty() || path.is_empty() {
+            return Err(format!("--data must be INTERVAL=PATH, got {item:?}").into());
+        }
+        interval_to_ms(interval).map_err(|e| format!("--data {interval:?}: {e}"))?;
+        out.insert(interval.to_string(), path.to_string());
+    }
+    Ok(out)
+}
+
+/// Parse one sim-rate CLI argument (a decimal) with a named error.
+fn parse_decimal_arg(name: &str, value: &str) -> Res<Decimal> {
+    value
+        .parse::<Decimal>()
+        .map_err(|e| format!("--{name} must be a decimal, got {value:?}: {e}").into())
+}
+
+/// Resolve one interval's candles, applying the OOS-boundary guard on every load. `Ok(None)` means
+/// the interval has no data — no cached file with `--no-fetch`, or an empty file — so the caller can
+/// report a `no data` row instead of aborting the sweep. An explicit `--data INTERVAL=PATH` naming a
+/// missing file is an error (a misconfiguration, not a `no data` interval).
+#[allow(clippy::too_many_arguments)]
+fn resolve_candles(
+    symbol: &str,
+    interval: &str,
+    interval_ms: i64,
+    data_map: &BTreeMap<String, String>,
+    cache_dir: &str,
+    no_fetch: bool,
+    start_s: Option<i64>,
+    end_s: Option<i64>,
+) -> Res<Option<Vec<Candle>>> {
+    let path = match data_map.get(interval) {
+        Some(p) => {
+            if !Path::new(p).exists() {
+                return Err(format!("--data {interval}={p}: file not found").into());
+            }
+            p.clone()
+        }
+        None => {
+            let cached = format!("{cache_dir}/{symbol}_{interval}.csv");
+            if Path::new(&cached).exists() {
+                cached
+            } else if no_fetch {
+                return Ok(None);
+            } else {
+                let (s, e) = match (start_s, end_s) {
+                    (Some(s), Some(e)) => (s, e),
+                    _ => {
+                        return Err(format!(
+                            "interval {interval}: no cached file at {cached} and --start-s/--end-s are required to fetch"
+                        )
+                        .into())
+                    }
+                };
+                fetch_data(symbol, interval, s, e, &cached, None)?;
+                cached
+            }
+        }
+    };
+
+    // Forward-fill on the interval's own spacing (KuCoin omits empty intervals; the core rejects
+    // gaps), so a 5min file is filled at 5min, not the `load_csv` 4h default.
+    let candles = load_csv_with_policy(&path, GapPolicy::ForwardFill, interval_ms)?;
+    // Refuse any row at/after the in-sample/OOS boundary, exactly like the other in-sample commands.
+    if let Some(ms) = lock::first_oos_candle(&candles, lock::OOS_BOUNDARY_MS) {
+        return Err(format!(
+            "{symbol} {interval}: row at/after the in-sample/OOS boundary (open_time_ms={ms} >= {}); benchmark is in-sample only",
+            lock::OOS_BOUNDARY_MS
+        )
+        .into());
+    }
+    if candles.is_empty() {
+        return Ok(None);
+    }
+    Ok(Some(candles))
+}
+
+/// Replay + simulate one interval (net and zero-cost, for every selected policy) and collect the
+/// counts and net R statistics. Only two passes per policy run here — no perturbation or verdict
+/// diagnostics — which is what keeps a long sweep fast.
+fn interval_stats(
+    symbol: &str,
+    candles: &[Candle],
+    cfg: &Config,
+    policies: &[PathPolicy],
+    params: SimParams,
+) -> Result<IntervalStats, StrategyError> {
+    let mut signals = 0usize;
+    let mut net_trades: Vec<TradeRecord> = Vec::new();
+    let mut gross_trades: Vec<TradeRecord> = Vec::new();
+    for p in policies {
+        let net = run(symbol, candles, *p, cfg, params)?;
+        signals += net.signals;
+        net_trades.extend(net.trades);
+        // A zero-cost replay on the same signals yields the gross R, so the fee/slippage/borrow drag
+        // per trade is `mean(gross) - mean(net)` (mirrors `backtest`'s cushion).
+        let zero = run(symbol, candles, *p, cfg, zero_cost_params(params))?;
+        gross_trades.extend(zero.trades);
+    }
+    let net = summarize(&net_trades);
+    let gross = summarize(&gross_trades);
+    let total_net_r: Decimal = net_trades.iter().map(|t| t.r).sum();
+    // Wall-clock span of the interval's data, for a per-day signal rate.
+    let span_days = match (candles.first(), candles.last()) {
+        (Some(first), Some(last)) => {
+            ((last.open_time_ms - first.open_time_ms) as f64 + cfg.candle_interval_ms as f64)
+                / 86_400_000.0
+        }
+        _ => 0.0,
+    };
+    Ok(IntervalStats {
+        signals,
+        signals_per_day: if span_days > 0.0 {
+            signals as f64 / span_days
+        } else {
+            0.0
+        },
+        trades: net.n,
+        win_rate: net.win_rate,
+        mean_net_r: net.mean_r,
+        median_net_r: median_r(&net_trades).to_string().parse::<f64>().unwrap(),
+        total_net_r,
+        mean_cost_r: gross.mean_r - net.mean_r,
+    })
+}
+
+// The CLI's run knobs are passed individually for readability at the `main` match arm; the count is
+// well past the clippy threshold for this benchmark sweep.
+#[allow(clippy::too_many_arguments)]
+fn benchmark(
+    symbol: &str,
+    price_scale: &[String],
+    intervals: &str,
+    data: &[String],
+    start_s: Option<i64>,
+    end_s: Option<i64>,
+    cache_dir: &str,
+    no_fetch: bool,
+    fee_bps: &str,
+    entry_slip_bps: &str,
+    stop_slip_bps: &str,
+    borrow_bps_per_day: &str,
+    policy: &str,
+) -> Res<()> {
+    let scales = parse_scales(price_scale)?;
+    let policies = parse_policies(policy)?;
+    let interval_list = parse_intervals(intervals)?;
+    let data_map = parse_interval_data(data)?;
+    let params = SimParams {
+        fee_bps: parse_decimal_arg("fee-bps", fee_bps)?,
+        entry_slip_bps: parse_decimal_arg("entry-slip-bps", entry_slip_bps)?,
+        stop_slip_bps: parse_decimal_arg("stop-slip-bps", stop_slip_bps)?,
+        borrow_bps_per_day: parse_decimal_arg("borrow-bps-per-day", borrow_bps_per_day)?,
+    };
+    // The symbol must name an explicit price scale, exactly like `backtest` (no silent default).
+    let dp = scales.get(symbol).copied().ok_or_else(|| {
+        format!(
+            "no --price-scale for {symbol}; the symbol needs an explicit price scale (no silent default)"
+        )
+    })?;
+
+    println!("# strategy-analyzer benchmark (in-sample / exploratory)");
+    println!(
+        "# symbol={symbol} price_scale={dp} policy={policy} intervals={}",
+        interval_list.join(",")
+    );
+    println!(
+        "# sim fee_bps={} entry_slip_bps={} stop_slip_bps={} borrow_bps_per_day={}",
+        params.fee_bps, params.entry_slip_bps, params.stop_slip_bps, params.borrow_bps_per_day
+    );
+    println!("# oos_boundary_ms={}", lock::OOS_BOUNDARY_MS);
+    println!("# note: in-sample and exploratory only; this is not a confirmatory verdict");
+
+    let mut rows: Vec<(String, Option<IntervalStats>)> = Vec::new();
+    for interval in &interval_list {
+        let ms = interval_to_ms(interval).map_err(|e| format!("--intervals {interval:?}: {e}"))?;
+        let candles = match resolve_candles(
+            symbol, interval, ms, &data_map, cache_dir, no_fetch, start_s, end_s,
+        )? {
+            Some(c) => c,
+            None => {
+                rows.push((interval.clone(), None));
+                continue;
+            }
+        };
+        let symbols = vec![symbol.to_string()];
+        let cfg = build_config(&symbols, &scales, interval)?;
+        let stats = interval_stats(symbol, &candles, &cfg, &policies, params)?;
+        rows.push((interval.clone(), Some(stats)));
+    }
+
+    // Highest total net R first; an interval with no data sorts to the bottom.
+    rows.sort_by(|a, b| match (&a.1, &b.1) {
+        (Some(x), Some(y)) => y.total_net_r.cmp(&x.total_net_r),
+        (Some(_), None) => std::cmp::Ordering::Less,
+        (None, Some(_)) => std::cmp::Ordering::Greater,
+        (None, None) => std::cmp::Ordering::Equal,
+    });
+
+    println!();
+    println!("interval\tsignals\tsignals_per_day\ttrades\twin_rate\tmean_net_r\tmedian_net_r\ttotal_net_r\tmean_cost_r\tcovers_fees");
+    for (interval, stats) in &rows {
+        match stats {
+            None => println!("{interval}\tno data"),
+            Some(s) => {
+                // "Survives fees?": the pooled net R is positive both in total and on average.
+                let covers = s.total_net_r > Decimal::ZERO && s.mean_net_r > 0.0;
+                println!(
+                    "{interval}\t{}\t{:.2}\t{}\t{:.4}\t{:.4}\t{:.4}\t{}\t{:.4}\t{}",
+                    s.signals,
+                    s.signals_per_day,
+                    s.trades,
+                    s.win_rate,
+                    s.mean_net_r,
+                    s.median_net_r,
+                    s.total_net_r,
+                    s.mean_cost_r,
+                    if covers { "yes" } else { "no" }
+                );
             }
         }
     }
