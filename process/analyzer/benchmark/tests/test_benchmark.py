@@ -1,3 +1,5 @@
+import logging
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -162,3 +164,18 @@ def test_print_ledger_open_positions_without_trades(capsys):
     assert "2026-06-01" in out
     assert "open" in out
     assert "(no trades)" not in out
+
+
+def test_main_skips_ticker_on_transport_error(monkeypatch, caplog):
+    import analyzer.benchmark.main as bm
+
+    monkeypatch.setenv("BENCHMARK_TICKERS", "BTC-USDT")
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(bm, "fetch_klines", boom)
+    with caplog.at_level(logging.ERROR):
+        bm.main()  # must not raise
+
+    assert "skip BTC-USDT" in caplog.text

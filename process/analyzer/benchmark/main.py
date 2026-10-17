@@ -234,7 +234,6 @@ def main() -> None:
         format="%(asctime)s  %(levelname)-7s  %(message)s",
         datefmt="%H:%M:%S",
     )
-    logger = logging.getLogger("benchmark")
 
     logger.info(
         "benchmark started  days=%d  init_fund=%.0f  fee=%.4f  tickers=%s",
@@ -255,24 +254,37 @@ def main() -> None:
         cfg.atr_high_adjust,
     )
 
-    min_len = _warmup(
-        cfg.rsi_period, cfg.atr_period, cfg.sma_period, cfg.sma_enabled
-    ) + 2
+    # Warm-up floor plus a small margin so at least two candles are replayed.
+    min_len = (
+        _warmup(
+            cfg.rsi_period, cfg.atr_period, cfg.sma_period, cfg.sma_enabled
+        )
+        + 2
+    )
 
     for ticker in cfg.benchmark_tickers:
-        logger.info("fetching %s klines...", ticker)
+        symbol = ticker.replace("/", "-")
+        logger.info("fetching %s klines...", symbol)
         try:
             df = fetch_klines(
-                ticker,
+                symbol,
                 timeframe=cfg.kucoin_timeframe,
                 base_url=cfg.kuCoin_base_url,
             )
         except KuCoinFetchError as e:
-            logger.error("  skip %s - fetch error: %s", ticker, e)
+            logger.error("  skip %s - fetch error: %s", symbol, e)
+            continue
+        except Exception as e:
+            logger.exception("  skip %s - unexpected fetch error: %s", symbol, e)
             continue
 
         if len(df) < min_len:
-            logger.warning("  skip %s - only %d candles", ticker, len(df))
+            logger.warning(
+                "  skip %s - only %d candles (need >= %d)",
+                symbol,
+                len(df),
+                min_len,
+            )
             continue
 
         trades, open_positions, summary = run_benchmark(
