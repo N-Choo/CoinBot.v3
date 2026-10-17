@@ -96,4 +96,44 @@ mod tests {
         assert_eq!(c.high, dec("1.3"));
         assert!(src.next_candle().is_none());
     }
+
+    /// 1m candle `i`: flat at `200 + i`, with a high spike at minute 100 and a low dip at minute 150.
+    fn minute(i: i64) -> Candle {
+        let base = Decimal::from(200 + i);
+        let high = if i == 100 { dec("500") } else { base };
+        let low = if i == 150 { dec("10") } else { base };
+        Candle { open_time_ms: i * 60_000, open: base, high, low, close: base }
+    }
+
+    #[test]
+    fn aggregate_4h_uses_first_open_max_high_min_low_last_close() {
+        let minutes: Vec<Candle> = (0..240i64).map(minute).collect();
+        let agg = aggregate_4h(&minutes);
+        assert_eq!(agg.open_time_ms, 0);
+        assert_eq!(agg.open, dec("200"));  // first open
+        assert_eq!(agg.high, dec("500"));  // max high (minute 100)
+        assert_eq!(agg.low, dec("10"));    // min low (minute 150)
+        assert_eq!(agg.close, dec("439")); // last close (minute 239)
+    }
+
+    #[test]
+    fn one_minute_expansion_chunks_240_minutes_on_the_4h_grid() {
+        let minutes: Vec<Candle> = (0..480i64).map(minute).collect();
+        let mut src = OneMinuteExpansion::new(minutes, PathPolicy::LowFirst);
+
+        let (ticks0, agg0) = src.next_candle().unwrap();
+        assert_eq!(ticks0.len(), 240 * 4, "four synth ticks per minute");
+        assert_eq!(agg0.open_time_ms, 0);
+        assert_eq!(agg0.open_time_ms % 14_400_000, 0, "first 4H boundary on the epoch grid");
+        assert_eq!(agg0.open, dec("200"));
+        assert_eq!(agg0.close, dec("439"));
+
+        let (_ticks1, agg1) = src.next_candle().unwrap();
+        assert_eq!(agg1.open_time_ms, agg0.open_time_ms + 14_400_000, "next chunk is one 4H later");
+        assert_eq!(agg1.open_time_ms % 14_400_000, 0, "second 4H boundary on the epoch grid");
+        assert_eq!(agg1.open, dec("440"));
+        assert_eq!(agg1.close, dec("679"));
+
+        assert!(src.next_candle().is_none());
+    }
 }
