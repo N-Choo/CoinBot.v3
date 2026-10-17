@@ -90,6 +90,52 @@ pub fn aggregate_4h(minutes: &[Candle]) -> Candle {
     }
 }
 
+/// The 4H grid size in ms (epoch-aligned boundaries at 00:00/04:00/… UTC).
+pub const FOUR_HOUR_MS: i64 = 14_400_000;
+
+/// The 4H grid bucket a timestamp falls in (floor division, so pre-epoch stamps still align).
+pub fn h4_bucket(open_time_ms: i64) -> i64 {
+    open_time_ms.div_euclid(FOUR_HOUR_MS)
+}
+
+/// Group 1m candles into their 4H grid bucket. Unlike count-based `chunks(240)`, a series that
+/// starts mid-bucket still groups by grid cell (`open_time_ms / 4h`), so later buckets stay aligned
+/// to the 4H grid instead of being shifted by the partial first bucket. Input is expected sorted;
+/// grouping is by bucket id, so gaps simply yield fewer groups.
+pub fn group_4h_buckets(minutes: &[Candle]) -> Vec<Vec<Candle>> {
+    let mut out: Vec<Vec<Candle>> = Vec::new();
+    let mut current: Option<i64> = None;
+    for m in minutes {
+        let bucket = h4_bucket(m.open_time_ms);
+        if current != Some(bucket) {
+            current = Some(bucket);
+            out.push(Vec::new());
+        }
+        if let Some(g) = out.last_mut() {
+            g.push(*m);
+        }
+    }
+    out
+}
+
+/// Aggregate one 4H-grid bucket, stamped at the **bucket boundary** (not at its first minute), so a
+/// mid-bucket start still lines up with an independently fetched 4H series.
+pub fn aggregate_4h_bucket(bucket: &[Candle]) -> Candle {
+    let mut agg = aggregate_4h(bucket);
+    if let Some(first) = bucket.first() {
+        agg.open_time_ms = h4_bucket(first.open_time_ms) * FOUR_HOUR_MS;
+    }
+    agg
+}
+
+/// Aggregate a 1m series into 4H candles aligned to the 4H grid (see `aggregate_4h_bucket`).
+pub fn aggregate_4h_by_time(minutes: &[Candle]) -> Vec<Candle> {
+    group_4h_buckets(minutes)
+        .iter()
+        .map(|b| aggregate_4h_bucket(b))
+        .collect()
+}
+
 /// 1m source (Phase 0): each 1m candle becomes a path; every 240 minutes are emitted as one
 /// 4H `ClosedCandle` (ticks first, §4 ordering). Boundaries align to the 4H epoch grid; the
 /// caller validates the aggregates against the fetched 4H series before trusting a 1m run.
@@ -228,5 +274,34 @@ mod tests {
         assert_eq!(agg1.close, dec("679"));
 
         assert!(src.next_candle().is_none());
+    }
+
+    #[test]
+    fn group_4h_buckets_aligns_a_mid_bucket_start_to_the_grid() {
+        // Start 30 minutes into the first 4H bucket (minute 30, i.e. 1_800_000 ms) and run 420
+        // minutes: 210 minutes land in bucket 0 and 210 in bucket 1. Count-based chunking would
+        // blend 210 minutes of bucket 0 with 30 of bucket 1; time bucketing keeps each aggregate
+        // inside one grid cell.
+        let minutes: Vec<Candle> = (30..450).map(minute).collect();
+        let buckets = group_4h_buckets(&minutes);
+        assert_eq!(
+            buckets.len(),
+            2,
+            "420 minutes starting mid-bucket span 2 buckets"
+        );
+
+        let aggregated = aggregate_4h_by_time(&minutes);
+        assert_eq!(aggregated.len(), 2);
+        assert_eq!(
+            aggregated[0].open_time_ms, 0,
+            "first aggregate is stamped at bucket 0's boundary"
+        );
+        assert_eq!(
+            aggregated[1].open_time_ms, FOUR_HOUR_MS,
+            "second aggregate is one full 4H later, not shifted by the partial first bucket"
+        );
+        assert_eq!(aggregated[0].open, dec("230")); // first minute present (30), not the bucket open
+        assert_eq!(aggregated[1].open, dec("440")); // minute 240 starts the second bucket
+        assert_eq!(aggregated[0].close, dec("439")); // last minute of bucket 0 (239)
     }
 }
