@@ -151,13 +151,17 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
         let path = lock_path.as_deref().ok_or("--oos requires --lock <path>")?;
         lock::check_lock(path, &expected_lock)?;
         let consumed = format!("{path}.consumed");
-        if lock::oos_already_consumed(&consumed) && !oos_consumed {
-            return Err(format!("OOS already consumed at {consumed}; pass --oos-consumed to override (stamps non-confirmatory)").into());
-        }
-        if oos_consumed {
-            non_confirmatory = true;
-            if let Ok(prior) = std::fs::read_to_string(&consumed) {
-                println!("# OOS override: prior run hash = {}", prior.trim());
+        match lock::oos_gate(&consumed, oos_consumed)? {
+            lock::OosDecision::Allow => {}
+            lock::OosDecision::Refuse => {
+                return Err(format!("OOS already consumed at {consumed}; pass --oos-consumed to override (stamps non-confirmatory)").into());
+            }
+            lock::OosDecision::RerunNonConfirmatory => {
+                // Contract of this outcome: keep/overwrite the marker and stamp non-confirmatory.
+                non_confirmatory = true;
+                if let Ok(prior) = std::fs::read_to_string(&consumed) {
+                    println!("# OOS override: prior run hash = {}", prior.trim());
+                }
             }
         }
         lock::write_lock(&consumed, &hash)?; // log this invocation (one-shot guard)

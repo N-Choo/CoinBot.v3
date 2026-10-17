@@ -29,6 +29,20 @@ pub fn oos_already_consumed(consumed_path: &str) -> bool {
     Path::new(consumed_path).exists()
 }
 
+/// Outcome of the one-shot OOS guard for a consumed-marker path.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OosDecision { Allow, RerunNonConfirmatory, Refuse }
+
+/// One-shot OOS gate keyed on the consumed marker (`<lock>.consumed`):
+/// - no marker              -> `Allow`: the first, confirmatory OOS run.
+/// - marker, no override    -> `Refuse`: OOS has already been consumed.
+/// - marker, `override_flag`-> `RerunNonConfirmatory`: the caller keeps/writes the marker and
+///   stamps the report non-confirmatory (that stamping is this outcome's contract).
+pub fn oos_gate(marker_path: &str, override_flag: bool) -> Result<OosDecision, String> {
+    if !Path::new(marker_path).exists() { return Ok(OosDecision::Allow); }
+    if override_flag { Ok(OosDecision::RerunNonConfirmatory) } else { Ok(OosDecision::Refuse) }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -42,5 +56,20 @@ mod tests {
     #[test]
     fn missing_lock_is_error() {
         assert!(check_lock("/nonexistent/lock", "x").is_err());
+    }
+
+    #[test]
+    fn oos_gate_covers_all_three_branches() {
+        let marker = std::env::temp_dir().join(format!("strategy_analyzer_oos_gate_{}.marker", std::process::id()));
+        let _ = std::fs::remove_file(&marker);
+        let p = marker.to_str().unwrap();
+        // No marker -> Allow, with or without the override flag.
+        assert_eq!(oos_gate(p, false).unwrap(), OosDecision::Allow);
+        assert_eq!(oos_gate(p, true).unwrap(), OosDecision::Allow);
+        // Marker present, no override -> Refuse; with override -> non-confirmatory rerun.
+        std::fs::write(&marker, "prior-run").unwrap();
+        assert_eq!(oos_gate(p, false).unwrap(), OosDecision::Refuse);
+        assert_eq!(oos_gate(p, true).unwrap(), OosDecision::RerunNonConfirmatory);
+        std::fs::remove_file(&marker).unwrap();
     }
 }
