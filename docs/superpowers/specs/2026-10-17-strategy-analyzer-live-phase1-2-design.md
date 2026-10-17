@@ -188,3 +188,93 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) over the rec
 - The earlier Redis-based §6 (at-most-once / Streams-vs-outbox) is **superseded** by this gRPC design.
 
 **Carried over from prior edits (unchanged):** restart/gap rule (§4), `Input::Resume`, candle-close reconciliation (§4a), candle-close rule (§3a), config scope + `price_increment` snapping (§3b), "first touch only" veto wording (§4a and Phase 0 §6/§7), shadow outcome tracking (§9).
+
+## 14. Sequence diagrams (engine ↔ analyzer)
+
+**A. Phase 2 steady state — activation, polling, emit, ack**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as trade-engine (tonic client)
+    participant A as analyzer gRPC server
+    participant L as per-ticker loop
+    participant K as KuCoin
+    Note over A: startup — load per-symbol state,<br/>new persisted epoch, persisted seq
+    E->>A: Analyze(tickers=[XRP-USDT,BTC-USDT], after_seq=0)
+    A->>A: activate tickers (refresh TTL); spawn/refresh loops
+    A-->>E: {signals:[], epoch="e1", latest_seq=41}
+    E->>E: store epoch="e1"; after_seq stays 0
+    loop every 5-10 s
+        K-->>L: allTickers last + closed 4H candles
+        L->>L: step() -> EntrySignal
+        L->>A: enqueue pending{seq=42, signal_id, expires_at}
+    end
+    E->>A: Analyze([XRP-USDT,BTC-USDT], after_seq=41)
+    A-->>E: {signals:[seq42 XRP BUY], epoch="e1", latest_seq=42}
+    E->>E: validate; reject if expired; skip if price past tolerance
+    E->>E: persist dedup row(signal_id) THEN advance after_seq=42
+```
+
+**B. Lost response -> replay (no loss)**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as trade-engine
+    participant A as analyzer
+    E->>A: Analyze([...], after_seq=41)
+    A-->>E: response (LOST)
+    Note over E: after_seq NOT advanced (still 41)
+    E->>A: Analyze([...], after_seq=41)  %% replay
+    A-->>E: same pending signals (seq > 41)
+    E->>E: dedup on signal_id; persist; advance
+```
+
+**C. Analyzer restart -> epoch change -> engine resets `after_seq`**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as trade-engine
+    participant A as analyzer
+    Note over A: crash + restart
+    A->>A: new epoch="e2"; seq resumes (persisted)
+    E->>A: Analyze([...], after_seq=142)
+    A-->>E: {signals:[...], epoch="e2", latest_seq=150}
+    Note over E: epoch changed e1->e2
+    E->>E: reset after_seq = latest_seq (150)
+```
+
+**D. Expiry (unacked)**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as analyzer
+    A->>A: pending seq=42 expires_at passed, never acked
+    A->>A: drop signal; record adapter-side zone = expired_unacked
+    Note over A: zone consumed at emission -> never re-fires
+```
+
+**E. Engine marks analyzer unhealthy**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant E as trade-engine
+    participant A as analyzer
+    E->>A: Analyze(...) fails
+    E->>A: Analyze(...) fails (2)
+    E->>A: Analyze(...) fails (3)
+    E->>E: mark analyzer UNHEALTHY; alert; open no new positions
+    Note over E: existing positions still managed by engine SL/TP
+```
+
+**F. Phase 1 shadow — no gRPC, log only**
+```mermaid
+sequenceDiagram
+    autonumber
+    participant L as per-ticker loop
+    participant A as analyzer (shadow)
+    participant S as file state + input log
+    L->>A: step() -> EntrySignal
+    A->>S: append input stream; atomic-write state
+    A->>A: log signal; run Phase 0 sim for early evidence
+    Note over A: publishes NOTHING; no engine contact
+```
