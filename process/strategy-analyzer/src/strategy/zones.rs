@@ -135,3 +135,85 @@ mod tests {
         assert_eq!(z.high, dec("1.14"));
     }
 }
+
+use crate::strategy::types::{TerminalReason, TrendState, ZoneEvent, ZoneEventKind, ZoneEventReason, ZoneState as ZS};
+
+/// Expiry + close-beyond-edge invalidation for the just-closed candle.
+pub fn update_lifecycle(zones: &mut [Zone], candle: &Candle, idx: u64, expiry_candles: u32) -> Vec<ZoneEvent> {
+    let mut events = Vec::new();
+    for z in zones.iter_mut() {
+        if z.state != ZS::Active { continue; }
+        if idx.saturating_sub(z.activated_at_index) >= expiry_candles as u64 {
+            z.state = ZS::Expired; z.terminal_reason = Some(TerminalReason::Expired);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Expired, reason: Some(ZoneEventReason::Terminal(TerminalReason::Expired)) });
+            continue;
+        }
+        let invalid = match z.kind { ZoneKind::Demand => candle.close < z.low, ZoneKind::Supply => candle.close > z.high };
+        if invalid {
+            z.state = ZS::Invalidated; z.terminal_reason = Some(TerminalReason::CloseBeyondEdge);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: Some(ZoneEventReason::Terminal(TerminalReason::CloseBeyondEdge)) });
+        }
+    }
+    events
+}
+
+/// On a trend flip, invalidate every active zone in the now-wrong direction.
+pub fn invalidate_on_flip(zones: &mut [Zone], trend: TrendState) -> Vec<ZoneEvent> {
+    let mut events = Vec::new();
+    for z in zones.iter_mut() {
+        if z.state != ZS::Active { continue; }
+        let wrong = match trend {
+            TrendState::Bullish => z.kind == ZoneKind::Supply,
+            TrendState::Bearish => z.kind == ZoneKind::Demand,
+            TrendState::Unknown => false,
+        };
+        if wrong {
+            z.state = ZS::Invalidated; z.terminal_reason = Some(TerminalReason::TrendFlip);
+            events.push(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Invalidated, reason: Some(ZoneEventReason::Terminal(TerminalReason::TrendFlip)) });
+        }
+    }
+    events
+}
+
+#[cfg(test)]
+mod lifecycle_tests {
+    use super::*;
+    use crate::strategy::types::Candle;
+    use std::str::FromStr;
+    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn zone(kind: ZoneKind) -> Zone {
+        Zone { id: "z".into(), kind, low: dec("1.0"), high: dec("1.1"), atr: dec("0.05"),
+            breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0,
+            state: ZS::Active, terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec("1.1"), window_low: dec("1.0") }
+    }
+    fn c(open: &str, high: &str, low: &str, close: &str) -> Candle {
+        Candle { open_time_ms: 0, open: dec(open), high: dec(high), low: dec(low), close: dec(close) }
+    }
+
+    #[test]
+    fn expiry_uses_expired_terminal_reason() {
+        let mut zs = vec![zone(ZoneKind::Demand)];
+        let ev = update_lifecycle(&mut zs, &c("1","1","1","1"), 30, 30);
+        assert_eq!(zs[0].state, ZS::Expired);
+        assert_eq!(zs[0].terminal_reason, Some(TerminalReason::Expired));
+        assert_eq!(ev.len(), 1);
+    }
+
+    #[test]
+    fn close_below_low_uses_close_beyond_edge() {
+        let mut zs = vec![zone(ZoneKind::Demand)];
+        update_lifecycle(&mut zs, &c("1.0","1.0","0.9","0.95"), 1, 30);
+        assert_eq!(zs[0].state, ZS::Invalidated);
+        assert_eq!(zs[0].terminal_reason, Some(TerminalReason::CloseBeyondEdge));
+    }
+
+    #[test]
+    fn trend_flip_uses_trend_flip_reason() {
+        let mut zs = vec![zone(ZoneKind::Demand), zone(ZoneKind::Supply)];
+        invalidate_on_flip(&mut zs, TrendState::Bullish);
+        assert_eq!(zs[0].state, ZS::Active);
+        assert_eq!(zs[1].state, ZS::Invalidated);
+        assert_eq!(zs[1].terminal_reason, Some(TerminalReason::TrendFlip));
+    }
+}
