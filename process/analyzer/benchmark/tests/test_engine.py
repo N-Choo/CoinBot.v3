@@ -48,3 +48,13 @@ def test_evaluate_exit_candle_short_inverts_levels():
 
 def test_evaluate_exit_candle_flat_is_none():
     assert evaluate_exit_candle("buy", high=105.0, low=95.0, tp=110.0, sl=90.0) is None
+
+
+def test_evaluate_exit_candle_boundary_equality_hits():
+    # Reaching the level exactly counts as a hit.
+    assert evaluate_exit_candle("buy", high=110.0, low=95.0, tp=110.0, sl=90.0) == TAKE_PROFIT
+    assert evaluate_exit_candle("buy", high=105.0, low=90.0, tp=110.0, sl=90.0) == STOP_LOSS
+
+
+def test_evaluate_exit_candle_unknown_side_never_exits():
+    assert evaluate_exit_candle("hold", high=999.0, low=0.0, tp=1.0, sl=2.0) is None
