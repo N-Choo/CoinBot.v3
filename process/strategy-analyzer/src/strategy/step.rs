@@ -9,8 +9,6 @@ use crate::strategy::zones::{
 };
 use rust_decimal::Decimal;
 
-pub(crate) const TIMEFRAME_MS: i64 = 4 * 60 * 60 * 1000;
-
 /// Pure step. `state` is borrowed; on error the caller's state is untouched
 /// (validate-then-commit: a new state is produced only on success).
 pub fn step(
@@ -91,9 +89,9 @@ fn on_candle(
                 prev_ms: prev,
             });
         }
-        if c.open_time_ms != prev + TIMEFRAME_MS {
+        if c.open_time_ms != prev + cfg.candle_interval_ms {
             return Err(StrategyError::GappedCandle {
-                expected_ms: prev + TIMEFRAME_MS,
+                expected_ms: prev + cfg.candle_interval_ms,
                 got_ms: c.open_time_ms,
             });
         }
@@ -269,8 +267,35 @@ mod tests {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let s = StrategyState::new("XRP-USDT", 1);
         let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
-        let (s, _) = step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS)), &cfg).unwrap();
+        let (s, _) = step(
+            &s,
+            Input::ClosedCandle(candle(cfg.candle_interval_ms)),
+            &cfg,
+        )
+        .unwrap();
         assert_eq!(s.window.len(), 2);
+    }
+
+    /// The gap check uses the **configured** interval, not a hard-coded 4h: two candles spaced by the
+    /// configured 5-minute interval are contiguous, but a 5-minute stream is a gap under the 4h
+    /// default.
+    #[test]
+    fn gap_check_uses_the_configured_interval() {
+        let mut cfg = Config::default_for(&["XRP-USDT"]);
+        cfg.candle_interval_ms = 300_000;
+        let s = StrategyState::new("XRP-USDT", 1);
+        let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
+        let (s, _) = step(&s, Input::ClosedCandle(candle(300_000)), &cfg).unwrap();
+        assert_eq!(s.window.len(), 2, "5min-spaced candles are contiguous");
+
+        // The same 5min spacing is a gap under the 4h default.
+        let default_cfg = Config::default_for(&["XRP-USDT"]);
+        let s = StrategyState::new("XRP-USDT", 1);
+        let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &default_cfg).unwrap();
+        assert!(matches!(
+            step(&s, Input::ClosedCandle(candle(300_000)), &default_cfg),
+            Err(StrategyError::GappedCandle { .. })
+        ));
     }
 
     #[test]
@@ -294,7 +319,11 @@ mod tests {
         let s = StrategyState::new("XRP-USDT", 1);
         let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
         assert!(matches!(
-            step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS * 2)), &cfg),
+            step(
+                &s,
+                Input::ClosedCandle(candle(cfg.candle_interval_ms * 2)),
+                &cfg
+            ),
             Err(StrategyError::GappedCandle { .. })
         ));
     }
@@ -364,7 +393,7 @@ mod tests {
             let (ns, outs) = step(
                 &s,
                 Input::ClosedCandle(Candle {
-                    open_time_ms: i * TIMEFRAME_MS,
+                    open_time_ms: i * cfg.candle_interval_ms,
                     ..flat
                 }),
                 &cfg,
@@ -405,7 +434,12 @@ mod tests {
             broken: false,
         }];
         s.valid_low_idx = Some(5); // points at the aged-out pivot
-        let (ns, _) = step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS)), &cfg).unwrap();
+        let (ns, _) = step(
+            &s,
+            Input::ClosedCandle(candle(cfg.candle_interval_ms)),
+            &cfg,
+        )
+        .unwrap();
         assert!(ns.swing_highs.is_empty(), "old unbroken high aged out");
         assert_eq!(ns.swing_lows.len(), 1, "in-window pivot kept");
         assert_eq!(ns.swing_lows[0].index, 99);

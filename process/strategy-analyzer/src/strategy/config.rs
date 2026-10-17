@@ -32,6 +32,13 @@ pub struct Config {
     pub engine_net_floor: Decimal,
     pub working_scale: u32,
     pub ratio_serialization_scale: u32,
+    /// Candle interval in milliseconds (e.g. `14_400_000` for 4h). This is a **strategy
+    /// parameter**, not instance data: it is set in `default_for` (4h), validated as a positive
+    /// multiple of 60_000, and — unlike `price_scale`/`price_increment` — is **included** in
+    /// `config_version`, so a different interval is a different strategy. The core uses it as the
+    /// expected spacing between consecutive closed candles (the `step` gap check); a stream on any
+    /// other interval is rejected as `GappedCandle`.
+    pub candle_interval_ms: i64,
     /// Per-symbol price scale (dp).
     pub price_scale: BTreeMap<String, u32>,
     /// Per-symbol price **increment** (an actual price step, e.g. KuCoin `0.0005`). A dp
@@ -66,6 +73,8 @@ impl Config {
             engine_net_floor: d("2.5"),
             working_scale: 12,
             ratio_serialization_scale: 4,
+            // 4h: the Phase 0 default. Configurable via `candle_interval_ms` (CLI `--candle-interval`).
+            candle_interval_ms: 14_400_000,
             price_scale: symbols.iter().map(|s| (s.to_string(), 4)).collect(),
             // Empty by default: without an explicit increment the core uses `round_price(price_scale)`
             // (the Phase 0 path), so existing fixtures/goldens are unchanged. Set per symbol to snap.
@@ -98,6 +107,13 @@ impl Config {
         }
         if self.price_scale.is_empty() {
             return Err(bad("price_scale required per symbol"));
+        }
+        // A candle interval must be a whole number of minutes: an interval the parser cannot express
+        // as a multiple of 60_000 is a misconfiguration, never a silent default.
+        if self.candle_interval_ms <= 0 || self.candle_interval_ms % 60_000 != 0 {
+            return Err(bad(
+                "candle_interval_ms must be a positive multiple of 60000",
+            ));
         }
         Ok(())
     }
@@ -143,6 +159,35 @@ pub fn config_version(canonical_params_json: &str) -> String {
     let mut h = Sha256::new();
     h.update(canonical_params_json.as_bytes());
     format!("{:x}", h.finalize())
+}
+
+/// Map a KuCoin candle interval string (e.g. `"4hour"`, `"5min"`) to its duration in milliseconds.
+///
+/// This is the single source of truth for the interval strings the core config and the live adapter
+/// accept. An unknown interval is an **error**, never a silent default: a wrong interval would either
+/// be rejected by the core's gap check or, worse, mis-time the live loop. Values are the
+/// pre-registered KuCoin intervals (minutes: 1/3/5/15/30; hours: 1/2/4/6/8/12; plus 1day/1week).
+pub fn interval_to_ms(interval: &str) -> Result<i64, StrategyError> {
+    Ok(match interval {
+        "1min" => 60_000,
+        "3min" => 180_000,
+        "5min" => 300_000,
+        "15min" => 900_000,
+        "30min" => 1_800_000,
+        "1hour" => 3_600_000,
+        "2hour" => 7_200_000,
+        "4hour" => 14_400_000,
+        "6hour" => 21_600_000,
+        "8hour" => 28_800_000,
+        "12hour" => 43_200_000,
+        "1day" => 86_400_000,
+        "1week" => 604_800_000,
+        other => {
+            return Err(StrategyError::ConfigInvalid(format!(
+                "unknown candle interval: {other:?}"
+            )))
+        }
+    })
 }
 
 #[cfg(test)]
@@ -240,5 +285,70 @@ mod tests {
             .insert("XRP-USDT".to_string(), dec("0.0005"));
         assert_eq!(c.price_increment_for("XRP-USDT"), Some(dec("0.0005")));
         assert_eq!(c.price_increment_for("BTC-USDT"), None);
+    }
+
+    #[test]
+    fn default_candle_interval_is_4h() {
+        let c = Config::default_for(&["XRP-USDT"]);
+        assert_eq!(c.candle_interval_ms, 14_400_000);
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn candle_interval_must_be_a_positive_multiple_of_a_minute() {
+        let mut c = Config::default_for(&["XRP-USDT"]);
+        c.candle_interval_ms = 90_000 + 1; // not a whole number of minutes
+        assert!(matches!(c.validate(), Err(StrategyError::ConfigInvalid(_))));
+        c.candle_interval_ms = 0;
+        assert!(matches!(c.validate(), Err(StrategyError::ConfigInvalid(_))));
+        c.candle_interval_ms = -60_000;
+        assert!(matches!(c.validate(), Err(StrategyError::ConfigInvalid(_))));
+        c.candle_interval_ms = 300_000; // a clean 5-minute interval is valid
+        assert!(c.validate().is_ok());
+    }
+
+    #[test]
+    fn candle_interval_counts_toward_config_version() {
+        // Unlike `price_scale`/`price_increment`, the interval is a strategy parameter: changing it
+        // must move `config_version` (a different timeframe is a different strategy).
+        let a = Config::default_for(&["XRP-USDT"]);
+        let mut b = a.clone();
+        b.candle_interval_ms = 300_000;
+        assert_ne!(
+            a.canonical_params_json(),
+            b.canonical_params_json(),
+            "the candle interval must be part of the hashed params"
+        );
+    }
+
+    #[test]
+    fn interval_parser_maps_every_known_string_and_rejects_unknown() {
+        for (interval, ms) in [
+            ("1min", 60_000i64),
+            ("3min", 180_000),
+            ("5min", 300_000),
+            ("15min", 900_000),
+            ("30min", 1_800_000),
+            ("1hour", 3_600_000),
+            ("2hour", 7_200_000),
+            ("4hour", 14_400_000),
+            ("6hour", 21_600_000),
+            ("8hour", 28_800_000),
+            ("12hour", 43_200_000),
+            ("1day", 86_400_000),
+            ("1week", 604_800_000),
+        ] {
+            assert_eq!(interval_to_ms(interval).unwrap(), ms, "interval {interval}");
+        }
+        // Unknown intervals are an error, never a silent default.
+        assert!(matches!(
+            interval_to_ms("7min"),
+            Err(StrategyError::ConfigInvalid(_))
+        ));
+        assert!(matches!(
+            interval_to_ms("4H"),
+            Err(StrategyError::ConfigInvalid(_))
+        ));
+        assert!(interval_to_ms("").is_err());
     }
 }
