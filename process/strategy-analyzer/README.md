@@ -74,16 +74,30 @@ verbatim, cwd-relative, like any other CLI file argument.
 
 ```bash
 # Fetch OHLCV and cache it to a CSV, then print its dataset hash. Network only here.
+# Refuses any range overlapping the OOS window until the freeze lock exists (--lock).
 backtest fetch-data --symbol XRP-USDT --interval 4hour \
-    --start-s <unix_seconds> --end-s <unix_seconds> --out data/xrp_4h.csv
+    --start-s <unix_seconds> --end-s <unix_seconds> --out data/xrp_4h.csv [--lock lock.json]
 
-# Run the backtest offline against a cached dataset.
-backtest backtest --data <path> [--policy both|low_first|high_first] \
-    [--mode both|fixed_r|structural] [--lock <path>] [--oos] [--oos-consumed]
+# Seal the pre-registered freeze lock (git commit + dataset hashes + boundary + constants).
+backtest freeze-lock --data XRP-USDT=data/xrp_4h.csv --price-scale XRP-USDT=4 \
+    --mode both --out lock.json
+
+# Count-only in-sample sizing run (§10.4 Step 0): per-symbol signal counts and reason counts.
+# Refuses any row at/after the in-sample/OOS boundary. No PnL, no trades, no verdict.
+backtest count-signals --data XRP-USDT=data/xrp_4h.csv --price-scale XRP-USDT=4
+
+# Run the backtest offline against one or more cached datasets.
+backtest backtest --data XRP-USDT=data/xrp_4h.csv --data BTC-USDT=data/btc_4h.csv \
+    --price-scale XRP-USDT=4 --price-scale BTC-USDT=2 \
+    [--policy both|low_first|high_first] [--mode both|fixed_r|structural] \
+    [--lock lock.json] [--oos] [--oos-consumed]
 ```
 
-`--policy both` and `--mode both` (the defaults) run both path policies and both target modes
-side by side. `fetch-data` is throttled and retries with exponential backoff on rate limits.
+`--data SYMBOL=PATH` and `--price-scale SYMBOL=DP` are **repeatable**, and every symbol needs an
+explicit price scale (there is **no** silent default: a missing scale is an error, and neither the
+symbol set nor the scale is hard-coded). `--policy both` and `--mode both` (the defaults) run both
+path policies and both target modes side by side. `fetch-data` is throttled and retries with
+exponential backoff on rate limits.
 
 ## Numeric & determinism policy (short form)
 
@@ -110,11 +124,25 @@ side by side. `fetch-data` is throttled and retries with exponential backoff on 
 
 ## OOS freeze lock & the one-shot guard
 
-The offline backtest bar is pre-registered. OOS refuses to start without a matching
-`lock = hash(config_version + backtest_params)` file. Every OOS invocation is logged; a second
-run on the same data is **refused** unless `--oos-consumed` is passed, and an overridden run is
-stamped **NON-CONFIRMATORY** and records the earlier run's hash. After a failure, further tuning
-requires fresh data.
+The offline backtest bar is pre-registered. The lock is a canonical JSON document — not a bare
+hash — so it **includes** the git commit, the per-symbol dataset hashes, the in-sample/OOS boundary
+timestamp, and the pre-registered constants (min executed trades, bootstrap block/resamples/seed,
+aggregate tolerance, perturbation thresholds/draws/seed). Its identity is the sha256 of that JSON,
+so changing any of those inputs changes the lock.
+
+- **The boundary binds.** A pre-registered UTC boundary (`lock::OOS_BOUNDARY_MS`) splits in-sample
+  from OOS. `count-signals` refuses any row at/after it, `fetch-data` refuses ranges overlapping it
+  until the lock exists, and `backtest` **refuses to print a verdict** for any dataset whose time
+  range touches the OOS window unless `--oos` and a matching `--lock` are supplied.
+- **Non-OOS runs are labelled `EXPLORATORY`** so a `Pass` cannot be mistaken for a confirmatory
+  result.
+- **OOS is one-shot and append-only.** Every OOS invocation is appended to `<lock>.oos.log`
+  (recording the dataset hashes and verdict), so the first confirmatory run's record is preserved.
+  A second OOS run on the same data is **refused** unless `--oos-consumed` is passed; an overridden
+  run is stamped **NON-CONFIRMATORY** and reports the earlier run's verdict. After a failure,
+  further tuning requires fresh data.
+- **The regime fails closed.** `verdict()` takes a three-state regime (`Both`/`OneRegimeOnly`/
+  `Unknown`); anything but `Both` yields `VerdictOutcome::Inconclusive`, never a pass.
 
 ## CI: a two-architecture matrix
 
