@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use crate::strategy::config::interval_to_ms;
+
 /// Default `allTickers` poll cadence (live spec §5, proposed 5 s).
 pub const DEFAULT_POLL_INTERVAL_MS: u64 = 5_000;
 /// Default price staleness (live spec §5, proposed 30 s).
@@ -37,10 +39,6 @@ pub const DEFAULT_RETRY_BASE_MS: u64 = 250;
 pub const DEFAULT_RETRY_MAX_MS: u64 = 5_000;
 /// Default per-acquire jitter, as a percentage of the pacer interval (spreads the 4H burst).
 pub const DEFAULT_JITTER_PCT: u32 = 20;
-
-/// The 4H timeframe in milliseconds. Mirrors `strategy::step::TIMEFRAME_MS`, which is `pub(crate)`
-/// to the core; the adapter keeps its own copy rather than widen the core's surface.
-pub const TIMEFRAME_MS: i64 = 14_400_000;
 
 fn default_poll_interval_ms() -> u64 {
     DEFAULT_POLL_INTERVAL_MS
@@ -252,6 +250,12 @@ impl LiveConfig {
         if self.symbols.is_empty() {
             return Err(LiveConfigError::NoSymbols);
         }
+        if interval_to_ms(&self.candle_interval).is_err() {
+            return Err(LiveConfigError::Invalid {
+                key: "candle_interval".to_string(),
+                value: self.candle_interval.clone(),
+            });
+        }
         if self.poll_interval_ms == 0 {
             return Err(LiveConfigError::Invalid {
                 key: "poll_interval_ms".to_string(),
@@ -312,9 +316,12 @@ impl LiveConfig {
         PathBuf::from(&self.stream_dir)
     }
 
-    /// The candle-close helper's interval in ms (the 4H timeframe).
+    /// The candle interval in milliseconds, derived from `candle_interval` through the shared
+    /// KuCoin interval parser (the single source of truth in `strategy::config`). `validate()`
+    /// rejects an unknown interval, so this cannot fail on a validated config.
     pub fn timeframe_ms(&self) -> i64 {
-        TIMEFRAME_MS
+        interval_to_ms(&self.candle_interval)
+            .expect("candle_interval validated by LiveConfig::validate")
     }
 }
 
@@ -361,6 +368,29 @@ mod tests {
         assert_eq!(c.activation_ttl_ms, 300_000);
         assert_eq!(c.quarantine_cooldown_ms, 86_400_000);
         assert_eq!(c.candle_interval, "4hour");
+    }
+
+    #[test]
+    fn timeframe_ms_derives_from_the_candle_interval() {
+        // The default `4hour` resolves to 4h in ms, and a non-4H interval resolves to its own value
+        // through the shared parser (no mirrored constant).
+        let mut c = LiveConfig::default();
+        assert_eq!(c.timeframe_ms(), 14_400_000);
+        c.candle_interval = "5min".to_string();
+        assert_eq!(c.timeframe_ms(), 300_000);
+        c.candle_interval = "1day".to_string();
+        assert_eq!(c.timeframe_ms(), 86_400_000);
+    }
+
+    #[test]
+    fn unknown_candle_interval_is_rejected() {
+        let mut cfg = LiveConfig::default();
+        cfg.symbols = vec!["XRP-USDT".into()];
+        cfg.candle_interval = "7min".to_string();
+        assert!(matches!(
+            cfg.validate(),
+            Err(LiveConfigError::Invalid { .. })
+        ));
     }
 
     #[test]

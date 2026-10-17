@@ -13,7 +13,6 @@ use clap::{Parser, Subcommand};
 use std::sync::Arc;
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
-use strategy_analyzer::live::config::TIMEFRAME_MS;
 use strategy_analyzer::live::{
     Clock, ExchangeClock, LiveConfig, LiveEvent, LiveInput, MarketData, StateStore, Supervisor,
     SymbolLoop, UreqMarketData,
@@ -99,7 +98,10 @@ fn run_replay(
         cfg.state_dir_path(),
         STATE_SCHEMA_VERSION,
     )?);
-    let strategy_cfg = Config::default_for(&[symbol]);
+    let strategy_cfg = Config {
+        candle_interval_ms: cfg.timeframe_ms(),
+        ..Config::default_for(&[symbol])
+    };
     let mut lp = SymbolLoop::new(
         symbol,
         strategy_cfg,
@@ -126,7 +128,7 @@ fn run_replay(
                 }
             }
         }
-        let closed_now = candle.open_time_ms + TIMEFRAME_MS + cfg.candle_settle_ms + 1;
+        let closed_now = candle.open_time_ms + cfg.timeframe_ms() + cfg.candle_settle_ms + 1;
         for ev in lp.process(LiveInput::Candle(candle), closed_now)? {
             if matches!(ev, LiveEvent::Signal(_)) {
                 signals += 1;

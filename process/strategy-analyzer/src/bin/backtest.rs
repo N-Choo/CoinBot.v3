@@ -22,7 +22,7 @@ use strategy_analyzer::harness::tick_source::{aggregate_4h_bucket, group_4h_buck
 use strategy_analyzer::harness::verdict::{
     verdict, Regime, VerdictInputs, VerdictOutcome, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED,
 };
-use strategy_analyzer::strategy::config::{config_version, Config, TargetMode};
+use strategy_analyzer::strategy::config::{config_version, interval_to_ms, Config, TargetMode};
 use strategy_analyzer::strategy::decimal::round_to;
 use strategy_analyzer::strategy::error::StrategyError;
 use strategy_analyzer::strategy::types::Candle;
@@ -91,6 +91,10 @@ enum Cmd {
         oos: bool,
         #[arg(long, default_value_t = false)]
         oos_consumed: bool,
+        /// Candle interval of the `--data` CSVs (KuCoin string, e.g. `4hour`, `5min`). The data must
+        /// actually be on this interval: the core rejects candles not spaced by it as `GappedCandle`.
+        #[arg(long, default_value = "4hour")]
+        candle_interval: String,
     },
     /// Count-only in-sample run (§10.4 Step 0): per-symbol signal counts and reason counts, no PnL,
     /// no trades, no verdict. Refuses any row at/after the in-sample/OOS boundary.
@@ -101,6 +105,10 @@ enum Cmd {
         price_scale: Vec<String>,
         #[arg(long, default_value = "both")]
         policy: String,
+        /// Candle interval of the `--data` CSVs (KuCoin string, e.g. `4hour`, `5min`). The data must
+        /// actually be on this interval: the core rejects candles not spaced by it as `GappedCandle`.
+        #[arg(long, default_value = "4hour")]
+        candle_interval: String,
     },
     /// Dump every emitted `Signal` as one JSON object per line (in-sample only; no PnL, no trades,
     /// no verdict). Refuses any row at/after the in-sample/OOS boundary, like `count-signals`.
@@ -115,6 +123,10 @@ enum Cmd {
         /// emitted take-profit level, so the mode is an explicit choice.
         #[arg(long, default_value = "fixed_r")]
         mode: String,
+        /// Candle interval of the `--data` CSVs (KuCoin string, e.g. `4hour`, `5min`). The data must
+        /// actually be on this interval: the core rejects candles not spaced by it as `GappedCandle`.
+        #[arg(long, default_value = "4hour")]
+        candle_interval: String,
     },
     /// Validate a 1m-derived 4H aggregate against an independently fetched 4H series (offline).
     /// Refuses the run above `AGG_TOLERANCE`; never silently patches. Network stays in `fetch-data`.
@@ -151,18 +163,30 @@ fn main() -> Res<()> {
             lock,
             oos,
             oos_consumed,
-        } => backtest(&data, &price_scale, &policy, &mode, lock, oos, oos_consumed),
+            candle_interval,
+        } => backtest(
+            &data,
+            &price_scale,
+            &policy,
+            &mode,
+            lock,
+            oos,
+            oos_consumed,
+            &candle_interval,
+        ),
         Cmd::CountSignals {
             data,
             price_scale,
             policy,
-        } => count_signals_cmd(&data, &price_scale, &policy),
+            candle_interval,
+        } => count_signals_cmd(&data, &price_scale, &policy, &candle_interval),
         Cmd::DumpSignals {
             data,
             price_scale,
             policy,
             mode,
-        } => dump_signals_cmd(&data, &price_scale, &policy, &mode),
+            candle_interval,
+        } => dump_signals_cmd(&data, &price_scale, &policy, &mode, &candle_interval),
         Cmd::Calibrate {
             one_minute,
             fetched_4h,
@@ -207,8 +231,13 @@ fn parse_scales(items: &[String]) -> Res<BTreeMap<String, u32>> {
     Ok(out)
 }
 
-/// Build the config for `symbols`, taking each price scale from `scales` (no silent default).
-fn build_config(symbols: &[String], scales: &BTreeMap<String, u32>) -> Res<Config> {
+/// Build the config for `symbols`, taking each price scale from `scales` (no silent default) and the
+/// candle interval from `candle_interval` (a KuCoin interval string; no silent default there either).
+fn build_config(
+    symbols: &[String],
+    scales: &BTreeMap<String, u32>,
+    candle_interval: &str,
+) -> Res<Config> {
     for s in symbols {
         if !scales.contains_key(s) {
             return Err(format!(
@@ -220,6 +249,8 @@ fn build_config(symbols: &[String], scales: &BTreeMap<String, u32>) -> Res<Confi
     let refs: Vec<&str> = symbols.iter().map(String::as_str).collect();
     let mut cfg = Config::default_for(&refs);
     cfg.price_scale = scales.clone();
+    cfg.candle_interval_ms = interval_to_ms(candle_interval)
+        .map_err(|e| format!("--candle-interval {candle_interval:?}: {e}"))?;
     cfg.validate()?;
     Ok(cfg)
 }
@@ -401,7 +432,9 @@ fn freeze_lock(
     let datasets = parse_data(data)?;
     let scales = parse_scales(price_scale)?;
     let symbols: Vec<String> = datasets.iter().map(|(s, _)| s.clone()).collect();
-    let cfg = build_config(&symbols, &scales)?;
+    // The freeze lock seals the pre-registered 4h strategy (its default); `backtest` accepts
+    // `--candle-interval`, so a sealed lock only matches a run on the same interval.
+    let cfg = build_config(&symbols, &scales, "4hour")?;
     let cv = config_version(&cfg.canonical_params_json());
 
     let mut dataset_hashes: BTreeMap<String, String> = BTreeMap::new();
@@ -424,7 +457,12 @@ fn freeze_lock(
 // count-signals (ITEM 6)
 // ---------------------------------------------------------------------------------------------
 
-fn count_signals_cmd(data: &[String], price_scale: &[String], policy: &str) -> Res<()> {
+fn count_signals_cmd(
+    data: &[String],
+    price_scale: &[String],
+    policy: &str,
+    candle_interval: &str,
+) -> Res<()> {
     let datasets = parse_data(data)?;
     let scales = parse_scales(price_scale)?;
     let policies = parse_policies(policy)?;
@@ -433,7 +471,7 @@ fn count_signals_cmd(data: &[String], price_scale: &[String], policy: &str) -> R
     println!("# oos_boundary_ms={}", lock::OOS_BOUNDARY_MS);
 
     for (symbol, path) in &datasets {
-        let cfg = build_config(std::slice::from_ref(symbol), &scales)?;
+        let cfg = build_config(std::slice::from_ref(symbol), &scales, candle_interval)?;
         let candles = load_csv(path)?;
         // Refuse any row at/after the in-sample/OOS boundary: counting is in-sample only.
         if let Some(ms) = lock::first_oos_candle(&candles, lock::OOS_BOUNDARY_MS) {
@@ -468,7 +506,13 @@ fn count_signals_cmd(data: &[String], price_scale: &[String], policy: &str) -> R
 /// Dump every emitted `Signal` as one JSON object per line to stdout (in-sample only; no PnL, no
 /// trades, no verdict). Replays each symbol × policy through the pure core exactly like
 /// `count-signals` and refuses any row at/after the in-sample/OOS boundary.
-fn dump_signals_cmd(data: &[String], price_scale: &[String], policy: &str, mode: &str) -> Res<()> {
+fn dump_signals_cmd(
+    data: &[String],
+    price_scale: &[String],
+    policy: &str,
+    mode: &str,
+    candle_interval: &str,
+) -> Res<()> {
     let datasets = parse_data(data)?;
     let scales = parse_scales(price_scale)?;
     let policies = parse_policies(policy)?;
@@ -481,7 +525,7 @@ fn dump_signals_cmd(data: &[String], price_scale: &[String], policy: &str, mode:
     for (symbol, path) in &datasets {
         let cfg = Config {
             target_mode: mode,
-            ..build_config(std::slice::from_ref(symbol), &scales)?
+            ..build_config(std::slice::from_ref(symbol), &scales, candle_interval)?
         };
         let candles = load_csv(path)?;
         // Refuse any row at/after the in-sample/OOS boundary: dumping is in-sample only.
@@ -505,6 +549,9 @@ fn dump_signals_cmd(data: &[String], price_scale: &[String], policy: &str, mode:
 // backtest
 // ---------------------------------------------------------------------------------------------
 
+// The CLI's run knobs are passed individually for readability at the `main` match arm; the count is
+// at the clippy threshold (8/7) now that `--candle-interval` was added.
+#[allow(clippy::too_many_arguments)]
 fn backtest(
     data: &[String],
     price_scale: &[String],
@@ -513,11 +560,12 @@ fn backtest(
     lock_path: Option<String>,
     oos: bool,
     oos_consumed: bool,
+    candle_interval: &str,
 ) -> Res<()> {
     let datasets = parse_data(data)?;
     let scales = parse_scales(price_scale)?;
     let symbols: Vec<String> = datasets.iter().map(|(s, _)| s.clone()).collect();
-    let cfg0 = build_config(&symbols, &scales)?;
+    let cfg0 = build_config(&symbols, &scales, candle_interval)?;
     let cv = config_version(&cfg0.canonical_params_json());
     let policies = parse_policies(policy)?;
     let modes = parse_modes(mode)?;
@@ -589,7 +637,10 @@ fn backtest(
 
     // §8.5 header: symbol(s), resolution, dataset hashes, config_version, path policy, target mode.
     println!("# strategy-analyzer backtest");
-    println!("# symbols={} resolution=4h-synthesized", symbols.join(","));
+    println!(
+        "# symbols={} resolution=4h-synthesized candle_interval={candle_interval}",
+        symbols.join(",")
+    );
     for l in &loaded {
         println!(
             "# dataset symbol={} path={} hash={}",

@@ -12,7 +12,6 @@
 //!
 //! It is synchronous and network-free by design, so tests drive it with a fake tick/candle stream.
 
-use crate::live::config::TIMEFRAME_MS;
 use crate::live::poller::CandleCursor;
 use crate::live::state_store::{LoadOutcome, StateStore};
 use crate::live::supervisor::LiveError;
@@ -31,9 +30,9 @@ use std::sync::Arc;
 /// Consecutive candle errors before a symbol is quarantined (§8).
 pub const CANDLE_ERROR_THRESHOLD: u32 = 3;
 /// A state file more than this many candles behind is too old to trust (§4 "a few candles behind").
+/// The age threshold in ms is `STATE_MAX_AGE_CANDLES * candle_interval_ms`, computed per loop from
+/// the configured interval so it scales with the timeframe.
 pub const STATE_MAX_AGE_CANDLES: i64 = 6;
-/// The age threshold in ms (6 × 4H = 24 h).
-pub const STATE_MAX_AGE_MS: i64 = STATE_MAX_AGE_CANDLES * TIMEFRAME_MS;
 
 /// A live input for a symbol. Only these two are recorded (`Resume` is re-injected on replay).
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -149,7 +148,10 @@ impl SymbolLoop {
         now_ms: i64,
     ) -> Result<Self, LiveError> {
         let symbol = symbol.into();
-        let outcome = store.load(&symbol, now_ms, Some(STATE_MAX_AGE_MS));
+        // The staleness threshold scales with the configured interval (6 candles), so a 5-minute run
+        // and a 4-hour run both discard state more than six candles behind.
+        let max_age_ms = STATE_MAX_AGE_CANDLES * cfg.candle_interval_ms;
+        let outcome = store.load(&symbol, now_ms, Some(max_age_ms));
         let (state, was_cold, cold_reason) = match outcome {
             LoadOutcome::Warm(s) => (s, false, None),
             LoadOutcome::Cold(r) => (

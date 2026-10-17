@@ -6,7 +6,7 @@
 //! has **no gRPC server** and publishes nothing.
 
 use crate::live::clock::Clock;
-use crate::live::config::{LiveConfig, LiveConfigError, TIMEFRAME_MS};
+use crate::live::config::{LiveConfig, LiveConfigError};
 use crate::live::poller::{
     with_retry, CandleCursor, CandlePoller, MarketData, MarketError, RateLimiter, RetryPolicy,
     SharedTickerPoller, TickerSnapshot, CANDLE_LOOKBACK,
@@ -67,7 +67,12 @@ impl Supervisor {
             STATE_SCHEMA_VERSION,
         )?);
         let refs: Vec<&str> = cfg.symbols.iter().map(String::as_str).collect();
-        let strategy_cfg = Config::default_for(&refs);
+        // The loops run the core with the configured candle interval (default 4h), so a live run on a
+        // non-4H stream is accepted instead of being rejected as gapped.
+        let strategy_cfg = Config {
+            candle_interval_ms: cfg.timeframe_ms(),
+            ..Config::default_for(&refs)
+        };
         let limiter = Arc::new(RateLimiter::with_jitter(
             cfg.rate_limit_interval(),
             cfg.jitter_pct,
@@ -203,9 +208,10 @@ async fn run_symbol(deps: SymbolDeps) {
     } = deps;
 
     let stream_dir = live_cfg.stream_dir_path();
+    let interval_ms = live_cfg.timeframe_ms();
     let poller = CandlePoller::new(
         live_cfg.candle_interval.clone(),
-        live_cfg.timeframe_ms(),
+        interval_ms,
         live_cfg.candle_settle_ms,
         CANDLE_LOOKBACK,
     );
@@ -232,10 +238,14 @@ async fn run_symbol(deps: SymbolDeps) {
         }
     }
 
-    // Check for a newly-closed 4H candle every poll tick, but only hit the network once the next
-    // boundary's candle has settled — at most one candle fetch per 4H per symbol (spec §8 budget).
+    // Check for a newly-closed candle every poll tick, but only hit the network once the next
+    // boundary's candle has settled — at most one candle fetch per interval per symbol (spec §8).
     let mut check = tokio::time::interval(live_cfg.poll_interval());
-    let mut next_open = next_open_after(clock.exchange_now_ms(), lp.state().last_candle_time_ms);
+    let mut next_open = next_open_after(
+        clock.exchange_now_ms(),
+        lp.state().last_candle_time_ms,
+        interval_ms,
+    );
 
     loop {
         tokio::select! {
@@ -262,12 +272,12 @@ async fn run_symbol(deps: SymbolDeps) {
             },
             _ = check.tick() => {
                 let now = clock.exchange_now_ms();
-                if now >= next_open + TIMEFRAME_MS + live_cfg.candle_settle_ms {
+                if now >= next_open + interval_ms + live_cfg.candle_settle_ms {
                     if poll_candles(&symbol, &market, &limiter, retry, &poller, &mut lp, now).await {
                         log::warn!("symbol={symbol} stopping (quarantined)");
                         break;
                     }
-                    next_open = next_open_after(now, lp.state().last_candle_time_ms);
+                    next_open = next_open_after(now, lp.state().last_candle_time_ms, interval_ms);
                 }
             }
         }
@@ -388,12 +398,12 @@ async fn sync_clock(
     }
 }
 
-/// The next 4H open time to wait for: the candle after the last processed one, or the next grid
-/// boundary when starting fresh.
-fn next_open_after(now_ms: i64, last_candle_ms: Option<i64>) -> i64 {
+/// The next candle open time to wait for: the candle after the last processed one, or the next
+/// `interval_ms`-aligned grid boundary when starting fresh.
+fn next_open_after(now_ms: i64, last_candle_ms: Option<i64>, interval_ms: i64) -> i64 {
     match last_candle_ms {
-        Some(l) => l + TIMEFRAME_MS,
-        None => now_ms.div_euclid(TIMEFRAME_MS) * TIMEFRAME_MS + TIMEFRAME_MS,
+        Some(l) => l + interval_ms,
+        None => now_ms.div_euclid(interval_ms) * interval_ms + interval_ms,
     }
 }
 
@@ -427,11 +437,12 @@ mod tests {
 
     #[test]
     fn next_open_uses_the_last_candle_or_the_grid() {
+        let h4 = crate::strategy::config::interval_to_ms("4hour").unwrap();
         // Known last candle: the next open is exactly one timeframe later.
-        assert_eq!(next_open_after(0, Some(0)), TIMEFRAME_MS);
+        assert_eq!(next_open_after(0, Some(0), h4), h4);
         // Unknown: the next grid boundary strictly after now.
-        assert_eq!(next_open_after(1, None), TIMEFRAME_MS);
-        assert_eq!(next_open_after(TIMEFRAME_MS, None), 2 * TIMEFRAME_MS);
+        assert_eq!(next_open_after(1, None, h4), h4);
+        assert_eq!(next_open_after(h4, None, h4), 2 * h4);
     }
 
     #[test]
