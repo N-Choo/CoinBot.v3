@@ -1,4 +1,5 @@
 import numpy as np
+import pytest
 import pandas as pd
 
 from analyzer.benchmark.main import run_benchmark
@@ -42,6 +43,11 @@ def test_run_benchmark_returns_trades_and_summary():
     ):
         assert key in summary
     assert summary["ticker"] == "TEST-USDT"
+    assert summary["equity"] == pytest.approx(
+        summary["init_fund"]
+        + summary["realized_pnl"]
+        + summary["unrealized_pnl"]
+    )
     for t in trades:
         assert t["side"] in ("buy", "sell")
         assert t["reason"] in ("TP", "SL")

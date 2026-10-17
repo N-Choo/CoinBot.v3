@@ -76,13 +76,12 @@ def run_benchmark(
     """Replay ``df`` candle-by-candle through a trade-engine simulation.
 
     Earlier candles warm up the indicators; the last ``benchmark_days`` candles
-    are replayed. ``generate_signals`` is evaluated on the slice up to each
-    candle (causal), and its signal is fed to a `SimEngine`.
+    are replayed (all post-warm-up candles are replayed when fewer than
+    ``benchmark_days`` are available). ``generate_signals`` is evaluated on the
+    slice up to each candle (causal), and its signal is fed to a `SimEngine`.
     """
     warmup = _warmup(rsi_period, atr_period, sma_period, sma_enabled)
     start = max(warmup, len(df) - benchmark_days)
-    if start >= len(df) - 1:
-        start = max(warmup, 0)
 
     engine = SimEngine(init_fund=init_fund, fee_rate=fee_rate)
 
