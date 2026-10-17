@@ -1,8 +1,0 @@
-{
-  "symbol": "XRP-USDT",
-  "interval": "4hour",
-  "start_s": 1672531200,
-  "end_s": 1767139200,
-  "row_count": 6570,
-  "dataset_hash": "bd86e2fd73004bf7bf94803a71c69bef911f14fee697b41ad72858f9c955b3c3"
-}
