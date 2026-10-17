@@ -915,25 +915,15 @@ fn calibrate(one_minute: &str, fetched_4h: &str) -> Res<()> {
 }
 
 // ---------------------------------------------------------------------------------------------
-// fetch-data (unchanged except the OOS-window guard)
+// fetch-data (interval parsing shared with the other subcommands; OOS-window guard)
 // ---------------------------------------------------------------------------------------------
 
+/// Seconds per candle for `fetch-data --interval`, derived from the shared `interval_to_ms` mapping
+/// (the CLI's single source of truth). An unknown interval is rejected with the same error the other
+/// subcommands use (the shared parser's `unknown candle interval`), never silently defaulted, so
+/// every KuCoin interval — including `3min`, missing from the previous bespoke table — works.
 fn interval_seconds(interval: &str) -> Res<i64> {
-    Ok(match interval {
-        "1min" => 60,
-        "5min" => 300,
-        "15min" => 900,
-        "30min" => 1_800,
-        "1hour" => 3_600,
-        "2hour" => 7_200,
-        "4hour" => 14_400,
-        "6hour" => 21_600,
-        "8hour" => 28_800,
-        "12hour" => 43_200,
-        "1day" => 86_400,
-        "1week" => 604_800,
-        other => return Err(format!("unknown interval: {other}").into()),
-    })
+    Ok(interval_to_ms(interval).map_err(|e| format!("--interval {interval:?}: {e}"))? / 1000)
 }
 
 fn fetch_data(
@@ -1120,6 +1110,26 @@ mod tests {
         // Degenerate: a single minute holds both extremes (nothing observed).
         assert_eq!(observed_low_first(&[mk("10", "2")]), None);
         assert_eq!(observed_low_first(&[]), None);
+    }
+
+    /// `fetch-data --interval` must use the shared parser, not a separate interval table that can
+    /// drift (the old bespoke map was missing `3min`). Every registered KuCoin interval must parse
+    /// and agree with `interval_to_ms`; an unknown interval is rejected, never silently defaulted.
+    #[test]
+    fn fetch_data_interval_parser_accepts_every_kucoin_interval_and_agrees_with_the_shared_parser()
+    {
+        for interval in [
+            "1min", "3min", "5min", "15min", "30min", "1hour", "2hour", "4hour", "6hour", "8hour",
+            "12hour", "1day", "1week",
+        ] {
+            assert_eq!(
+                interval_seconds(interval).unwrap(),
+                interval_to_ms(interval).unwrap() / 1000,
+                "interval {interval} must agree with the shared parser"
+            );
+        }
+        assert!(interval_seconds("3min").is_ok());
+        assert!(interval_seconds("7min").is_err());
     }
 
     #[test]
