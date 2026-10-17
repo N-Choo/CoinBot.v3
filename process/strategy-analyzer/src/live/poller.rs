@@ -24,42 +24,214 @@ use tokio::time::Instant as TokioInstant;
 /// `strategy::types::WINDOW_CANDLES` (64).
 pub const CANDLE_LOOKBACK: u32 = 80;
 
-/// Minimum spacing between outbound requests: the KuCoin Public pool is 2000/30s (VIP0, ~66.7
-/// req/s), so a global 15 ms spacing keeps the adapter well inside budget (live spec §8).
-pub const RATE_LIMIT_MIN_INTERVAL: Duration = Duration::from_millis(15);
+/// A structured error from the network boundary. Distinguishes a **retryable** HTTP status from
+/// everything else so the retry wrapper can back off without hammering KuCoin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MarketError {
+    /// A retryable HTTP status (`429` or any `5xx`), optionally carrying the server's
+    /// `Retry-After` delay in whole seconds.
+    Status {
+        code: u16,
+        retry_after_s: Option<u64>,
+    },
+    /// A non-retryable failure: transport, JSON, a KuCoin error `code`, or a non-retryable status.
+    Fatal(String),
+}
+
+impl std::fmt::Display for MarketError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            MarketError::Status { code, .. } => write!(f, "HTTP {code}"),
+            MarketError::Fatal(msg) => f.write_str(msg),
+        }
+    }
+}
+
+impl std::error::Error for MarketError {}
+
+impl From<String> for MarketError {
+    fn from(msg: String) -> Self {
+        MarketError::Fatal(msg)
+    }
+}
+
+/// Classify an HTTP status: `429` and `5xx` are retryable, everything else is fatal. `Retry-After`
+/// is carried through only for the retryable statuses.
+fn http_error(code: u16, retry_after_s: Option<u64>) -> MarketError {
+    if code == 429 || (500..=599).contains(&code) {
+        MarketError::Status {
+            code,
+            retry_after_s,
+        }
+    } else {
+        MarketError::Fatal(format!("HTTP {code}"))
+    }
+}
+
+/// Parse a `Retry-After` header value: whole seconds only (an HTTP-date falls back to exponential
+/// backoff, per live spec §8).
+fn parse_retry_after(raw: &str) -> Option<u64> {
+    raw.trim().parse().ok()
+}
+
+/// Bounded retry/backoff policy for the network boundary (live spec §8).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RetryPolicy {
+    /// Retries **after** the first attempt (total attempts = `max_retries + 1`).
+    pub max_retries: u32,
+    /// Exponential-backoff base used when no `Retry-After` is present.
+    pub retry_base_ms: u64,
+    /// Cap on any single backoff sleep.
+    pub retry_max_ms: u64,
+}
+
+impl RetryPolicy {
+    pub fn new(max_retries: u32, retry_base_ms: u64, retry_max_ms: u64) -> Self {
+        RetryPolicy {
+            max_retries,
+            retry_base_ms,
+            retry_max_ms,
+        }
+    }
+
+    /// The delay before retry `retry_index` (0-based). Prefers the server's `Retry-After`; otherwise
+    /// `retry_base_ms * 2^retry_index`, capped at `retry_max_ms`.
+    pub fn backoff(&self, retry_index: u32, retry_after_s: Option<u64>) -> Duration {
+        if let Some(secs) = retry_after_s {
+            return Duration::from_secs(secs);
+        }
+        let factor = 1u64.checked_shl(retry_index).unwrap_or(u64::MAX);
+        Duration::from_millis(
+            self.retry_base_ms
+                .saturating_mul(factor)
+                .min(self.retry_max_ms),
+        )
+    }
+}
+
+/// Drive `attempt` under `policy`, sleeping between retryable [`MarketError::Status`] failures.
+///
+/// - Success or a [`MarketError::Fatal`] returns immediately.
+/// - A retryable status sleeps for [`RetryPolicy::backoff`] and retries, up to `max_retries` times.
+/// - After exhaustion the last status error is returned (the caller keeps WARN-and-continue).
+pub async fn with_retry<T, F, Fut>(policy: RetryPolicy, mut attempt: F) -> Result<T, MarketError>
+where
+    T: Send,
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, MarketError>>,
+{
+    let mut retries = 0u32;
+    loop {
+        match attempt().await {
+            Ok(value) => return Ok(value),
+            Err(MarketError::Fatal(msg)) => return Err(MarketError::Fatal(msg)),
+            Err(
+                err @ MarketError::Status {
+                    code,
+                    retry_after_s,
+                },
+            ) => {
+                if retries >= policy.max_retries {
+                    return Err(err);
+                }
+                let delay = policy.backoff(retries, retry_after_s);
+                log::warn!(
+                    "KuCoin HTTP {code}: retry {}/{max} in {delay:?}",
+                    retries + 1,
+                    max = policy.max_retries,
+                );
+                tokio::time::sleep(delay).await;
+                retries += 1;
+            }
+        }
+    }
+}
+
+/// A tiny non-cryptographic PRNG (xorshift64*) for pacer jitter. The live poller is **not** the
+/// deterministic core, so randomness here is fine (live spec §8).
+#[derive(Debug)]
+struct PacerState {
+    next_allowed: TokioInstant,
+    rng: u64,
+}
+
+/// A signed jitter offset in `[-jitter, +jitter]` nanoseconds, driven by the pacer PRNG.
+fn jitter_offset(rng: &mut u64, jitter: Duration) -> i64 {
+    let span = jitter.as_nanos() as u64;
+    if span == 0 {
+        return 0;
+    }
+    // xorshift64* — good enough to spread a burst, no dependency.
+    let mut x = *rng;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *rng = x;
+    let rand = x.wrapping_mul(0x2545_F491_4F6C_DD1D);
+    let mag = rand % (2 * span + 1); // 0..=2*span
+    mag as i64 - span as i64
+}
+
+fn seed_rng() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(0x9E37_79B9_7F4A_7C15)
+        | 1
+}
 
 /// A global request pacer shared by every network call (live spec §8 "shared limiter"). It serializes
-/// requests so the adapter as a whole respects the Public pool budget.
+/// requests so the adapter as a whole respects the Public pool budget, with a bounded per-acquire
+/// jitter to spread the 4H boundary burst.
 pub struct RateLimiter {
     min_interval: Duration,
-    next_allowed: AsyncMutex<TokioInstant>,
+    jitter: Duration,
+    state: AsyncMutex<PacerState>,
 }
 
 impl RateLimiter {
     pub fn new(min_interval: Duration) -> Self {
+        Self::with_jitter(min_interval, 0)
+    }
+
+    /// A pacer whose spacing is `min_interval +/- jitter_pct%` (clamped to `0..=100`).
+    pub fn with_jitter(min_interval: Duration, jitter_pct: u32) -> Self {
+        let jitter = min_interval * jitter_pct.min(100) / 100;
         RateLimiter {
             min_interval,
-            next_allowed: AsyncMutex::new(TokioInstant::now()),
+            jitter,
+            state: AsyncMutex::new(PacerState {
+                next_allowed: TokioInstant::now(),
+                rng: seed_rng(),
+            }),
         }
     }
 
-    /// Wait until the next request slot, then reserve the following one.
+    /// Wait until the next request slot, then reserve the following one (with jitter).
     pub async fn acquire(&self) {
-        let mut next = self.next_allowed.lock().await;
+        let mut st = self.state.lock().await;
         let now = TokioInstant::now();
-        if *next > now {
-            tokio::time::sleep_until(*next).await;
+        if st.next_allowed > now {
+            tokio::time::sleep_until(st.next_allowed).await;
         }
-        *next = TokioInstant::now() + self.min_interval;
+        let now = TokioInstant::now();
+        let base = now + self.min_interval;
+        let offset = jitter_offset(&mut st.rng, self.jitter);
+        st.next_allowed = if offset >= 0 {
+            base + Duration::from_nanos(offset as u64)
+        } else {
+            base - Duration::from_nanos(offset.unsigned_abs())
+        };
     }
 }
 
-/// The network boundary for the live adapters. Blocking by design; callers use `spawn_blocking`.
+/// The network boundary for the live adapters. Blocking by design; callers drive it through
+/// [`with_retry`] inside `tokio::task::spawn_blocking`.
 pub trait MarketData: Send + Sync + 'static {
     /// `GET /api/v1/timestamp` — exchange time in ms.
-    fn exchange_time_ms(&self) -> Result<i64, String>;
+    fn exchange_time_ms(&self) -> Result<i64, MarketError>;
     /// `GET /api/v1/market/allTickers` — symbol → last price.
-    fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, String>;
+    fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, MarketError>;
     /// `GET /api/v1/market/candles` — OHLCV rows (ascending is not required; callers sort).
     fn candles(
         &self,
@@ -67,7 +239,7 @@ pub trait MarketData: Send + Sync + 'static {
         interval: &str,
         start_s: i64,
         end_s: i64,
-    ) -> Result<Vec<Candle>, String>;
+    ) -> Result<Vec<Candle>, MarketError>;
 }
 
 /// The `ureq` (blocking HTTP) implementation of [`MarketData`].
@@ -82,26 +254,29 @@ impl UreqMarketData {
         }
     }
 
-    fn get(&self, path: &str) -> Result<serde_json::Value, String> {
+    fn get(&self, path: &str) -> Result<serde_json::Value, MarketError> {
         let url = format!("{}{}", self.base_url.trim_end_matches('/'), path);
-        ureq::get(&url)
-            .call()
-            .map_err(|e| match e {
-                ureq::Error::Status(code, _) => format!("HTTP {code}"),
-                other => other.to_string(),
-            })?
+        let response = ureq::get(&url).call().map_err(|e| match e {
+            ureq::Error::Status(code, response) => {
+                // `Retry-After` lets KuCoin dictate the pause; parsed as seconds only.
+                let retry_after_s = response.header("Retry-After").and_then(parse_retry_after);
+                http_error(code, retry_after_s)
+            }
+            other => MarketError::Fatal(other.to_string()),
+        })?;
+        response
             .into_json()
-            .map_err(|e| e.to_string())
+            .map_err(|e| MarketError::Fatal(e.to_string()))
     }
 }
 
 impl MarketData for UreqMarketData {
-    fn exchange_time_ms(&self) -> Result<i64, String> {
-        parse_timestamp(&self.get("/api/v1/timestamp")?)
+    fn exchange_time_ms(&self) -> Result<i64, MarketError> {
+        parse_timestamp(&self.get("/api/v1/timestamp")?).map_err(MarketError::Fatal)
     }
 
-    fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, String> {
-        parse_all_tickers(&self.get("/api/v1/market/allTickers")?)
+    fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, MarketError> {
+        parse_all_tickers(&self.get("/api/v1/market/allTickers")?).map_err(MarketError::Fatal)
     }
 
     fn candles(
@@ -110,11 +285,11 @@ impl MarketData for UreqMarketData {
         interval: &str,
         start_s: i64,
         end_s: i64,
-    ) -> Result<Vec<Candle>, String> {
+    ) -> Result<Vec<Candle>, MarketError> {
         let path = format!(
             "/api/v1/market/candles?symbol={symbol}&type={interval}&startAt={start_s}&endAt={end_s}"
         );
-        parse_candles(&self.get(&path)?)
+        parse_candles(&self.get(&path)?).map_err(MarketError::Fatal)
     }
 }
 
@@ -305,7 +480,7 @@ impl CandlePoller {
         symbol: &str,
         cursor: CandleCursor,
         now_ms: i64,
-    ) -> Result<Vec<Candle>, String> {
+    ) -> Result<Vec<Candle>, MarketError> {
         let interval_s = (self.interval_ms / 1000).max(1);
         let end_s = now_ms / 1000;
         let start_s = match cursor.last_open_ms {
@@ -358,6 +533,7 @@ impl SharedTickerPoller {
         market: Arc<dyn MarketData>,
         clock: Arc<dyn Clock>,
         limiter: Arc<RateLimiter>,
+        retry: RetryPolicy,
         poll_interval: Duration,
         mut shutdown: watch::Receiver<bool>,
     ) -> (broadcast::Sender<TickerSnapshot>, JoinHandle<()>) {
@@ -376,13 +552,21 @@ impl SharedTickerPoller {
                     _ = ticker.tick() => {
                         limiter.acquire().await;
                         let m = market.clone();
-                        match tokio::task::spawn_blocking(move || m.all_tickers_last()).await {
-                            Ok(Ok(prices)) => {
+                        let fetched = with_retry(retry, move || {
+                            let m = m.clone();
+                            async move {
+                                tokio::task::spawn_blocking(move || m.all_tickers_last())
+                                    .await
+                                    .map_err(|e| MarketError::Fatal(format!("allTickers join error: {e}")))?
+                            }
+                        })
+                        .await;
+                        match fetched {
+                            Ok(prices) => {
                                 let snap = TickerSnapshot { at_ms: clock.exchange_now_ms(), prices };
                                 let _ = tx.send(snap);
                             }
-                            Ok(Err(e)) => log::warn!("allTickers poll failed: {e}"),
-                            Err(e) => log::warn!("allTickers poll task failed: {e}"),
+                            Err(e) => log::warn!("allTickers poll failed: {e}"),
                         }
                     }
                 }
@@ -420,10 +604,10 @@ mod tests {
     }
 
     impl MarketData for FakeMarket {
-        fn exchange_time_ms(&self) -> Result<i64, String> {
+        fn exchange_time_ms(&self) -> Result<i64, MarketError> {
             Ok(0)
         }
-        fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, String> {
+        fn all_tickers_last(&self) -> Result<BTreeMap<String, Decimal>, MarketError> {
             Ok(BTreeMap::new())
         }
         fn candles(
@@ -432,7 +616,7 @@ mod tests {
             _i: &str,
             start_s: i64,
             end_s: i64,
-        ) -> Result<Vec<Candle>, String> {
+        ) -> Result<Vec<Candle>, MarketError> {
             self.calls.lock().unwrap().push((start_s, end_s));
             // The first call is the window; a backfill window (start_s == cursor) returns `backfill`.
             if self.calls.lock().unwrap().len() > 1 {
@@ -578,5 +762,208 @@ mod tests {
             start.elapsed() >= interval,
             "second acquire must wait at least the minimum interval"
         );
+    }
+
+    #[test]
+    fn backoff_prefers_retry_after_then_doubles_to_the_cap() {
+        let p = RetryPolicy::new(4, 100, 5_000);
+        // A `Retry-After` wins outright.
+        assert_eq!(p.backoff(0, Some(2)), Duration::from_secs(2));
+        // Otherwise exponential: base, x2, x4, ... capped at `retry_max_ms`.
+        assert_eq!(p.backoff(0, None), Duration::from_millis(100));
+        assert_eq!(p.backoff(1, None), Duration::from_millis(200));
+        assert_eq!(p.backoff(2, None), Duration::from_millis(400));
+        assert_eq!(p.backoff(9, None), Duration::from_millis(5_000));
+    }
+
+    #[test]
+    fn retry_after_header_parses_seconds_but_not_dates() {
+        assert_eq!(parse_retry_after("2"), Some(2));
+        assert_eq!(parse_retry_after(" 15 "), Some(15));
+        // An HTTP-date is unsupported: fall back to exponential backoff.
+        assert_eq!(parse_retry_after("Wed, 21 Oct 2015 07:28:00 GMT"), None);
+        assert_eq!(parse_retry_after(""), None);
+    }
+
+    #[test]
+    fn http_status_classification_is_retryable_only_for_429_and_5xx() {
+        assert_eq!(
+            http_error(429, Some(2)),
+            MarketError::Status {
+                code: 429,
+                retry_after_s: Some(2)
+            }
+        );
+        assert!(matches!(
+            http_error(503, None),
+            MarketError::Status { code: 503, .. }
+        ));
+        assert!(matches!(http_error(400, None), MarketError::Fatal(_)));
+        assert!(matches!(http_error(404, None), MarketError::Fatal(_)));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_honors_retry_after_then_succeeds() {
+        let policy = RetryPolicy::new(3, 100, 1_000);
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let start = TokioInstant::now();
+        let result = with_retry(policy, || {
+            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async move {
+                if n == 0 {
+                    Err(MarketError::Status {
+                        code: 429,
+                        retry_after_s: Some(2),
+                    })
+                } else {
+                    Ok(42)
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), 42);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+        assert_eq!(
+            TokioInstant::now() - start,
+            Duration::from_secs(2),
+            "the retry waits the server's Retry-After"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_uses_exponential_backoff_without_retry_after() {
+        let policy = RetryPolicy::new(3, 100, 1_000);
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let start = TokioInstant::now();
+        let result = with_retry(policy, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async {
+                Err::<i32, _>(MarketError::Status {
+                    code: 429,
+                    retry_after_s: None,
+                })
+            }
+        })
+        .await;
+        assert!(matches!(result, Err(MarketError::Status { code: 429, .. })));
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            4,
+            "the initial attempt plus three retries"
+        );
+        // 100 + 200 + 400 = 700 ms of backoff.
+        assert_eq!(TokioInstant::now() - start, Duration::from_millis(700));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_backoff_is_capped_at_retry_max_ms() {
+        let policy = RetryPolicy::new(4, 100, 250);
+        let start = TokioInstant::now();
+        let _ = with_retry(policy, || async {
+            Err::<i32, _>(MarketError::Status {
+                code: 503,
+                retry_after_s: None,
+            })
+        })
+        .await;
+        // 100 + 200 + 250 + 250 (the last two both hit the cap).
+        assert_eq!(TokioInstant::now() - start, Duration::from_millis(800));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_exhausts_max_retries_and_returns_the_error() {
+        let policy = RetryPolicy::new(1, 50, 1_000);
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let result = with_retry(policy, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async {
+                Err::<i32, _>(MarketError::Status {
+                    code: 429,
+                    retry_after_s: None,
+                })
+            }
+        })
+        .await;
+        assert!(matches!(result, Err(MarketError::Status { code: 429, .. })));
+        assert_eq!(
+            calls.load(std::sync::atomic::Ordering::SeqCst),
+            2,
+            "one initial attempt plus one retry"
+        );
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_does_not_retry_a_fatal_error() {
+        let policy = RetryPolicy::new(5, 100, 1_000);
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let start = TokioInstant::now();
+        let result = with_retry(policy, || {
+            calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async { Err::<i32, _>(MarketError::Fatal("boom".into())) }
+        })
+        .await;
+        assert!(matches!(result, Err(MarketError::Fatal(_))));
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+        assert_eq!(TokioInstant::now() - start, Duration::ZERO);
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn retry_returns_the_body_after_a_transient_failure() {
+        let policy = RetryPolicy::new(1, 50, 1_000);
+        let calls = std::sync::atomic::AtomicU32::new(0);
+        let result = with_retry(policy, || {
+            let n = calls.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            async move {
+                if n == 0 {
+                    Err(MarketError::Status {
+                        code: 500,
+                        retry_after_s: None,
+                    })
+                } else {
+                    Ok(vec![1, 2, 3])
+                }
+            }
+        })
+        .await;
+        assert_eq!(result.unwrap(), vec![1, 2, 3]);
+        assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 2);
+    }
+
+    #[test]
+    fn jitter_offset_is_bounded_by_the_configured_percentage() {
+        let jitter = Duration::from_millis(10);
+        let mut rng = 0x1234_5678_9abc_def1u64;
+        let mut saw_negative = false;
+        let mut saw_positive = false;
+        for _ in 0..10_000 {
+            let off = jitter_offset(&mut rng, jitter);
+            assert!(
+                (-10_000_000..=10_000_000).contains(&off),
+                "offset {off} outside +/-10 ms"
+            );
+            saw_negative |= off < 0;
+            saw_positive |= off > 0;
+        }
+        assert!(saw_negative && saw_positive, "jitter must be two-sided");
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn pacer_spacing_stays_within_the_jitter_bounds() {
+        let interval = Duration::from_millis(50);
+        let limiter = RateLimiter::with_jitter(interval, 20);
+        limiter.acquire().await; // the first slot is immediate
+        for _ in 0..20 {
+            let start = TokioInstant::now();
+            limiter.acquire().await;
+            let elapsed = TokioInstant::now() - start;
+            assert!(
+                elapsed >= interval * 80 / 100,
+                "spacing below the -20% jitter floor: {elapsed:?}"
+            );
+            assert!(
+                elapsed <= interval * 120 / 100,
+                "spacing above the +20% jitter ceiling: {elapsed:?}"
+            );
+        }
     }
 }

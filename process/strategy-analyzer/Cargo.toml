@@ -35,6 +35,8 @@ env_logger = { workspace = true, optional = true }
 # `syn`-based purity test (tests/purity.rs): parses the core and fails on any f32/f64 token.
 syn = { version = "2", features = ["full"] }
 proc-macro2 = { version = "1", features = ["span-locations"] }
+# `tokio::time::pause/advance` for the live retry/pacer tests, so they never sleep in real time.
+tokio = { workspace = true, features = ["test-util"] }
 
 [[bin]]
 name = "backtest"

@@ -8,8 +8,8 @@
 use crate::live::clock::Clock;
 use crate::live::config::{LiveConfig, LiveConfigError, TIMEFRAME_MS};
 use crate::live::poller::{
-    CandleCursor, CandlePoller, MarketData, RateLimiter, SharedTickerPoller, TickerSnapshot,
-    CANDLE_LOOKBACK, RATE_LIMIT_MIN_INTERVAL,
+    with_retry, CandleCursor, CandlePoller, MarketData, MarketError, RateLimiter, RetryPolicy,
+    SharedTickerPoller, TickerSnapshot, CANDLE_LOOKBACK,
 };
 use crate::live::state_store::{StateStore, StateStoreError};
 use crate::live::sym_loop::{LiveEvent, LiveInput, SymbolLoop};
@@ -50,6 +50,7 @@ pub struct Supervisor {
     market: Arc<dyn MarketData>,
     clock: Arc<dyn Clock>,
     limiter: Arc<RateLimiter>,
+    retry: RetryPolicy,
     store: Arc<StateStore>,
     strategy_cfg: Config,
 }
@@ -67,11 +68,17 @@ impl Supervisor {
         )?);
         let refs: Vec<&str> = cfg.symbols.iter().map(String::as_str).collect();
         let strategy_cfg = Config::default_for(&refs);
+        let limiter = Arc::new(RateLimiter::with_jitter(
+            cfg.rate_limit_interval(),
+            cfg.jitter_pct,
+        ));
+        let retry = RetryPolicy::new(cfg.max_retries, cfg.retry_base_ms, cfg.retry_max_ms);
         Ok(Supervisor {
             cfg,
             market,
             clock,
-            limiter: Arc::new(RateLimiter::new(RATE_LIMIT_MIN_INTERVAL)),
+            limiter,
+            retry,
             store,
             strategy_cfg,
         })
@@ -85,6 +92,7 @@ impl Supervisor {
             market,
             clock,
             limiter,
+            retry,
             store,
             strategy_cfg,
         } = self;
@@ -96,13 +104,14 @@ impl Supervisor {
         }
 
         // Measure the exchange offset once, then refresh on a heartbeat.
-        sync_clock(market.clone(), clock.clone(), limiter.clone()).await;
+        sync_clock(market.clone(), clock.clone(), limiter.clone(), retry).await;
         let (shutdown_tx, shutdown_rx) = watch::channel(false);
 
         let (ticker_tx, ticker_handle) = SharedTickerPoller::spawn(
             market.clone(),
             clock.clone(),
             limiter.clone(),
+            retry,
             cfg.poll_interval(),
             shutdown_rx.clone(),
         );
@@ -117,7 +126,7 @@ impl Supervisor {
                 loop {
                     tokio::select! {
                         r = sd.changed() => { if r.is_err() || *sd.borrow() { break; } }
-                        _ = t.tick() => sync_clock(market.clone(), clock.clone(), limiter.clone()).await,
+                        _ = t.tick() => sync_clock(market.clone(), clock.clone(), limiter.clone(), retry).await,
                     }
                 }
             })
@@ -133,6 +142,7 @@ impl Supervisor {
                 market: market.clone(),
                 clock: clock.clone(),
                 limiter: limiter.clone(),
+                retry,
                 rx: ticker_tx.subscribe(),
                 shutdown: shutdown_rx.clone(),
             };
@@ -173,6 +183,7 @@ struct SymbolDeps {
     market: Arc<dyn MarketData>,
     clock: Arc<dyn Clock>,
     limiter: Arc<RateLimiter>,
+    retry: RetryPolicy,
     rx: broadcast::Receiver<TickerSnapshot>,
     shutdown: watch::Receiver<bool>,
 }
@@ -186,6 +197,7 @@ async fn run_symbol(deps: SymbolDeps) {
         market,
         clock,
         limiter,
+        retry,
         mut rx,
         mut shutdown,
     } = deps;
@@ -214,7 +226,7 @@ async fn run_symbol(deps: SymbolDeps) {
     };
 
     if lp.is_cold() {
-        warm_from_history(&symbol, &market, &clock, &limiter, &poller, &mut lp).await;
+        warm_from_history(&symbol, &market, &clock, &limiter, retry, &poller, &mut lp).await;
         if lp.is_quarantined() {
             return;
         }
@@ -251,7 +263,7 @@ async fn run_symbol(deps: SymbolDeps) {
             _ = check.tick() => {
                 let now = clock.exchange_now_ms();
                 if now >= next_open + TIMEFRAME_MS + live_cfg.candle_settle_ms {
-                    if poll_candles(&symbol, &market, &limiter, &poller, &mut lp, now).await {
+                    if poll_candles(&symbol, &market, &limiter, retry, &poller, &mut lp, now).await {
                         log::warn!("symbol={symbol} stopping (quarantined)");
                         break;
                     }
@@ -270,6 +282,7 @@ async fn warm_from_history(
     market: &Arc<dyn MarketData>,
     clock: &Arc<dyn Clock>,
     limiter: &Arc<RateLimiter>,
+    retry: RetryPolicy,
     poller: &CandlePoller,
     lp: &mut SymbolLoop,
 ) {
@@ -278,14 +291,23 @@ async fn warm_from_history(
     let m = market.clone();
     let p = poller.clone();
     let sym = symbol.to_string();
-    match tokio::task::spawn_blocking(move || p.poll(&*m, &sym, CandleCursor::default(), now)).await
-    {
-        Ok(Ok(candles)) => match lp.warm_from_candles(&candles) {
+    let fetched = with_retry(retry, move || {
+        let m = m.clone();
+        let p = p.clone();
+        let sym = sym.clone();
+        async move {
+            tokio::task::spawn_blocking(move || p.poll(&*m, &sym, CandleCursor::default(), now))
+                .await
+                .map_err(|e| MarketError::Fatal(format!("warm fetch join error: {e}")))?
+        }
+    })
+    .await;
+    match fetched {
+        Ok(candles) => match lp.warm_from_candles(&candles) {
             Ok(n) => log::info!("symbol={symbol} warmed {n} candles from history"),
             Err(e) => log::warn!("symbol={symbol} warm feed failed: {e}"),
         },
-        Ok(Err(e)) => log::warn!("symbol={symbol} warm fetch failed: {e}"),
-        Err(e) => log::warn!("symbol={symbol} warm fetch task failed: {e}"),
+        Err(e) => log::warn!("symbol={symbol} warm fetch failed: {e}"),
     }
 }
 
@@ -294,6 +316,7 @@ async fn poll_candles(
     symbol: &str,
     market: &Arc<dyn MarketData>,
     limiter: &Arc<RateLimiter>,
+    retry: RetryPolicy,
     poller: &CandlePoller,
     lp: &mut SymbolLoop,
     now_ms: i64,
@@ -303,15 +326,21 @@ async fn poll_candles(
     let m = market.clone();
     let p = poller.clone();
     let sym = symbol.to_string();
-    let candles = match tokio::task::spawn_blocking(move || p.poll(&*m, &sym, cursor, now_ms)).await
-    {
-        Ok(Ok(c)) => c,
-        Ok(Err(e)) => {
-            log::warn!("symbol={symbol} candle poll failed: {e}");
-            return false;
+    let fetched = with_retry(retry, move || {
+        let m = m.clone();
+        let p = p.clone();
+        let sym = sym.clone();
+        async move {
+            tokio::task::spawn_blocking(move || p.poll(&*m, &sym, cursor, now_ms))
+                .await
+                .map_err(|e| MarketError::Fatal(format!("candle poll join error: {e}")))?
         }
+    })
+    .await;
+    let candles = match fetched {
+        Ok(c) => c,
         Err(e) => {
-            log::warn!("symbol={symbol} candle poll task failed: {e}");
+            log::warn!("symbol={symbol} candle poll failed: {e}");
             return false;
         }
     };
@@ -337,13 +366,25 @@ fn stop_requested(events: &[LiveEvent]) -> bool {
         .any(|e| matches!(e, LiveEvent::Quarantine { .. }))
 }
 
-async fn sync_clock(market: Arc<dyn MarketData>, clock: Arc<dyn Clock>, limiter: Arc<RateLimiter>) {
+async fn sync_clock(
+    market: Arc<dyn MarketData>,
+    clock: Arc<dyn Clock>,
+    limiter: Arc<RateLimiter>,
+    retry: RetryPolicy,
+) {
     limiter.acquire().await;
-    let m = market.clone();
-    match tokio::task::spawn_blocking(move || m.exchange_time_ms()).await {
-        Ok(Ok(t)) => clock.sync(t),
-        Ok(Err(e)) => log::warn!("exchange-time sync failed: {e}"),
-        Err(e) => log::warn!("exchange-time sync task failed: {e}"),
+    let fetched = with_retry(retry, move || {
+        let m = market.clone();
+        async move {
+            tokio::task::spawn_blocking(move || m.exchange_time_ms())
+                .await
+                .map_err(|e| MarketError::Fatal(format!("exchange-time join error: {e}")))?
+        }
+    })
+    .await;
+    match fetched {
+        Ok(t) => clock.sync(t),
+        Err(e) => log::warn!("exchange-time sync failed: {e}"),
     }
 }
 

@@ -26,6 +26,17 @@ pub const DEFAULT_STREAM_DIR: &str = "data/live/stream";
 pub const DEFAULT_EXCHANGE_BASE_URL: &str = "https://api.kucoin.com";
 /// Default candle interval (`4hour`).
 pub const DEFAULT_CANDLE_INTERVAL: &str = "4hour";
+/// Default global pacer interval (live spec §8). 30 ms ≈ 33 req/s, ~50% of the VIP0 Public ceiling
+/// (~66.7 req/s), leaving headroom for 429 bursts.
+pub const DEFAULT_RATE_LIMIT_MIN_INTERVAL_MS: u64 = 30;
+/// Default number of retries after the first attempt for a retryable HTTP failure.
+pub const DEFAULT_MAX_RETRIES: u32 = 3;
+/// Default exponential-backoff base when the server sends no `Retry-After` (250 ms, then x2...).
+pub const DEFAULT_RETRY_BASE_MS: u64 = 250;
+/// Default cap on a single exponential-backoff sleep.
+pub const DEFAULT_RETRY_MAX_MS: u64 = 5_000;
+/// Default per-acquire jitter, as a percentage of the pacer interval (spreads the 4H burst).
+pub const DEFAULT_JITTER_PCT: u32 = 20;
 
 /// The 4H timeframe in milliseconds. Mirrors `strategy::step::TIMEFRAME_MS`, which is `pub(crate)`
 /// to the core; the adapter keeps its own copy rather than widen the core's surface.
@@ -57,6 +68,21 @@ fn default_exchange_base_url() -> String {
 }
 fn default_candle_interval() -> String {
     DEFAULT_CANDLE_INTERVAL.to_string()
+}
+fn default_rate_limit_min_interval_ms() -> u64 {
+    DEFAULT_RATE_LIMIT_MIN_INTERVAL_MS
+}
+fn default_max_retries() -> u32 {
+    DEFAULT_MAX_RETRIES
+}
+fn default_retry_base_ms() -> u64 {
+    DEFAULT_RETRY_BASE_MS
+}
+fn default_retry_max_ms() -> u64 {
+    DEFAULT_RETRY_MAX_MS
+}
+fn default_jitter_pct() -> u32 {
+    DEFAULT_JITTER_PCT
 }
 
 /// Errors from loading or validating [`LiveConfig`].
@@ -100,6 +126,21 @@ pub struct LiveConfig {
     pub exchange_base_url: String,
     #[serde(default = "default_candle_interval")]
     pub candle_interval: String,
+    /// Global pacer spacing in ms (live spec §8; default leaves ~50% headroom).
+    #[serde(default = "default_rate_limit_min_interval_ms")]
+    pub rate_limit_min_interval_ms: u64,
+    /// Retries after the first attempt for a retryable (429/5xx) HTTP failure.
+    #[serde(default = "default_max_retries")]
+    pub max_retries: u32,
+    /// Exponential-backoff base in ms used when no `Retry-After` is present.
+    #[serde(default = "default_retry_base_ms")]
+    pub retry_base_ms: u64,
+    /// Cap in ms on any single backoff sleep.
+    #[serde(default = "default_retry_max_ms")]
+    pub retry_max_ms: u64,
+    /// Per-acquire jitter as a percentage of the pacer interval (`0..=100`).
+    #[serde(default = "default_jitter_pct")]
+    pub jitter_pct: u32,
 }
 
 impl Default for LiveConfig {
@@ -115,6 +156,11 @@ impl Default for LiveConfig {
             stream_dir: DEFAULT_STREAM_DIR.to_string(),
             exchange_base_url: DEFAULT_EXCHANGE_BASE_URL.to_string(),
             candle_interval: DEFAULT_CANDLE_INTERVAL.to_string(),
+            rate_limit_min_interval_ms: DEFAULT_RATE_LIMIT_MIN_INTERVAL_MS,
+            max_retries: DEFAULT_MAX_RETRIES,
+            retry_base_ms: DEFAULT_RETRY_BASE_MS,
+            retry_max_ms: DEFAULT_RETRY_MAX_MS,
+            jitter_pct: DEFAULT_JITTER_PCT,
         }
     }
 }
@@ -183,6 +229,21 @@ impl LiveConfig {
         if let Ok(v) = std::env::var("LIVE_CANDLE_INTERVAL") {
             self.candle_interval = v;
         }
+        if let Ok(v) = std::env::var("LIVE_RATE_LIMIT_MIN_INTERVAL_MS") {
+            self.rate_limit_min_interval_ms = parse_u64("LIVE_RATE_LIMIT_MIN_INTERVAL_MS", &v)?;
+        }
+        if let Ok(v) = std::env::var("LIVE_MAX_RETRIES") {
+            self.max_retries = parse_u32("LIVE_MAX_RETRIES", &v)?;
+        }
+        if let Ok(v) = std::env::var("LIVE_RETRY_BASE_MS") {
+            self.retry_base_ms = parse_u64("LIVE_RETRY_BASE_MS", &v)?;
+        }
+        if let Ok(v) = std::env::var("LIVE_RETRY_MAX_MS") {
+            self.retry_max_ms = parse_u64("LIVE_RETRY_MAX_MS", &v)?;
+        }
+        if let Ok(v) = std::env::var("LIVE_JITTER_PCT") {
+            self.jitter_pct = parse_u32("LIVE_JITTER_PCT", &v)?;
+        }
         Ok(())
     }
 
@@ -210,12 +271,35 @@ impl LiveConfig {
                 });
             }
         }
+        if self.rate_limit_min_interval_ms == 0 {
+            return Err(LiveConfigError::Invalid {
+                key: "rate_limit_min_interval_ms".to_string(),
+                value: self.rate_limit_min_interval_ms.to_string(),
+            });
+        }
+        if self.retry_base_ms == 0 || self.retry_max_ms < self.retry_base_ms {
+            return Err(LiveConfigError::Invalid {
+                key: "retry_base_ms/retry_max_ms".to_string(),
+                value: format!("{}/{}", self.retry_base_ms, self.retry_max_ms),
+            });
+        }
+        if self.jitter_pct > 100 {
+            return Err(LiveConfigError::Invalid {
+                key: "jitter_pct".to_string(),
+                value: self.jitter_pct.to_string(),
+            });
+        }
         Ok(())
     }
 
     /// The `allTickers` poll cadence.
     pub fn poll_interval(&self) -> Duration {
         Duration::from_millis(self.poll_interval_ms)
+    }
+
+    /// The global pacer spacing (live spec §8).
+    pub fn rate_limit_interval(&self) -> Duration {
+        Duration::from_millis(self.rate_limit_min_interval_ms)
     }
 
     /// The state directory as a path.
@@ -250,6 +334,13 @@ fn parse_u64(key: &str, raw: &str) -> Result<u64, LiveConfigError> {
     })
 }
 
+fn parse_u32(key: &str, raw: &str) -> Result<u32, LiveConfigError> {
+    raw.trim().parse().map_err(|_| LiveConfigError::Invalid {
+        key: key.to_string(),
+        value: raw.to_string(),
+    })
+}
+
 fn parse_i64(key: &str, raw: &str) -> Result<i64, LiveConfigError> {
     raw.trim().parse().map_err(|_| LiveConfigError::Invalid {
         key: key.to_string(),
@@ -270,6 +361,32 @@ mod tests {
         assert_eq!(c.activation_ttl_ms, 300_000);
         assert_eq!(c.quarantine_cooldown_ms, 86_400_000);
         assert_eq!(c.candle_interval, "4hour");
+    }
+
+    #[test]
+    fn network_defaults_leave_headroom_and_retry_safely() {
+        let c = LiveConfig::default();
+        // 30 ms ≈ 33 req/s, ~50% of the VIP0 Public ceiling (~66.7 req/s).
+        assert_eq!(c.rate_limit_min_interval_ms, 30);
+        assert_eq!(c.max_retries, 3);
+        assert_eq!(c.retry_base_ms, 250);
+        assert_eq!(c.retry_max_ms, 5_000);
+        assert_eq!(c.jitter_pct, 20);
+    }
+
+    #[test]
+    fn network_fields_get_json_overrides() {
+        let cfg = LiveConfig::from_json_str(
+            r#"{ "symbols": ["XRP-USDT"], "rate_limit_min_interval_ms": 42,
+                 "max_retries": 5, "retry_base_ms": 100, "retry_max_ms": 800,
+                 "jitter_pct": 10 }"#,
+        )
+        .unwrap();
+        assert_eq!(cfg.rate_limit_min_interval_ms, 42);
+        assert_eq!(cfg.max_retries, 5);
+        assert_eq!(cfg.retry_base_ms, 100);
+        assert_eq!(cfg.retry_max_ms, 800);
+        assert_eq!(cfg.jitter_pct, 10);
     }
 
     #[test]
@@ -313,6 +430,47 @@ mod tests {
             cfg.validate(),
             Err(LiveConfigError::Invalid { .. })
         ));
+    }
+
+    #[test]
+    fn zero_pacer_interval_is_rejected() {
+        let mut cfg = LiveConfig::default();
+        cfg.symbols = vec!["XRP-USDT".into()];
+        cfg.rate_limit_min_interval_ms = 0;
+        assert!(matches!(
+            cfg.validate(),
+            Err(LiveConfigError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn excessive_jitter_percentage_is_rejected() {
+        let mut cfg = LiveConfig::default();
+        cfg.symbols = vec!["XRP-USDT".into()];
+        cfg.jitter_pct = 101;
+        assert!(matches!(
+            cfg.validate(),
+            Err(LiveConfigError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn retry_cap_below_base_is_rejected() {
+        let mut cfg = LiveConfig::default();
+        cfg.symbols = vec!["XRP-USDT".into()];
+        cfg.retry_base_ms = 500;
+        cfg.retry_max_ms = 100;
+        assert!(matches!(
+            cfg.validate(),
+            Err(LiveConfigError::Invalid { .. })
+        ));
+    }
+
+    #[test]
+    fn valid_network_config_passes_validation() {
+        let mut cfg = LiveConfig::default();
+        cfg.symbols = vec!["XRP-USDT".into()];
+        assert!(cfg.validate().is_ok());
     }
 
     #[test]

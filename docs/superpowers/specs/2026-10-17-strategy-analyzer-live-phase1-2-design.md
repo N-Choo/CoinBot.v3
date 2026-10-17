@@ -130,7 +130,8 @@ Runs continuously while the symbol is active. **Stops** when: activation expires
 ## 8. Rate limiting, quarantine, and engine-side rules
 
 Analyzer side:
-- **Shared limiter** + **per-symbol jitter** (4H boundary burst).
+- **Shared limiter + jitter — IMPLEMENTED.** One global pacer spaces every call; default **30 ms ≈ 33 req/s (~50% of the VIP0 Public ceiling)** with **bounded per-acquire jitter of ±20%** to spread the 4H boundary burst. Config: `rate_limit_min_interval_ms`, `jitter_pct`.
+- **429 handling — IMPLEMENTED.** Every `allTickers`, candles, and exchange-time call runs through a retry wrapper. On `429`/`5xx` it honors the `Retry-After` header (**seconds**; absent or unparseable falls back) and otherwise sleeps an **exponential backoff** (`retry_base_ms` doubling, capped at `retry_max_ms`) for at most `max_retries` retries; after exhaustion the error returns to the existing WARN-and-continue path (bounded attempts, no infinite retry). Config: `max_retries`, `retry_base_ms`, `retry_max_ms`.
 - **Request budget:** Public pool **2000/30s (~66.7 req/s)** VIP0; usage ≈ `0.2 + N/60 + N/300` (allTickers / 4H candles / 1m wick fetches) → N=50 ≈ 1.2 req/s (~2%), N=200 ≈ 4.2 req/s (~6%). Per-endpoint **weights** *(unverified)* must be confirmed.
 - **Failure:** a symbol whose candles keep erroring is **quarantined with an alert**; a panicking task must not crash-loop replaying bad data.
 - **Quarantine exit:** manual operator action, or a timed cooldown + clean re-warm. **`quarantine_cooldown = 24 h (proposed)`.** Alerts → structured log (and an operator hook if one is wired; **none is currently** — *unverified*).
