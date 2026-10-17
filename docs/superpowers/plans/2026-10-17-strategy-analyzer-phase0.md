@@ -510,7 +510,7 @@ pub enum ZoneState { Active, Consumed, Invalidated, Expired }
 pub enum ConsumeReason {
     SignalPublished, MissedTouch, EngineAccepted,
     EngineRejectedStrategy, EngineRejectedTransient, ExpiredUndelivered,
-    // First-touch vetoes consume the zone (§6 one attempt per zone, §7.1 first touch).
+    // First-touch vetoes consume the zone (§6 first touch only, §7.1 first touch).
     VetoedObstacleTooClose, VetoedObstacleNone, VetoedRiskNonPositive,
 }
 
@@ -1828,7 +1828,7 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
         Ok(l) => l,
         Err(tag) => {
-            // §7.1 first touch + §6 "one entry attempt per zone": the first-touch veto CONSUMES
+            // §7.1 first touch + §6 "first touch only": the first-touch veto CONSUMES
             // the zone (no StateChange), so a later/deeper tick cannot re-trigger it.
             let reason = match tag {
                 "obstacle_too_close" => ConsumeReason::VetoedObstacleTooClose,

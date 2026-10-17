@@ -95,7 +95,7 @@ process/strategy-analyzer/
 ## 2. Numeric & determinism policy
 
 - **Working scale:** 12 dp for all indicator math.
-- **Price scale:** per-symbol, from config (ideally the exchange tick size), used only when producing levels that appear in signals (zone bounds, stop, take-profit, trigger). A single global dp rule is wrong for both BTC-USDT and low-priced pairs.
+- **Price scale / increment:** per-symbol, from config. `price_scale` (dp) is used only when producing levels that appear in signals (zone bounds, stop, take-profit, trigger); a single global dp rule is wrong for both BTC-USDT and low-priced pairs. **Increment decision (2026-10-17):** a dp scale cannot express a step-5/step-25 grid (e.g. KuCoin `0.0005` at 4 dp), so the **core also carries the symbol's `price_increment`** — instance data alongside `price_scale` — and, when configured, **snaps** stop/take-profit/reference levels to valid multiples: stop **away from** entry, take-profit **toward** entry, reference/obstacle to the **nearest** (§7.4/§7.6). Published prices are therefore valid exchange multiples; the **engine still re-validates** them. With no increment configured for a symbol the core keeps the Phase 0 dp `round_price` behavior (no change to existing fixtures/goldens).
 - **One rounding helper:** `round_price(value, price_scale)`; rounding strategy is **half-up**, requested explicitly via `round_dp_with_strategy` (rust_decimal's default is half-even). Nobody calls `.round_dp()` directly. Any change to the strategy is a one-line change in `decimal.rs`.
 - **Ratios are NOT rounded before comparison.** `gross_rr`, `zone_height_atr`, and `obstacle_rr` are compared at working scale (rounding to 4 dp first could turn 2.99996 into 3.0000 and pass a 3.0 floor). They are rounded (toward zero, 4 dp) **only when serializing or reporting**.
 - **Self-consistent payload:** stop, take-profit, and ratios are derived from the **already-rounded** trigger and stop, so the serialized fields reconcile exactly.
@@ -112,7 +112,7 @@ process/strategy-analyzer/
 
 All values configurable and versioned; `config_version` is attached to every signal. None hardcoded.
 
-`price_scale` is the one exception to "everything versioned": it is **per-symbol instance data** (the symbol's price increment, discovered at activation), not a strategy parameter. It stays on `Config` so the core can round levels, but it is **excluded from `config_version`** (via `canonical_params_json`). Hashing it would change the version — and invalidate the freeze lock (§10.4) — every time a ticker is added, **before the freeze lock is written** or after.
+`price_scale` and `price_increment` are the exceptions to "everything versioned": they are **per-symbol instance data** (the symbol's price scale and its actual price step, discovered at activation), not strategy parameters. They stay on `Config` so the core can round/snap levels, but they are **excluded from `config_version`** (via `canonical_params_json`). Hashing them would change the version — and invalidate the freeze lock (§10.4) — every time a ticker is added, **before the freeze lock is written** or after.
 
 | Key | Default | Notes |
 |---|---|---|
@@ -134,13 +134,14 @@ All values configurable and versioned; `config_version` is attached to every sig
 | `allow_no_obstacle` | `true` | |
 | `direction` | long + short | |
 | `entry_trigger` | first zone touch | |
-| `entry_attempts` | one per zone | |
+| `entry_attempts` | first touch only | |
 | `re_arm_policy` | `none` | depends on `EngineAck` → not active in Phase 0 |
 | `working_scale` | 12 | dp for indicator math |
-| `price_scale` | per symbol | from config / tick size; **instance data — excluded from `config_version`** |
+| `price_scale` | per symbol | dp only; from config / tick size; **instance data — excluded from `config_version`** |
+| `price_increment` | per symbol (optional) | the symbol's actual price step (e.g. `0.0005`); when set the core snaps stop/TP/reference levels to it (§7.4/§7.6); **instance data — excluded from `config_version`** |
 | `ratio_serialization_scale` | 4 | dp, serialization only |
 | `rounding_strategy` | half-up | explicit via helper |
-| `config_version` | string (hash) | hash of the canonical **strategy parameters** (excludes per-symbol `price_scale` instance data); matches the freeze lock (§10.4) |
+| `config_version` | string (hash) | hash of the canonical **strategy parameters** (excludes per-symbol `price_scale`/`price_increment` instance data); matches the freeze lock (§10.4) |
 
 **Validation (reject config otherwise):** all periods ≥ 1; `min_zone_height <= max_zone_height`; positive ATR multipliers; `price_scale` present for each configured symbol; and **`target_r > engine_net_floor` and `min_gross_rr > engine_net_floor`** (`engine_net_floor = 2.5`, recorded in config) so a typo cannot undercut the cushion. (The earlier `target_r >= min_gross_rr` rule is **dropped**: `min_gross_rr` applies to `structural` only, and equality in `fixed_r` produced a rounding-sensitive tautology, see §7.5.)
 
@@ -207,8 +208,8 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 - **Demand zone (after bullish BOS):** search back up to `zone_search_lookback` completed candles before the breakout candle; select the most recent bearish candle (`close < open`); require breakout candle body ≥ `impulse_body_threshold`; zone = that candle's full range `[low, high]`; apply size limits and mitigation; activate when the breakout candle closes; record pre-breakout ATR as the zone's `A`. Supply mirrored after bearish BOS. No qualifying candle / any check fails → no zone, log reason.
 - **Lifecycle states:** `Active | Consumed | Invalidated | Expired`. **In Phase 0 every non-`Active` state is terminal — `Invalidated | Expired | Consumed` never return to `Active`.** (The re-armable distinction from v2 depends on `EngineAck`/`Clock` and is inactive in Phase 0, per §0.4.) This removes the double-order ambiguity. Terminal transitions without a signal record a separate **`TerminalReason`** (`trend_flip | close_beyond_edge | expired`); **`ConsumeReason`** is reserved for signal/consumption cases (`signal_published | missed_touch | engine_* | expired_undelivered`).
-- **Rules:** expire an untouched zone after `zone_expiry_candles`; invalidate a demand zone on a completed close below `zone_low` (supply mirrored above `zone_high`); invalidate opposite zones on trend flip; **candle-close wick reconciliation:** a still-`Active` zone whose candle range was reached (demand `candle.low <= zone.high`; supply `candle.high >= zone.low`) but for which no tick touch was observed that candle is consumed as `missed_touch` (§7.2), because polling can skip a wick; one entry attempt per zone; **mark `Consumed` + persist the pending signal atomically before publishing** (persistence is Phase ≥ 2; Phase 0 only marks state in-memory and emits the signal). Never reactivate a terminal zone, including after restart.
-- **Consumption reasons:** `signal_published`, `missed_touch`, `vetoed_obstacle_too_close`, `vetoed_obstacle_none`, `vetoed_risk_nonpositive`, `engine_accepted`, `engine_rejected_strategy`, `engine_rejected_transient`, `expired_undelivered`. Every terminal transition records a reason code. The `vetoed_*` reasons are the first-touch entry vetoes (§7.5): the veto itself consumes the zone, honoring "one entry attempt per zone". (In Phase 0 all of these are terminal; the reason codes are carried for forward compatibility, not to enable re-arm.)
+- **Rules:** expire an untouched zone after `zone_expiry_candles`; invalidate a demand zone on a completed close below `zone_low` (supply mirrored above `zone_high`); invalidate opposite zones on trend flip; **candle-close wick reconciliation:** a still-`Active` zone whose candle range was reached (demand `candle.low <= zone.high`; supply `candle.high >= zone.low`) but for which no tick touch was observed that candle is consumed as `missed_touch` (§7.2), because polling can skip a wick; first touch only; **mark `Consumed` + persist the pending signal atomically before publishing** (persistence is Phase ≥ 2; Phase 0 only marks state in-memory and emits the signal). Never reactivate a terminal zone, including after restart.
+- **Consumption reasons:** `signal_published`, `missed_touch`, `vetoed_obstacle_too_close`, `vetoed_no_obstacle`, `vetoed_invalid_levels`, `engine_accepted`, `engine_rejected_strategy`, `engine_rejected_transient`, `expired_undelivered`. Every terminal transition records a reason code. The `vetoed_*` reasons are the first-touch entry vetoes (§7.5): the veto itself consumes the zone, honoring "first touch only". (In Phase 0 all of these are terminal; the reason codes are carried for forward compatibility, not to enable re-arm.)
 - **Mitigation (revisit before activation):** examine completed candles **strictly after** the zone candle and **strictly before** the breakout candle; skip the first `mitigation_grace_candles`; demand mitigated if `low <= zone_high` (supply if `high >= zone_low`); the zone candle and breakout candle are never counted.
 - **Zone size limits (§7.5):** reject when `(zone_high − zone_low) / A` is outside `[min_zone_height, max_zone_height]`. **Both bounds are instrumented** (count how often each binds) — the 0.5 A minimum is expected to bind more often than the 3.0 A cap for single-candle zones. The 3.0 A cap is retained as spec'd pending backtest evidence.
 - **Multiple zones:** select the one nearest to current price in the trend direction.
@@ -232,6 +233,8 @@ The signal carries the observed trigger price + timestamp. The reference entry p
 Long: `stop_loss = L − stop_buffer·A`; `risk_t = T − stop_loss`; take-profit depends on mode.
 Short: `stop_loss = H + stop_buffer·A`; `risk_t = stop_loss − T`.
 
+**Increment snapping (when the symbol's `price_increment` is configured).** Each computed level is snapped to a valid multiple of the symbol's actual price step (§2, §3): the **stop away from** entry, the **take-profit toward** entry, and reference/obstacle levels to the **nearest**; `risk_t` is then recomputed from the snapped stop. This makes the published prices valid exchange multiples that the engine can re-validate. With no increment configured for the symbol, levels use dp `round_price(price_scale)` (Phase 0 behavior).
+
 ### 7.5 Obstacle check (the R:R filter)
 For a long, obstacle = the **nearest** of: the nearest unbroken confirmed swing high above `T`; the **highest high over the window from the breakout candle through the latest completed candle** (this **includes the breakout candle itself**, whose extreme is often the nearest obstacle, and catches unconfirmed impulse extremes from fast pullbacks); the lower boundary of the nearest `Active` supply zone above `T`. Short mirrored (nearest swing low / the **lowest low over the same window including the breakout candle** / upper boundary of the nearest `Active` demand zone below `T`). `obstacle_rr = |obstacle − T| / risk_t` (correct sign per direction; a sign error would reject every short — covered by tests).
 
@@ -240,14 +243,14 @@ For a long, obstacle = the **nearest** of: the nearest unbroken confirmed swing 
 - `structural`: `take_profit = obstacle − structural_buffer` (long); **veto if the resulting gross R:R < `min_gross_rr`**; if no obstacle exists and `allow_no_obstacle`, fall back to `fixed_r`.
 - If no obstacle exists and `allow_no_obstacle` is false → veto.
 
-**The gate evaluates the rounded levels that go into the payload** (`trigger_price`, `stop_loss`, `take_profit`, obstacle — each rounded to the symbol's price scale), not raw working-scale values. A coarse-price-scale test (§10.1) guards this.
+**The gate evaluates the rounded levels that go into the payload** (`trigger_price`, `stop_loss`, `take_profit`, obstacle — each rounded to the symbol's price scale, or snapped to its `price_increment` when configured), not raw working-scale values. A coarse-price-scale test (§10.1) guards this.
 
-A **first-touch veto consumes the zone** and records the attempt, with a persisted reason: `vetoed_obstacle_too_close` / `vetoed_obstacle_none`, or `vetoed_risk_nonpositive` when the risk is non-positive. It is **not** left `Active`. Because the veto is the zone's single entry attempt (§6 "one entry attempt per zone"), the §7.1 "first touch only" rule holds and a later/deeper tick cannot re-trigger it. (The alternative — leave the zone `Active` so a later or deeper touch re-arms the veto — was **rejected**: it would grant a hidden second chance and re-emit on every re-cross.)
+A **first-touch veto consumes the zone** and records the attempt, with a persisted reason: `vetoed_obstacle_too_close` / `vetoed_no_obstacle`, or `vetoed_invalid_levels` when the risk is non-positive (or the stop rounds onto the wrong side of the trigger). It is **not** left `Active`. Because the veto is the zone's first touch (§6 "first touch only"), the §7.1 first-touch rule holds and a later/deeper tick cannot re-trigger it. (The alternative — leave the zone `Active` so a later or deeper touch re-arms the veto — was **rejected**: it would grant a hidden second chance and re-emit on every re-cross.)
 
 > **Cost cushion:** the analyzer's chosen floor (`target_r` in `fixed_r`, `min_gross_rr` in `structural`) sits above the engine's 2.5 net floor; the difference absorbs fees + slippage + borrow. The harness computes the realized cushion and applies the 1.5× cost gate (§10.4).
 
 ### 7.6 Self-consistent levels
-`stop_loss` and `take_profit` are computed from the **rounded** `trigger_price` and `stop_loss`; ratios are derived from those **rounded payload levels** (so the gate and the serialized fields use the same numbers), then serialized at `ratio_serialization_scale`. Fields reconcile exactly.
+`stop_loss` and `take_profit` are computed from the **rounded/snapped** `trigger_price` and `stop_loss`; ratios are derived from those **payload levels** (so the gate and the serialized fields use the same numbers), then serialized at `ratio_serialization_scale`. Fields reconcile exactly. When a symbol's `price_increment` is configured the trigger, stop, take-profit, and obstacle are each snapped to valid multiples first (§7.4), so every published price is a valid exchange multiple.
 
 ---
 

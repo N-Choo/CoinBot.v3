@@ -26,7 +26,7 @@ The analyzer owns continuous per-ticker loops and persists per-ticker state; the
 
 ## 2. Why a continuous loop
 
-The core is a per-symbol **state machine**; its guarantees (first-touch-only, one attempt per zone, missed-touch, no duplicate signals across restarts) require carrying state forward. The engine's ~24h trigger is coarser than 4H boundaries/tick touches, so the analyzer runs its own loop; the trigger only activates.
+The core is a per-symbol **state machine**; its guarantees (first-touch-only, missed-touch, no duplicate signals across restarts) require carrying state forward. The engine's ~24h trigger is coarser than 4H boundaries/tick touches, so the analyzer runs its own loop; the trigger only activates.
 
 ## 3. Components
 
@@ -45,7 +45,9 @@ A 4H candle is closed only when `open_time + 4h + settle <= exchange_now`, with 
 
 ### 3b. Config scope
 
-`config_version` hashes **strategy parameters only**. Per-symbol `price_scale` (from the symbol's price increment at activation) is **instance data** and is excluded from the hash. Otherwise adding a ticker changes the version on every signal and invalidates the freeze lock. Phase 0 was updated accordingly: `Config` still holds `price_scale` for level rounding, but `Config::canonical_params_json()` omits it from the hash input (`Config::config_version`), so the version is stable across tickers.
+`config_version` hashes **strategy parameters only**. Per-symbol `price_scale` **and `price_increment`** (both from the symbol's price increment at activation) are **instance data** and are excluded from the hash. Otherwise adding a ticker changes the version on every signal and invalidates the freeze lock. Phase 0 was updated accordingly: `Config` still holds `price_scale` (dp) and `price_increment` (the actual step, e.g. `0.0005`) for level rounding/snapping, but `Config::canonical_params_json()` omits both from the hash input (`Config::config_version`), so the version is stable across tickers.
+
+**Price increment decision (2026-10-17).** A dp `price_scale` alone cannot express a step-5/step-25 grid (KuCoin `priceIncrement` can be `0.0005` at 4 dp), so the **core carries each symbol's `price_increment` and snaps `stop_loss` / `take_profit` / reference levels to valid multiples** of it — stop **away from** entry, take-profit **toward** entry — before publishing. Published prices are therefore valid exchange multiples, and the **engine re-validates** them (the analyzer does not assume the engine's validation). When a symbol has no configured increment the core falls back to the Phase 0 dp `round_price` behavior.
 
 ### 3c. Activation message + TTL
 
@@ -73,7 +75,7 @@ State directory is a **mounted Docker volume** (compose), or every restart silen
 
 ### 4a. Candle-close reconciliation (wick-miss)
 
-Clearing `last_price` catches a cross that is *still inside* the zone after downtime; it does **not** catch a wick that touched a zone and returned above it between two polls. The core only invalidates on closes, so nothing else would catch it. Therefore, at each **closed candle**, an `Active` zone whose **candle range overlapped it** (demand: `candle.low <= zone.high`; supply: `candle.high >= zone.low`) but for which the core **observed no tick touch** is consumed as `missed_touch`. It is keyed strictly to **observed** touches (a zone whose touch was observed is already consumed by signal/veto, so it is not `Active`). Synthetic backtest paths sample each candle's low and high, so replay results are unchanged; the wick-miss rate then shows up **in state**, not only in a log.
+Clearing `last_price` catches a cross that is *still inside* the zone after downtime; it does **not** catch a wick that touched a zone and returned above it between two polls. The core only invalidates on closes, so nothing else would catch it. Therefore, at each **closed candle**, an `Active` zone whose **candle range overlapped it** (demand: `candle.low <= zone.high`; supply: `candle.high >= zone.low`) but for which the core **observed no tick touch** is consumed as `missed_touch`. It is keyed strictly to **observed** touches (a zone whose touch was observed is already consumed by signal/veto — a first touch either signals or vetoes-consume, so it is never left `Active`). Synthetic backtest paths sample each candle's low and high, so replay results are unchanged; the wick-miss rate then shows up **in state**, not only in a log.
 
 ## 5. Staleness and poll cadence
 
@@ -96,6 +98,8 @@ Phase 2 publishing via Redis **Pub/Sub** is **at-most-once**: if the engine is d
 | `reason` | String | `supply_demand_4h zone=<id> rr=<gross_rr> mode=<target_mode>` |
 
 The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used by `position_exit`). `Decimal`→`f64` conversion happens **only** at the publisher boundary (`harness::publish::price_f64`; core and state stay `Decimal`), and is pinned by a round-trip test across price scales.
+
+**Price increment (§3b, 2026-10-17).** The core snaps `stop_loss`, `take_profit`, and reference levels to the symbol's `price_increment` before publishing (stop away from entry, take-profit toward entry), so the prices handed to the engine are valid multiples of the exchange increment. The **engine re-validates**; the analyzer never relies on that. A dp-only `price_scale` could still yield a rejectable price on a step-5 grid, so the increment is the authoritative step.
 
 - `signal_id` **must become a first-class `TradeSignal` field before engine-side dedup** (Phase 2 §6/§11): dedup must key on the stable id, not on a `reason`-embedded string. Until the engine schema gains that field, the id is carried in `reason`.
 - `confidence` is **not gated by the engine**: the engine only logs it (`TradeSignal::log`), so it is fixed at `1.0` and must not be read as a filter or threshold.
