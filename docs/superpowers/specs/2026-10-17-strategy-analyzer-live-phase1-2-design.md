@@ -69,6 +69,12 @@ State directory is a **mounted Docker volume** (compose), or every restart silen
 
 **Restart / gap rule.** On every state load (not only a re-warm), and after any price-feed gap longer than the staleness limit (§5), set `last_price = None` and flag every `Active` zone as awaiting its first tick. The first observed price then resolves them through the missed-touch rule, so a cross that happened while the analyzer was down can never read as a first touch. The state file's `last_price` is never trusted across a restart.
 
+**Resume is a pure core input.** The adapter does not poke state itself: it injects `Input::Resume`, and the **core** clears `last_price` and flags the Active zones. This keeps restart/gap logic inside the deterministic core where the harness can inject restarts and gaps (snapshot-resume tests, including "price moves through a zone during downtime" → `missed_touch`, not a signal). Phase 1's "≥3 restarts" exit criterion is tested through this path.
+
+### 4a. Candle-close reconciliation (wick-miss)
+
+Clearing `last_price` catches a cross that is *still inside* the zone after downtime; it does **not** catch a wick that touched a zone and returned above it between two polls. The core only invalidates on closes, so nothing else would catch it. Therefore, at each **closed candle**, an `Active` zone whose **candle range overlapped it** (demand: `candle.low <= zone.high`; supply: `candle.high >= zone.low`) but for which the core **observed no tick touch** is consumed as `missed_touch`. It is keyed strictly to **observed** touches (a zone whose touch was observed is already consumed by signal/veto, so it is not `Active`). Synthetic backtest paths sample each candle's low and high, so replay results are unchanged; the wick-miss rate then shows up **in state**, not only in a log.
+
 ## 5. Staleness and poll cadence
 
 Poll `allTickers` every **5s** (proposed). A price older than **30s** (proposed) is not fed as a tick, and recovery from that gap follows the §4 rule. The staleness limit and poll interval are **config**, recorded in the shadow report.
@@ -94,7 +100,7 @@ The engine **honors `sl_price`/`tp_price`** (validated in `trader/mod.rs`; used 
 ## 8. Rate limiting, isolation, quarantine
 
 - **Shared limiter** for all loops; **per-symbol jitter** so the 4H boundary burst doesn't trip limits.
-- **Request budget (computed):** the Public pool is **2000 req / 30s (~66.7 req/s)** per IP at VIP0. Usage ≈ `0.2` (one shared allTickers poll / 5s) `+ N/60` (4H candle poll per symbol / minute) `+ N/300` (1m wick-comparison fetch per symbol / 5 min) req/s. For **N = 50** ≈ **1.2 req/s** (~2% of quota); **N = 200** ≈ **3.5 req/s** (~5%). Comfortably within quota at request *count*; per-endpoint **weights** must be confirmed from each endpoint's docs before sizing (assumption: small). If weights are heavier, reduce 1m fetch frequency first.
+- **Request budget (computed):** the Public pool is **2000 req / 30s (~66.7 req/s)** per IP at VIP0. Usage ≈ `0.2` (one shared allTickers poll / 5s) `+ N/60` (4H candle poll per symbol / minute) `+ N/300` (1m wick-comparison fetch per symbol / 5 min) req/s. For **N = 50** ≈ **1.2 req/s** (~2% of quota); **N = 200** ≈ **4.2 req/s** (~6%). Comfortably within quota at request *count*; per-endpoint **weights** must be confirmed from each endpoint's docs before relying on any headroom (assumption: small). If weights are heavier, reduce 1m fetch frequency first.
 - **Per-task failure:** a symbol whose candles keep erroring (e.g. `MalformedCandle`) is **quarantined with an alert**; a panicking task must not crash-loop replaying bad data.
 - **Quarantine exit:** a quarantined symbol leaves quarantine by **manual operator action**, or **automatically after a timed cooldown followed by a clean re-warm** (from history, applying §4). **Alerts go to** the structured log, and to an operator alerting hook if one is wired (none currently).
 - **Observations to record:** per symbol, log the polled price next to the latest 1m candle's high/low, to quantify missed wicks.
@@ -131,7 +137,7 @@ Run each shadow signal through the **Phase 0 sim** (`harness::sim`) against the 
 - §6.3 valid-high/low human verification (video 00:29–04:30) — still open from Phase 0.
 - **Phase 0 OOS bar outcome — gates this entire document.**
 - Per-endpoint **weights** to finalize the §8 request budget.
-- `run()`-level `missed_touch` aggregation can no longer arise offline (a genuine `missed_touch` now requires `prev == None`, which only occurs on a cold start/gap the harness doesn't simulate); covered by core unit tests; revisit when the restart/gap mechanism exists.
+- The **missed-touch rule** is *approach-from-outside* (Phase 0 §7.2, updated): a zone is `missed_touch` unless the first observation is an approach from outside it (i.e. `prev` is `None` or already inside/beyond ⇒ missed). Covered by `activated_while_inside_is_missed`, `first_observation_approach_from_outside_is_not_missed`, `missed_touch_on_first_observation`. Restart/gap handling is now the pure `Input::Resume` input (testable via replay; §4).
 - Phase 2 delivery choice (Streams vs outbox) and state store (Postgres vs Redis) + migration owner.
 - `OneMinuteExpansion` chunking by count → time-bucketed before any 1m headline use (also relevant to the §10 wick-miss fallback).
 - `signal_id` field in `TradeSignal` (or `reason`-embedded) until the engine schema changes.
