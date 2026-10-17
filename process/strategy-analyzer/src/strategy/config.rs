@@ -190,6 +190,33 @@ pub fn interval_to_ms(interval: &str) -> Result<i64, StrategyError> {
     })
 }
 
+/// Inverse of [`interval_to_ms`]: map a candle duration in milliseconds back to its KuCoin interval
+/// string (e.g. `14_400_000` -> `"4hour"`). Used to label the published payload's `timeframe` from
+/// the configured `candle_interval_ms`.
+///
+/// A duration that is not one of the pre-registered intervals (the config layer only requires a
+/// positive multiple of a minute) has no interval string; rather than panic, this falls back to the
+/// Phase 0 default `"4hour"`. The config layer plus the CLI's `interval_to_ms` mean a running
+/// strategy is always on a registered interval, so the fallback is defensive only.
+pub fn ms_to_interval(ms: i64) -> &'static str {
+    match ms {
+        60_000 => "1min",
+        180_000 => "3min",
+        300_000 => "5min",
+        900_000 => "15min",
+        1_800_000 => "30min",
+        3_600_000 => "1hour",
+        7_200_000 => "2hour",
+        14_400_000 => "4hour",
+        21_600_000 => "6hour",
+        28_800_000 => "8hour",
+        43_200_000 => "12hour",
+        86_400_000 => "1day",
+        604_800_000 => "1week",
+        _ => "4hour",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -350,5 +377,32 @@ mod tests {
             Err(StrategyError::ConfigInvalid(_))
         ));
         assert!(interval_to_ms("").is_err());
+    }
+
+    #[test]
+    fn interval_reverse_mapping_inverts_every_known_string() {
+        // `ms_to_interval` is the documented inverse of `interval_to_ms`: for every registered
+        // interval the round-trip returns the same string.
+        for (interval, ms) in [
+            ("1min", 60_000i64),
+            ("3min", 180_000),
+            ("5min", 300_000),
+            ("15min", 900_000),
+            ("30min", 1_800_000),
+            ("1hour", 3_600_000),
+            ("2hour", 7_200_000),
+            ("4hour", 14_400_000),
+            ("6hour", 21_600_000),
+            ("8hour", 28_800_000),
+            ("12hour", 43_200_000),
+            ("1day", 86_400_000),
+            ("1week", 604_800_000),
+        ] {
+            assert_eq!(ms_to_interval(ms), interval, "reverse of {interval}");
+        }
+        // An unregistered duration (a valid config multiple of a minute with no KuCoin string) falls
+        // back to the documented default rather than panicking.
+        assert_eq!(ms_to_interval(90_000), "4hour");
+        assert_eq!(ms_to_interval(0), "4hour");
     }
 }

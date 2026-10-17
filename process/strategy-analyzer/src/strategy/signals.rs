@@ -1,4 +1,4 @@
-use crate::strategy::config::{Config, TargetMode};
+use crate::strategy::config::{ms_to_interval, Config, TargetMode};
 use crate::strategy::decimal::{
     round_price, round_ratio_for_output, round_to, snap_to_increment, SnapSide,
 };
@@ -584,13 +584,15 @@ fn attempt_zone(
         schema_version: 1,
         event_type: "strategy.entry_signal".to_string(),
         signal_id: format!("{}:0", zone_snapshot.id),
-        strategy: "supply_demand_4h".to_string(),
+        // The strategy name is interval-agnostic; the timeframe is derived from the configured
+        // `candle_interval_ms` (not a hard-coded 4h), so a 5min strategy labels its payload "5min".
+        strategy: "supply_demand".to_string(),
         strategy_version: "0.1.0".to_string(),
         config_version: crate::strategy::config::config_version(&cfg.canonical_params_json()),
         symbol: state.symbol.clone(),
         market: "margin".to_string(),
         direction: dir,
-        timeframe: "4hour".to_string(),
+        timeframe: ms_to_interval(cfg.candle_interval_ms).to_string(),
         trend_state: state.trend,
         zone_id: zone_snapshot.id.clone(),
         zone_low: zone_snapshot.low,
@@ -746,6 +748,47 @@ mod touch_tests {
             .unwrap();
         assert_eq!(sig.triggered_at_ms, 12345); // the TOUCHING tick's time, not the previous one
         assert!(s.zones[0].state == ZoneState::Consumed);
+    }
+
+    /// The payload's `timeframe` and `strategy` must follow the configured candle interval, not a
+    /// hard-coded 4h. A 5-minute config emits `timeframe == "5min"` and the interval-agnostic
+    /// strategy name `"supply_demand"`.
+    #[test]
+    fn payload_timeframe_and_strategy_follow_the_configured_interval() {
+        let cfg = Config {
+            candle_interval_ms: 300_000, // 5min
+            ..Config::default_for(&["XRP-USDT"])
+        };
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.atr = Some(dec("0.1"));
+        s.trend = TrendState::Bullish;
+        s.last_candle_time_ms = Some(0);
+        s.zones = vec![demand()];
+        s.swing_highs = vec![Pivot {
+            index: 0,
+            time_ms: 0,
+            price: dec("2.30"),
+            broken: false,
+        }];
+        let out = try_entry(&mut s, Some(dec("2.05")), 1, dec("2.00"), &cfg).unwrap();
+        let sig = out
+            .iter()
+            .find_map(|o| {
+                if let Output::EntrySignal(sig) = o {
+                    Some(sig)
+                } else {
+                    None
+                }
+            })
+            .unwrap();
+        assert_eq!(
+            sig.timeframe, "5min",
+            "timeframe follows the config interval"
+        );
+        assert_eq!(
+            sig.strategy, "supply_demand",
+            "the strategy name is interval-agnostic"
+        );
     }
 
     #[test]
