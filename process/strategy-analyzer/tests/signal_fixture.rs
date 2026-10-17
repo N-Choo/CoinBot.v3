@@ -10,7 +10,7 @@ use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, Tick
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::step::step;
 use strategy_analyzer::strategy::types::{
-    ConsumeReason, Input, Output, Signal, StrategyState, ZoneEvent, ZoneEventKind,
+    ConsumeReason, Input, Output, Signal, StrategyState, ZoneEvent, ZoneEventKind, ZoneEventReason,
 };
 
 /// Count `EntrySignal` outputs while replaying a cached OHLCV file under one path policy.
@@ -160,16 +160,30 @@ fn mitigated_fixture_emits_mitigated_reason() {
     );
 }
 
-/// The obstacle-too-close fixture vetoes the touch but keeps the zone Active, so the reason is
-/// emitted; the veto must still produce 0 signals.
+/// The obstacle-too-close fixture vetoes on the first touch and must CONSUME the zone with reason
+/// `vetoed_obstacle_too_close` (never leave it `Active`, never emit a `StateChange`): the veto is
+/// the zone's one entry attempt, so later/deeper ticks cannot re-trigger it. Exactly one such
+/// emission — not two — and still 0 signals.
 #[test]
-fn obstacle_too_close_fixture_emits_reason_and_no_signal() {
+fn obstacle_too_close_fixture_veto_consumes_zone_once() {
     let run = replay_fixture("tests/fixtures/signal_obstacle_too_close_4h.csv", PathPolicy::LowFirst);
     assert_eq!(run.signals, 0, "vetoed touch must publish no signal");
     assert!(
-        run.reasons.contains(&"obstacle_too_close"),
-        "expected an `obstacle_too_close` veto reason, got {:?}",
+        !run.reasons.contains(&"obstacle_too_close"),
+        "a first-touch veto must not emit a `StateChange`, got {:?}",
         run.reasons
+    );
+    let consumed = run
+        .zone_events
+        .iter()
+        .filter(|e| {
+            e.kind == ZoneEventKind::Consumed
+                && e.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedObstacleTooClose))
+        })
+        .count();
+    assert_eq!(
+        consumed, 1,
+        "the first-touch veto must consume the zone exactly once, got {consumed}"
     );
 }
 
