@@ -9,8 +9,12 @@ on:
 jobs:
   # --- Backend Checks ---
   backend-test:
-    name: Rust (Server)
-    runs-on: ubuntu-latest
+    name: Rust (Server, ${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
@@ -26,6 +30,10 @@ jobs:
         run: make fmt
       - name: Clippy (Linter)
         run: make clippy
+      - name: Strategy core purity + feature builds
+        run: make strategy-check
+      - name: Strategy golden hash (cross-platform)
+        run: cargo test -p strategy-analyzer --features harness --test replay_equivalence
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

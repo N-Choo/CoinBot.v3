@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -51,7 +51,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test analyzer-test frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test strategy-check analyzer-test frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -61,16 +61,28 @@ fmt-fix:
 
 clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
+	cargo clippy -p strategy-analyzer --all-features --no-deps -- -D warnings
 
 test:
 	@[ -f .env ] || cp .env.ci .env; \
 	 docker compose up -d postgres redis && \
 		sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)) && \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test -p strategy-analyzer --all-features; \
 		rst=$$?; \
 		if [ -d process/analyzer ]; then (cd process/analyzer && python3 -m pytest . -v); pst=$$?; else echo "skipping analyzer tests (process/analyzer absent)"; pst=0; fi; \
 		docker compose stop redis postgres; \
 		exit $$(( rst + pst ))
+
+# Purity gate for the deterministic core: no float arithmetic and no hash-map iteration
+# under src/strategy. Matches inside `//` comments are ignored, then the core-only and
+# all-features builds must both succeed.
+strategy-check:
+	@echo "checking strategy core purity..."
+	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "float type in core" && exit 1)
+	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | grep -vE '//' || (echo "hash-map in core" && exit 1)
+	cargo build -p strategy-analyzer --no-default-features
+	cargo build -p strategy-analyzer --all-features
 
 analyzer-test:
 	@cd process/analyzer && python3 -m pytest . -v
