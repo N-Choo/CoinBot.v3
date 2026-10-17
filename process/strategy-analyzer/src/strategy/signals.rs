@@ -27,7 +27,8 @@ pub fn obstacle_for_short(trigger: Decimal, swing_lows: &[Pivot], active_demand:
     c.into_iter().max()
 }
 
-/// Rounded levels + the mode's gate. `None` = veto.
+/// Rounded levels + the mode's gate. `Err(tag)` = veto, `tag` names the reason
+/// (`risk_nonpositive` / `obstacle_none` / `obstacle_too_close`).
 pub fn compute_levels(
     direction: Direction,
     zone: &Zone,
@@ -35,17 +36,17 @@ pub fn compute_levels(
     obstacle: Option<Decimal>,
     price_scale: u32,
     cfg: &Config,
-) -> Option<Levels> {
+) -> Result<Levels, &'static str> {
     let t = round_price(trigger, price_scale);
     let buffer = cfg.stop_buffer_atr * zone.atr;
     let (stop_raw, risk) = match direction {
         Direction::Long => (zone.low - buffer, t - (zone.low - buffer)),
         Direction::Short => (zone.high + buffer, (zone.high + buffer) - t),
     };
-    if risk <= Decimal::ZERO { return None; }
+    if risk <= Decimal::ZERO { return Err("risk_nonpositive"); }
     let stop = round_price(stop_raw, price_scale);
     let risk = match direction { Direction::Long => t - stop, Direction::Short => stop - t };
-    if risk <= Decimal::ZERO { return None; }
+    if risk <= Decimal::ZERO { return Err("risk_nonpositive"); }
 
     let obstacle_rounded = obstacle.map(|o| round_price(o, price_scale));
     let obstacle_rr = obstacle_rounded.map(|o| match direction {
@@ -59,9 +60,9 @@ pub fn compute_levels(
         TargetMode::FixedR => {
             // Gate = obstacle veto only (no tautological gross gate).
             if let Some(rr) = obstacle_rr {
-                if rr < cfg.target_r { return None; }
+                if rr < cfg.target_r { return Err("obstacle_too_close"); }
             } else if !cfg.allow_no_obstacle {
-                return None;
+                return Err("obstacle_none");
             }
             let tp = match direction { Direction::Long => t + cfg.target_r * risk, Direction::Short => t - cfg.target_r * risk };
             (round_price(tp, price_scale), cfg.target_r)
@@ -70,22 +71,22 @@ pub fn compute_levels(
             let o = match obstacle_rounded {
                 Some(o) => o,
                 None => {
-                    if !cfg.allow_no_obstacle { return None; }
+                    if !cfg.allow_no_obstacle { return Err("obstacle_none"); }
                     let tp = match direction { Direction::Long => t + cfg.target_r * risk, Direction::Short => t - cfg.target_r * risk };
-                    return Some(Levels { stop_loss: stop, take_profit: round_price(tp, price_scale), gross_rr: cfg.target_r, obstacle: None, obstacle_rr: None });
+                    return Ok(Levels { stop_loss: stop, take_profit: round_price(tp, price_scale), gross_rr: cfg.target_r, obstacle: None, obstacle_rr: None });
                 }
             };
             let buf = round_price(cfg.structural_buffer_atr * zone.atr, price_scale);
             let tp = match direction { Direction::Long => o - buf, Direction::Short => o + buf };
             let tp = round_price(tp, price_scale);
             let gross = match direction { Direction::Long => (tp - t) / risk, Direction::Short => (t - tp) / risk };
-            if gross < cfg.min_gross_rr { return None; }
+            if gross < cfg.min_gross_rr { return Err("obstacle_too_close"); }
             (tp, gross)
         }
     };
     // Recompute gross from the rounded levels that go into the payload.
     let gross = match direction { Direction::Long => (tp - t) / risk, Direction::Short => (t - tp) / risk };
-    Some(Levels { stop_loss: stop, take_profit: tp, gross_rr: gross, obstacle: obstacle_rounded, obstacle_rr })
+    Ok(Levels { stop_loss: stop, take_profit: tp, gross_rr: gross, obstacle: obstacle_rounded, obstacle_rr })
 }
 
 #[cfg(test)]
@@ -108,7 +109,7 @@ mod tests {
         let ok = compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.20")), 2, &cfg).unwrap();
         assert_eq!(ok.stop_loss, dec("1.95"));
         assert_eq!(ok.take_profit, dec("2.15"));
-        assert!(compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.05")), 2, &cfg).is_none());
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.05")), 2, &cfg).is_err());
     }
 
     #[test]
@@ -145,9 +146,9 @@ mod tests {
     fn no_obstacle_respects_allow_no_obstacle() {
         let z = zone(ZoneKind::Demand, "1.96", "2.00");
         let allow = Config { allow_no_obstacle: true, ..Config::default_for(&["XRP-USDT"]) };
-        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &allow).is_some());
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &allow).is_ok());
         let deny = Config { allow_no_obstacle: false, ..Config::default_for(&["XRP-USDT"]) };
-        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &deny).is_none());
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &deny).is_err());
     }
 }
 
@@ -207,7 +208,12 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
     };
     let price_scale = cfg.price_scale.get(&state.symbol).copied().unwrap_or(4);
     let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
-        Some(l) => l, None => return out, // veto; zone stays Active
+        Ok(l) => l,
+        Err(tag) => {
+            // Veto: report the reason, leave the zone Active & unchanged (not consumption).
+            out.push(Output::StateChange { reason: tag });
+            return out;
+        }
     };
     let zone_height_atr = (zone_snapshot.high - zone_snapshot.low) / atr;
     let trigger = crate::strategy::decimal::round_price(price, price_scale);
