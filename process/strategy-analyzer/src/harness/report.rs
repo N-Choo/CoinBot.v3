@@ -1,4 +1,4 @@
-use crate::strategy::types::Direction;
+use crate::strategy::types::{Candle, Direction};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 
@@ -44,6 +44,84 @@ pub fn adversarial_composite(low_first: &[TradeRecord], high_first: &[TradeRecor
 /// Flag when realised cost exceeds 0.5R; references the analyzer's floor.
 pub fn cushion_warning(mean_cost_r: f64) -> Option<&'static str> {
     if mean_cost_r > 0.5 { Some("cost > 0.5R: the analyzer's floor (target_r in fixed_r, min_gross_rr in structural) is too low") } else { None }
+}
+
+/// Pre-registered **relative** tolerance between the 1m-derived 4H aggregate and the
+/// independently fetched 4H series. Fixed **before** looking at any real data. A mismatched field
+/// above this refuses the run; nothing is ever silently patched.
+pub const AGG_TOLERANCE: f64 = 1e-9;
+
+/// One OHLC/timestamp field that differs between an aggregated and a fetched 4H candle.
+#[derive(Debug, Clone, PartialEq)]
+pub struct AggMismatch {
+    pub open_time_ms: i64,
+    pub field: &'static str,
+    pub aggregated: Decimal,
+    pub fetched: Decimal,
+    pub rel_diff: f64,
+}
+
+/// Compare a 1m-derived 4H series with the independently fetched 4H series field by field.
+/// Returns every mismatched field (even sub-tolerance ones, so they can be reported); never
+/// mutates or patches either series. The two series are aligned by index.
+pub fn compare_aggregates(aggregated: &[Candle], fetched: &[Candle]) -> Vec<AggMismatch> {
+    let mut out = Vec::new();
+    for (a, f) in aggregated.iter().zip(fetched) {
+        let fields: [(&'static str, Decimal, Decimal); 5] = [
+            ("open", a.open, f.open),
+            ("high", a.high, f.high),
+            ("low", a.low, f.low),
+            ("close", a.close, f.close),
+            ("open_time_ms", Decimal::from(a.open_time_ms), Decimal::from(f.open_time_ms)),
+        ];
+        for (field, av, fv) in fields {
+            if av != fv {
+                out.push(AggMismatch { open_time_ms: a.open_time_ms, field, aggregated: av, fetched: fv, rel_diff: relative_diff(av, fv) });
+            }
+        }
+    }
+    out
+}
+
+/// Relative difference of `a` against the fetched value `b` (zero-safe: a zero fetched value
+/// falls back to an absolute difference).
+fn relative_diff(a: Decimal, b: Decimal) -> f64 {
+    let denom = if b.is_zero() { Decimal::ONE } else { b.abs() };
+    ((a - b).abs() / denom).to_string().parse::<f64>().unwrap()
+}
+
+/// Validate a 1m-derived 4H series against the fetched 4H series. Mismatched fields are reported;
+/// if any field exceeds `AGG_TOLERANCE` the run is **refused** with an `Err`. Network is never
+/// touched here — both series are local files loaded by the caller (`fetch-data` owns all I/O),
+/// so the backtest path stays offline.
+pub fn validate_aggregates(aggregated: &[Candle], fetched: &[Candle]) -> Result<Vec<AggMismatch>, String> {
+    if aggregated.len() != fetched.len() {
+        return Err(format!(
+            "aggregate length mismatch: {} aggregated vs {} fetched 4H candles",
+            aggregated.len(),
+            fetched.len()
+        ));
+    }
+    let mismatches = compare_aggregates(aggregated, fetched);
+    if let Some(first) = mismatches.iter().find(|m| m.rel_diff > AGG_TOLERANCE) {
+        return Err(format!(
+            "refusing 1m run: {} aggregate field(s) exceed AGG_TOLERANCE={AGG_TOLERANCE:e} (first: candle {} {} aggregated={} fetched={})",
+            mismatches.iter().filter(|m| m.rel_diff > AGG_TOLERANCE).count(),
+            first.open_time_ms,
+            first.field,
+            first.aggregated,
+            first.fetched,
+        ));
+    }
+    Ok(mismatches)
+}
+
+/// Fraction of candles where the assumed intrabar low/high order differed from the order observed
+/// in 1m data. 0.0 when there is nothing to compare.
+pub fn calibration_wrong_fraction(assumed_low_first: &[bool], observed_low_first: &[bool]) -> f64 {
+    if assumed_low_first.is_empty() { return 0.0; }
+    let wrong = assumed_low_first.iter().zip(observed_low_first).filter(|(a, o)| a != o).count();
+    wrong as f64 / assumed_low_first.len() as f64
 }
 
 /// Deterministic tiny LCG (no `rand`). `state = state * 6364136223846793005 + 1442695040888963407`.
@@ -108,5 +186,53 @@ mod tests {
     #[test]
     fn cushion_warning_references_floor() {
         assert!(cushion_warning(0.6).unwrap().contains("floor"));
+    }
+
+    fn candle(open_time_ms: i64, open: &str, high: &str, low: &str, close: &str) -> Candle {
+        let d = |s: &str| Decimal::from_str(s).unwrap();
+        Candle { open_time_ms, open: d(open), high: d(high), low: d(low), close: d(close) }
+    }
+
+    #[test]
+    fn matching_aggregate_passes_and_reports_nothing() {
+        let agg = vec![
+            candle(0, "1.0", "2.0", "0.5", "1.5"),
+            candle(14_400_000, "1.5", "2.5", "1.0", "2.0"),
+        ];
+        let fetched = agg.clone();
+        assert!(compare_aggregates(&agg, &fetched).is_empty());
+        assert_eq!(validate_aggregates(&agg, &fetched).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn mismatched_aggregate_is_reported_and_refused_above_tolerance() {
+        let agg = vec![candle(0, "1.0", "2.0", "0.5", "1.5")];
+        // A fetched high of 2.000000001 is short of the tolerance; 2.5 is far above it.
+        let sub = vec![candle(0, "1.0", "2.000000001", "0.5", "1.5")];
+        let over = vec![candle(0, "1.0", "2.5", "0.5", "1.5")];
+
+        let reported = compare_aggregates(&agg, &sub);
+        assert_eq!(reported.len(), 1, "a sub-tolerance difference is still reported");
+        assert_eq!(reported[0].field, "high");
+        assert!(validate_aggregates(&agg, &sub).is_ok(), "sub-tolerance differences must not refuse the run");
+
+        let reported_over = compare_aggregates(&agg, &over);
+        assert_eq!(reported_over.len(), 1, "the mismatched candle must be reported");
+        let err = validate_aggregates(&agg, &over).unwrap_err();
+        assert!(err.contains("refusing 1m run"), "above-tolerance mismatch must refuse the run: {err}");
+    }
+
+    #[test]
+    fn length_mismatch_is_refused() {
+        let agg = vec![candle(0, "1.0", "2.0", "0.5", "1.5")];
+        assert!(validate_aggregates(&agg, &[]).is_err());
+    }
+
+    #[test]
+    fn calibration_wrong_fraction_counts_disagreements() {
+        assert_eq!(calibration_wrong_fraction(&[true, false, true], &[true, false, true]), 0.0);
+        assert_eq!(calibration_wrong_fraction(&[true, true], &[false, false]), 1.0);
+        assert_eq!(calibration_wrong_fraction(&[true, true], &[true, false]), 0.5);
+        assert_eq!(calibration_wrong_fraction(&[], &[]), 0.0);
     }
 }

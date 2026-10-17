@@ -1,14 +1,18 @@
 use clap::{Parser, Subcommand};
 use std::time::Duration;
-use strategy_analyzer::harness::dataset::{dataset_hash, load_csv};
+use strategy_analyzer::harness::dataset::{dataset_hash, load_csv, load_csv_with_policy, GapPolicy};
 use strategy_analyzer::harness::fetch;
 use strategy_analyzer::harness::lock;
 use strategy_analyzer::harness::perturb;
-use strategy_analyzer::harness::report::{adversarial_composite, cushion_warning, summarize, time_blocked_bootstrap, TradeRecord, BOOTSTRAP_BLOCK_MS};
+use strategy_analyzer::harness::report::{
+    adversarial_composite, calibration_wrong_fraction, cushion_warning, summarize, time_blocked_bootstrap,
+    validate_aggregates, TradeRecord, AGG_TOLERANCE, BOOTSTRAP_BLOCK_MS,
+};
 use strategy_analyzer::harness::run::{run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
-use strategy_analyzer::harness::tick_source::PathPolicy;
+use strategy_analyzer::harness::tick_source::{aggregate_4h, PathPolicy};
 use strategy_analyzer::strategy::config::{config_version, Config, TargetMode};
+use strategy_analyzer::strategy::types::Candle;
 use rust_decimal::Decimal;
 
 const KUCOIN_BASE: &str = "https://api.kucoin.com";
@@ -36,6 +40,12 @@ enum Cmd {
         #[arg(long, default_value_t = false)] oos: bool,
         #[arg(long, default_value_t = false)] oos_consumed: bool,
     },
+    /// Validate a 1m-derived 4H aggregate against an independently fetched 4H series (offline).
+    /// Refuses the run above `AGG_TOLERANCE`; never silently patches. Network stays in `fetch-data`.
+    Calibrate {
+        #[arg(long)] one_minute: String,
+        #[arg(long)] fetched_4h: String,
+    },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -44,6 +54,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             fetch_data(&symbol, &interval, start_s, end_s, &out),
         Cmd::Backtest { data, policy, mode, lock, oos, oos_consumed } =>
             backtest(&data, &policy, &mode, lock, oos, oos_consumed),
+        Cmd::Calibrate { one_minute, fetched_4h } =>
+            calibrate(&one_minute, &fetched_4h),
     }
 }
 
@@ -93,6 +105,42 @@ fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
         target_r: v[5],
         ..cfg.clone()
     }
+}
+
+/// True when the low of `chunk` is visited before its high (intrabar order observed in 1m data).
+/// `None` for a degenerate chunk where the low and high share a minute.
+fn observed_low_first(chunk: &[Candle]) -> Option<bool> {
+    let lo = chunk.iter().enumerate().min_by_key(|(_, c)| c.low)?.0;
+    let hi = chunk.iter().enumerate().max_by_key(|(_, c)| c.high)?.0;
+    if lo == hi { None } else { Some(lo < hi) }
+}
+
+/// Offline 1m-vs-4H calibration. Both inputs are local cached CSVs; `fetch-data` owns all network
+/// I/O, so this never touches the network. Mismatches are reported; above `AGG_TOLERANCE` the run
+/// is refused, never patched.
+fn calibrate(one_minute: &str, fetched_4h: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let minutes = load_csv_with_policy(one_minute, GapPolicy::ForwardFill, 60_000)?;
+    let fetched = load_csv(fetched_4h)?;
+    let aggregated: Vec<Candle> = minutes.chunks(240).map(aggregate_4h).collect();
+
+    let mismatches = validate_aggregates(&aggregated, &fetched)?;
+    println!("# 1m calibration");
+    println!("#   aggregated_candles={} fetched_candles={} within_tolerance_mismatches={} tolerance={AGG_TOLERANCE:e}",
+        aggregated.len(), fetched.len(), mismatches.len());
+    for m in &mismatches {
+        println!("#   candle={} field={} aggregated={} fetched={} rel_diff={:.3e}",
+            m.open_time_ms, m.field, m.aggregated, m.fetched, m.rel_diff);
+    }
+
+    // Intrabar order calibration, when the 1m series chunks 1:1 with the fetched 4H series.
+    if aggregated.len() == fetched.len() {
+        let observed: Vec<bool> = minutes.chunks(240).filter_map(observed_low_first).collect();
+        for (name, assumed) in [("low_first", true), ("high_first", false)] {
+            let assumed_flags: Vec<bool> = std::iter::repeat(assumed).take(observed.len()).collect();
+            println!("#   intrabar_{name}_wrong_fraction={:.4}", calibration_wrong_fraction(&assumed_flags, &observed));
+        }
+    }
+    Ok(())
 }
 
 fn policy_name(p: PathPolicy) -> &'static str {
