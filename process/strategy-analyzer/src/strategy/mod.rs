@@ -9,3 +9,4 @@ pub mod types;
 pub mod step;
 pub mod indicators;
 pub mod structure;
+pub mod zones;
