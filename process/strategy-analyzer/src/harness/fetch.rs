@@ -19,24 +19,46 @@ pub fn is_rate_limited(err: &str) -> bool {
 
 /// Fetch one page from KuCoin and return raw CSV rows `time,open,close,high,low,volume,turnover`.
 /// Throttle between calls in the caller. Keep I/O out of the core.
-pub fn fetch_page(base_url: &str, symbol: &str, interval: &str, start_s: i64, end_s: i64)
-    -> Result<Vec<[String; 7]>, String>
-{
+pub fn fetch_page(
+    base_url: &str,
+    symbol: &str,
+    interval: &str,
+    start_s: i64,
+    end_s: i64,
+) -> Result<Vec<[String; 7]>, String> {
     let url = format!("{base_url}/api/v1/market/candles?symbol={symbol}&type={interval}&startAt={start_s}&endAt={end_s}");
-    let body: serde_json::Value = ureq::get(&url).call()
+    let body: serde_json::Value = ureq::get(&url)
+        .call()
         .map_err(|e| match e {
             ureq::Error::Status(code, _) => format!("HTTP {code}"),
             other => other.to_string(),
         })?
-        .into_json().map_err(|e| e.to_string())?;
+        .into_json()
+        .map_err(|e| e.to_string())?;
     if body.get("code").and_then(|c| c.as_str()) != Some("200000") {
-        return Err(format!("KuCoin error: {}", body.get("msg").and_then(|m| m.as_str()).unwrap_or("unknown")));
+        return Err(format!(
+            "KuCoin error: {}",
+            body.get("msg")
+                .and_then(|m| m.as_str())
+                .unwrap_or("unknown")
+        ));
     }
-    let rows = body.get("data").and_then(|d| d.as_array()).ok_or("no data")?;
-    Ok(rows.iter().map(|r| {
-        let a = r.as_array().expect("row is an array");
-        std::array::from_fn(|i| a.get(i).and_then(|v| v.as_str()).unwrap_or_default().to_string())
-    }).collect())
+    let rows = body
+        .get("data")
+        .and_then(|d| d.as_array())
+        .ok_or("no data")?;
+    Ok(rows
+        .iter()
+        .map(|r| {
+            let a = r.as_array().expect("row is an array");
+            std::array::from_fn(|i| {
+                a.get(i)
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default()
+                    .to_string()
+            })
+        })
+        .collect())
 }
 
 #[cfg(test)]

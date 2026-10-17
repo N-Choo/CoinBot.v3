@@ -13,10 +13,18 @@ use strategy_analyzer::harness::tick_source::PathPolicy;
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::types::Candle;
 
-fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+fn dec(s: &str) -> Decimal {
+    Decimal::from_str(s).unwrap()
+}
 
 fn candle(open_time_ms: i64, open: &str, high: &str, low: &str, close: &str) -> Candle {
-    Candle { open_time_ms, open: dec(open), high: dec(high), low: dec(low), close: dec(close) }
+    Candle {
+        open_time_ms,
+        open: dec(open),
+        high: dec(high),
+        low: dec(low),
+        close: dec(close),
+    }
 }
 
 /// Same pre-registered sim defaults as the `backtest` CLI (5 bps fee/side, 5 bps entry slip,
@@ -24,8 +32,11 @@ fn candle(open_time_ms: i64, open: &str, high: &str, low: &str, close: &str) -> 
 /// of pass 2 and does not depend on the cost model.
 fn params() -> SimParams {
     SimParams {
-        fee_bps: Decimal::from(5), entry_slip_bps: Decimal::from(5), stop_slip_bps: Decimal::from(15),
-        borrow_bps_per_day: Decimal::from(2), latency_ticks: 1,
+        fee_bps: Decimal::from(5),
+        entry_slip_bps: Decimal::from(5),
+        stop_slip_bps: Decimal::from(15),
+        borrow_bps_per_day: Decimal::from(2),
+        latency_ticks: 1,
     }
 }
 
@@ -49,8 +60,10 @@ fn two_signal_series() -> Vec<Candle> {
     const STEP: i64 = 14_400_000;
     let c = |i: i64, o: &str, h: &str, l: &str, cl: &str| candle(i * STEP, o, h, l, cl);
     let mut out = Vec::new();
-    for i in 0..20 { out.push(c(i, "100.0", "100.5", "99.5", "100.0")); } // 0..20: ATR warmup
-    out.push(c(20, "100.0", "100.2", "99.0", "99.5"));   // swing low 99.0
+    for i in 0..20 {
+        out.push(c(i, "100.0", "100.5", "99.5", "100.0"));
+    } // 0..20: ATR warmup
+    out.push(c(20, "100.0", "100.2", "99.0", "99.5")); // swing low 99.0
     out.push(c(21, "99.5", "100.0", "99.2", "99.8"));
     out.push(c(22, "99.8", "100.5", "99.6", "100.2"));
     out.push(c(23, "100.2", "101.0", "100.0", "100.6")); // swing high 101.0
@@ -75,8 +88,17 @@ fn two_signal_series() -> Vec<Candle> {
 #[test]
 fn second_signal_while_position_open_is_skipped() {
     let cfg = Config::default_for(&["XRP-USDT"]);
-    let res = run("XRP-USDT", &two_signal_series(), PathPolicy::LowFirst, &cfg, params());
+    let res = run(
+        "XRP-USDT",
+        &two_signal_series(),
+        PathPolicy::LowFirst,
+        &cfg,
+        params(),
+    );
     assert_eq!(res.signals, 2, "the series must emit two signals");
     assert_eq!(res.trades.len(), 1, "only the first signal may be traded");
-    assert_eq!(res.skipped_open_position, 1, "the second signal arrives while position 1 is open");
+    assert_eq!(
+        res.skipped_open_position, 1,
+        "the second signal arrives while position 1 is open"
+    );
 }

@@ -12,13 +12,30 @@ pub fn true_range(prev_close: Option<Decimal>, high: Decimal, low: Decimal) -> D
 /// Wilder ATR seeded with the simple mean of the first `period` true ranges.
 /// Returns `None` until warm-up is complete.
 /// Incremental Wilder ATR. State stores its fields directly (`atr`, `atr_seed_sum`, `atr_seen`).
-pub struct AtrState { pub value: Option<Decimal>, pub seed_sum: Decimal, pub seen: u32, pub period: u32 }
+pub struct AtrState {
+    pub value: Option<Decimal>,
+    pub seed_sum: Decimal,
+    pub seen: u32,
+    pub period: u32,
+}
 
 impl AtrState {
-    pub fn new(period: u32) -> Self { Self { value: None, seed_sum: Decimal::ZERO, seen: 0, period } }
+    pub fn new(period: u32) -> Self {
+        Self {
+            value: None,
+            seed_sum: Decimal::ZERO,
+            seen: 0,
+            period,
+        }
+    }
 
     /// Feed one candle's TR inputs; returns the running ATR once warm-up completes.
-    pub fn update(&mut self, prev_close: Option<Decimal>, high: Decimal, low: Decimal) -> Option<Decimal> {
+    pub fn update(
+        &mut self,
+        prev_close: Option<Decimal>,
+        high: Decimal,
+        low: Decimal,
+    ) -> Option<Decimal> {
         let tr = true_range(prev_close, high, low);
         self.seen += 1;
         match self.value {
@@ -29,7 +46,10 @@ impl AtrState {
                 }
             }
             Some(prev) => {
-                self.value = Some(work((prev * Decimal::from(self.period as u64 - 1) + tr) / Decimal::from(self.period as u64)));
+                self.value = Some(work(
+                    (prev * Decimal::from(self.period as u64 - 1) + tr)
+                        / Decimal::from(self.period as u64),
+                ));
             }
         }
         self.value
@@ -40,7 +60,9 @@ impl AtrState {
 mod tests {
     use super::*;
     use std::str::FromStr;
-    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
+    }
 
     #[test]
     fn first_candle_tr_is_high_minus_low() {
@@ -50,7 +72,9 @@ mod tests {
     #[test]
     fn warmup_returns_none() {
         let mut a = AtrState::new(14);
-        for _ in 0..13 { assert_eq!(a.update(None, dec("2"), dec("0.5")), None); }
+        for _ in 0..13 {
+            assert_eq!(a.update(None, dec("2"), dec("0.5")), None);
+        }
         assert!(a.update(None, dec("2"), dec("0.5")).is_some());
     }
 
@@ -58,7 +82,9 @@ mod tests {
     fn flat_series_yields_zero_atr_not_error() {
         let mut a = AtrState::new(14);
         let mut v = None;
-        for _ in 0..20 { v = a.update(Some(dec("1")), dec("1"), dec("1")); }
+        for _ in 0..20 {
+            v = a.update(Some(dec("1")), dec("1"), dec("1"));
+        }
         assert_eq!(v, Some(Decimal::ZERO));
     }
 
@@ -66,7 +92,9 @@ mod tests {
     fn constant_range_seeds_to_that_range() {
         let mut a = AtrState::new(14);
         let mut v = None;
-        for _ in 0..20 { v = a.update(Some(dec("1")), dec("2"), dec("0.5")); }
+        for _ in 0..20 {
+            v = a.update(Some(dec("1")), dec("2"), dec("0.5"));
+        }
         assert_eq!(v, Some(dec("1.5")));
     }
 }

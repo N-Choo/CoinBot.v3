@@ -27,7 +27,9 @@ pub fn work(value: Decimal) -> Decimal {
 mod tests {
     use super::*;
     use std::str::FromStr;
-    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
+    }
 
     #[test]
     fn half_up_not_half_even() {

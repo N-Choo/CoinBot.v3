@@ -47,7 +47,10 @@ fn oat_cells(base: Decimal, eval: &dyn Fn(Decimal) -> Decimal) -> (usize, usize)
 
 /// OAT across the whole `axis`: each parameter in turn at ±20%, all others held at base.
 /// Returns `(#positive cells, #cells)` so the caller can log how many variants were tried.
-pub fn oat_axis_positive_cells(base: &[Decimal], eval: &dyn Fn(&[Decimal]) -> Decimal) -> (usize, usize) {
+pub fn oat_axis_positive_cells(
+    base: &[Decimal],
+    eval: &dyn Fn(&[Decimal]) -> Decimal,
+) -> (usize, usize) {
     let mut ok = 0;
     let mut total = 0;
     for i in 0..base.len() {
@@ -65,14 +68,24 @@ pub fn oat_axis_positive_cells(base: &[Decimal], eval: &dyn Fn(&[Decimal]) -> De
 
 /// Seeded joint perturbation: each parameter is uniform in ±20%; returns the fraction of `draws`
 /// with positive expectancy. Deterministic for a fixed `seed`.
-pub fn joint_positive_fraction(base: &[Decimal], draws: usize, seed: u64, eval: &dyn Fn(&[Decimal]) -> Decimal) -> f64 {
+pub fn joint_positive_fraction(
+    base: &[Decimal],
+    draws: usize,
+    seed: u64,
+    eval: &dyn Fn(&[Decimal]) -> Decimal,
+) -> f64 {
     if draws == 0 {
         return 0.0;
     }
     joint_positive_count(base, draws, seed, eval) as f64 / draws as f64
 }
 
-fn joint_positive_count(base: &[Decimal], draws: usize, seed: u64, eval: &dyn Fn(&[Decimal]) -> Decimal) -> usize {
+fn joint_positive_count(
+    base: &[Decimal],
+    draws: usize,
+    seed: u64,
+    eval: &dyn Fn(&[Decimal]) -> Decimal,
+) -> usize {
     let mut rng = Lcg::new(seed);
     let mut ok = 0;
     for _ in 0..draws {
@@ -126,7 +139,10 @@ impl PerturbationReport {
 
 /// Run the full diagnostics pass over a parameter `axis`. Wall-clock timing is harness-only (the
 /// core stays clock-free). Diagnostics never feed selection.
-pub fn run_diagnostics(axis: &[Decimal], eval: &dyn Fn(&[Decimal]) -> Decimal) -> PerturbationReport {
+pub fn run_diagnostics(
+    axis: &[Decimal],
+    eval: &dyn Fn(&[Decimal]) -> Decimal,
+) -> PerturbationReport {
     let start = Instant::now();
     let (oat_positive_cells, oat_cells) = oat_axis_positive_cells(axis, eval);
     let joint_positive_draws = joint_positive_count(axis, JOINT_DRAWS, JOINT_SEED, eval);
@@ -134,7 +150,11 @@ pub fn run_diagnostics(axis: &[Decimal], eval: &dyn Fn(&[Decimal]) -> Decimal) -
     PerturbationReport {
         oat_positive_cells,
         oat_cells,
-        oat_positive_fraction: if oat_cells == 0 { 0.0 } else { oat_positive_cells as f64 / oat_cells as f64 },
+        oat_positive_fraction: if oat_cells == 0 {
+            0.0
+        } else {
+            oat_positive_cells as f64 / oat_cells as f64
+        },
         joint_positive_draws,
         joint_draws: JOINT_DRAWS,
         joint_positive_fraction: joint_positive_draws as f64 / JOINT_DRAWS as f64,
@@ -174,7 +194,10 @@ mod tests {
     #[test]
     fn joint_is_one_when_eval_is_always_positive() {
         let axis = [dec("1.0"), dec("2.0")];
-        assert_eq!(joint_positive_fraction(&axis, 200, JOINT_SEED, &|_| Decimal::ONE), 1.0);
+        assert_eq!(
+            joint_positive_fraction(&axis, 200, JOINT_SEED, &|_| Decimal::ONE),
+            1.0
+        );
     }
 
     #[test]

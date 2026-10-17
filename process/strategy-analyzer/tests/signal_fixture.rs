@@ -24,7 +24,10 @@ fn count_signals(path: &str, policy: PathPolicy) -> usize {
         for t in ticks {
             let (ns, o) = step(&st, Input::PriceTick(t), &cfg).unwrap();
             st = ns;
-            n += o.iter().filter(|o| matches!(o, Output::EntrySignal(_))).count();
+            n += o
+                .iter()
+                .filter(|o| matches!(o, Output::EntrySignal(_)))
+                .count();
         }
         let (ns, _) = step(&st, Input::ClosedCandle(candle), &cfg).unwrap();
         st = ns;
@@ -72,7 +75,12 @@ fn replay_fixture(path: &str, policy: PathPolicy) -> FixtureRun {
     let cfg = Config::default_for(&["XRP-USDT"]);
     let mut st = StrategyState::new("XRP-USDT", 1);
     let mut src = Ohlcv4hSynthesis::new(candles, policy);
-    let mut run = FixtureRun { signals: 0, reasons: Vec::new(), zone_events: Vec::new(), consumed_signal_zone_ids: Vec::new() };
+    let mut run = FixtureRun {
+        signals: 0,
+        reasons: Vec::new(),
+        zone_events: Vec::new(),
+        consumed_signal_zone_ids: Vec::new(),
+    };
     while let Some((ticks, candle)) = src.next_candle() {
         for t in ticks {
             let (ns, outs) = step(&st, Input::PriceTick(t), &cfg).unwrap();
@@ -99,7 +107,11 @@ fn collect_outs(run: &mut FixtureRun, outs: Vec<Output>) {
 
 /// Record zones the signal path consumed (`signal_published`) before pruning drops them.
 fn collect_consumed_signal_zones(run: &mut FixtureRun, st: &StrategyState) {
-    for z in st.zones.iter().filter(|z| z.consume_reason == Some(ConsumeReason::SignalPublished)) {
+    for z in st
+        .zones
+        .iter()
+        .filter(|z| z.consume_reason == Some(ConsumeReason::SignalPublished))
+    {
         if !run.consumed_signal_zone_ids.contains(&z.id) {
             run.consumed_signal_zone_ids.push(z.id.clone());
         }
@@ -151,7 +163,10 @@ fn signal_fixture_counts_match_derivation() {
 /// The mitigated fixture must *name* its veto instead of returning silently.
 #[test]
 fn mitigated_fixture_emits_mitigated_reason() {
-    let run = replay_fixture("tests/fixtures/signal_mitigated_4h.csv", PathPolicy::LowFirst);
+    let run = replay_fixture(
+        "tests/fixtures/signal_mitigated_4h.csv",
+        PathPolicy::LowFirst,
+    );
     assert_eq!(run.signals, 0, "mitigated zone must publish no signal");
     assert!(
         run.reasons.contains(&"mitigated"),
@@ -166,7 +181,10 @@ fn mitigated_fixture_emits_mitigated_reason() {
 /// emission — not two — and still 0 signals.
 #[test]
 fn obstacle_too_close_fixture_veto_consumes_zone_once() {
-    let run = replay_fixture("tests/fixtures/signal_obstacle_too_close_4h.csv", PathPolicy::LowFirst);
+    let run = replay_fixture(
+        "tests/fixtures/signal_obstacle_too_close_4h.csv",
+        PathPolicy::LowFirst,
+    );
     assert_eq!(run.signals, 0, "vetoed touch must publish no signal");
     assert!(
         !run.reasons.contains(&"obstacle_too_close"),
@@ -178,7 +196,10 @@ fn obstacle_too_close_fixture_veto_consumes_zone_once() {
         .iter()
         .filter(|e| {
             e.kind == ZoneEventKind::Consumed
-                && e.reason == Some(ZoneEventReason::Consumed(ConsumeReason::VetoedObstacleTooClose))
+                && e.reason
+                    == Some(ZoneEventReason::Consumed(
+                        ConsumeReason::VetoedObstacleTooClose,
+                    ))
         })
         .count();
     assert_eq!(
@@ -191,9 +212,18 @@ fn obstacle_too_close_fixture_veto_consumes_zone_once() {
 /// first zone is `Consumed` (either a `Consumed` ZoneEvent or the `signal_published` consume reason).
 #[test]
 fn second_touch_fixture_consumes_first_zone() {
-    let run = replay_fixture("tests/fixtures/signal_second_touch_4h.csv", PathPolicy::LowFirst);
-    assert_eq!(run.signals, 1, "second touch must not publish a second signal");
-    let consumed = run.zone_events.iter().any(|e| e.kind == ZoneEventKind::Consumed)
+    let run = replay_fixture(
+        "tests/fixtures/signal_second_touch_4h.csv",
+        PathPolicy::LowFirst,
+    );
+    assert_eq!(
+        run.signals, 1,
+        "second touch must not publish a second signal"
+    );
+    let consumed = run
+        .zone_events
+        .iter()
+        .any(|e| e.kind == ZoneEventKind::Consumed)
         || !run.consumed_signal_zone_ids.is_empty();
     assert!(
         consumed,

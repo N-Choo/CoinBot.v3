@@ -1,13 +1,16 @@
 use clap::{Parser, Subcommand};
+use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::time::Duration;
-use strategy_analyzer::harness::dataset::{dataset_hash, load_csv, load_csv_with_policy, GapPolicy};
+use strategy_analyzer::harness::dataset::{
+    dataset_hash, load_csv, load_csv_with_policy, GapPolicy,
+};
 use strategy_analyzer::harness::fetch;
 use strategy_analyzer::harness::lock;
 use strategy_analyzer::harness::perturb;
 use strategy_analyzer::harness::report::{
-    adversarial_composite, calibration_wrong_fraction, cushion_warning, summarize, time_blocked_bootstrap,
-    validate_aggregates, TradeRecord, AGG_TOLERANCE, BOOTSTRAP_BLOCK_MS,
+    adversarial_composite, calibration_wrong_fraction, cushion_warning, summarize,
+    time_blocked_bootstrap, validate_aggregates, TradeRecord, AGG_TOLERANCE, BOOTSTRAP_BLOCK_MS,
 };
 use strategy_analyzer::harness::run::{run, RunResult};
 use strategy_analyzer::harness::sim::SimParams;
@@ -15,49 +18,77 @@ use strategy_analyzer::harness::tick_source::{aggregate_4h, PathPolicy};
 use strategy_analyzer::harness::verdict::{verdict, VerdictOutcome};
 use strategy_analyzer::strategy::config::{config_version, Config, TargetMode};
 use strategy_analyzer::strategy::types::Candle;
-use rust_decimal::Decimal;
 
 const KUCOIN_BASE: &str = "https://api.kucoin.com";
 const SYMBOL: &str = "XRP-USDT";
 
 #[derive(Parser)]
-struct Cli { #[command(subcommand)] cmd: Cmd }
+struct Cli {
+    #[command(subcommand)]
+    cmd: Cmd,
+}
 
 #[derive(Subcommand)]
 enum Cmd {
     /// Fetch OHLCV and cache to a file. Never used by `backtest`.
     FetchData {
-        #[arg(long)] symbol: String,
-        #[arg(long, default_value = "4hour")] interval: String,
-        #[arg(long)] start_s: i64,
-        #[arg(long)] end_s: i64,
-        #[arg(long)] out: String,
+        #[arg(long)]
+        symbol: String,
+        #[arg(long, default_value = "4hour")]
+        interval: String,
+        #[arg(long)]
+        start_s: i64,
+        #[arg(long)]
+        end_s: i64,
+        #[arg(long)]
+        out: String,
     },
     /// Run the backtest offline against a cached dataset.
     Backtest {
-        #[arg(long)] data: String,
-        #[arg(long, default_value = "both")] policy: String,
-        #[arg(long, default_value = "both")] mode: String,
-        #[arg(long)] lock: Option<String>,
-        #[arg(long, default_value_t = false)] oos: bool,
-        #[arg(long, default_value_t = false)] oos_consumed: bool,
+        #[arg(long)]
+        data: String,
+        #[arg(long, default_value = "both")]
+        policy: String,
+        #[arg(long, default_value = "both")]
+        mode: String,
+        #[arg(long)]
+        lock: Option<String>,
+        #[arg(long, default_value_t = false)]
+        oos: bool,
+        #[arg(long, default_value_t = false)]
+        oos_consumed: bool,
     },
     /// Validate a 1m-derived 4H aggregate against an independently fetched 4H series (offline).
     /// Refuses the run above `AGG_TOLERANCE`; never silently patches. Network stays in `fetch-data`.
     Calibrate {
-        #[arg(long)] one_minute: String,
-        #[arg(long)] fetched_4h: String,
+        #[arg(long)]
+        one_minute: String,
+        #[arg(long)]
+        fetched_4h: String,
     },
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     match Cli::parse().cmd {
-        Cmd::FetchData { symbol, interval, start_s, end_s, out } =>
-            fetch_data(&symbol, &interval, start_s, end_s, &out),
-        Cmd::Backtest { data, policy, mode, lock, oos, oos_consumed } =>
-            backtest(&data, &policy, &mode, lock, oos, oos_consumed),
-        Cmd::Calibrate { one_minute, fetched_4h } =>
-            calibrate(&one_minute, &fetched_4h),
+        Cmd::FetchData {
+            symbol,
+            interval,
+            start_s,
+            end_s,
+            out,
+        } => fetch_data(&symbol, &interval, start_s, end_s, &out),
+        Cmd::Backtest {
+            data,
+            policy,
+            mode,
+            lock,
+            oos,
+            oos_consumed,
+        } => backtest(&data, &policy, &mode, lock, oos, oos_consumed),
+        Cmd::Calibrate {
+            one_minute,
+            fetched_4h,
+        } => calibrate(&one_minute, &fetched_4h),
     }
 }
 
@@ -74,7 +105,13 @@ fn default_sim_params() -> SimParams {
 }
 
 fn zero_cost_params(p: SimParams) -> SimParams {
-    SimParams { fee_bps: Decimal::ZERO, entry_slip_bps: Decimal::ZERO, stop_slip_bps: Decimal::ZERO, borrow_bps_per_day: Decimal::ZERO, latency_ticks: p.latency_ticks }
+    SimParams {
+        fee_bps: Decimal::ZERO,
+        entry_slip_bps: Decimal::ZERO,
+        stop_slip_bps: Decimal::ZERO,
+        borrow_bps_per_day: Decimal::ZERO,
+        latency_ticks: p.latency_ticks,
+    }
 }
 
 /// Scale every cost rate by `num/den` (used for the pre-registered 1.5× cost stress).
@@ -90,7 +127,9 @@ fn scaled_cost_params(p: SimParams, num: Decimal, den: Decimal) -> SimParams {
 
 /// Decimal portfolio mean R (0 when there are no trades).
 fn mean_r(trades: &[TradeRecord]) -> Decimal {
-    if trades.is_empty() { return Decimal::ZERO; }
+    if trades.is_empty() {
+        return Decimal::ZERO;
+    }
     trades.iter().map(|t| t.r).sum::<Decimal>() / Decimal::from(trades.len() as u64)
 }
 
@@ -121,7 +160,11 @@ fn apply_diagnostic_axis(cfg: &Config, v: &[Decimal]) -> Config {
 }
 
 fn outcome_name(o: VerdictOutcome) -> &'static str {
-    match o { VerdictOutcome::Insufficient => "insufficient", VerdictOutcome::Fail => "fail", VerdictOutcome::Pass => "pass" }
+    match o {
+        VerdictOutcome::Insufficient => "insufficient",
+        VerdictOutcome::Fail => "fail",
+        VerdictOutcome::Pass => "pass",
+    }
 }
 
 /// True when the low of `chunk` is visited before its high (intrabar order observed in 1m data).
@@ -129,7 +172,11 @@ fn outcome_name(o: VerdictOutcome) -> &'static str {
 fn observed_low_first(chunk: &[Candle]) -> Option<bool> {
     let lo = chunk.iter().enumerate().min_by_key(|(_, c)| c.low)?.0;
     let hi = chunk.iter().enumerate().max_by_key(|(_, c)| c.high)?.0;
-    if lo == hi { None } else { Some(lo < hi) }
+    if lo == hi {
+        None
+    } else {
+        Some(lo < hi)
+    }
 }
 
 /// Offline 1m-vs-4H calibration. Both inputs are local cached CSVs; `fetch-data` owns all network
@@ -145,8 +192,10 @@ fn calibrate(one_minute: &str, fetched_4h: &str) -> Result<(), Box<dyn std::erro
     println!("#   aggregated_candles={} fetched_candles={} within_tolerance_mismatches={} tolerance={AGG_TOLERANCE:e}",
         aggregated.len(), fetched.len(), mismatches.len());
     for m in &mismatches {
-        println!("#   candle={} field={} aggregated={} fetched={} rel_diff={:.3e}",
-            m.open_time_ms, m.field, m.aggregated, m.fetched, m.rel_diff);
+        println!(
+            "#   candle={} field={} aggregated={} fetched={} rel_diff={:.3e}",
+            m.open_time_ms, m.field, m.aggregated, m.fetched, m.rel_diff
+        );
     }
 
     // Intrabar order calibration, when the 1m series chunks 1:1 with the fetched 4H series.
@@ -154,18 +203,27 @@ fn calibrate(one_minute: &str, fetched_4h: &str) -> Result<(), Box<dyn std::erro
         let observed: Vec<bool> = minutes.chunks(240).filter_map(observed_low_first).collect();
         for (name, assumed) in [("low_first", true), ("high_first", false)] {
             let assumed_flags = vec![assumed; observed.len()];
-            println!("#   intrabar_{name}_wrong_fraction={:.4}", calibration_wrong_fraction(&assumed_flags, &observed));
+            println!(
+                "#   intrabar_{name}_wrong_fraction={:.4}",
+                calibration_wrong_fraction(&assumed_flags, &observed)
+            );
         }
     }
     Ok(())
 }
 
 fn policy_name(p: PathPolicy) -> &'static str {
-    match p { PathPolicy::LowFirst => "low_first", PathPolicy::HighFirst => "high_first" }
+    match p {
+        PathPolicy::LowFirst => "low_first",
+        PathPolicy::HighFirst => "high_first",
+    }
 }
 
 fn mode_name(m: TargetMode) -> &'static str {
-    match m { TargetMode::FixedR => "fixed_r", TargetMode::Structural => "structural" }
+    match m {
+        TargetMode::FixedR => "fixed_r",
+        TargetMode::Structural => "structural",
+    }
 }
 
 fn interval_seconds(interval: &str) -> Result<i64, Box<dyn std::error::Error>> {
@@ -186,7 +244,13 @@ fn interval_seconds(interval: &str) -> Result<i64, Box<dyn std::error::Error>> {
     })
 }
 
-fn fetch_data(symbol: &str, interval: &str, start_s: i64, end_s: i64, out: &str) -> Result<(), Box<dyn std::error::Error>> {
+fn fetch_data(
+    symbol: &str,
+    interval: &str,
+    start_s: i64,
+    end_s: i64,
+    out: &str,
+) -> Result<(), Box<dyn std::error::Error>> {
     let interval_s = interval_seconds(interval)?;
     let mut raw: Vec<[String; 7]> = Vec::new();
     for (s, e) in fetch::page_windows(start_s, end_s, interval_s) {
@@ -194,21 +258,37 @@ fn fetch_data(symbol: &str, interval: &str, start_s: i64, end_s: i64, out: &str)
         std::thread::sleep(Duration::from_millis(250)); // throttle: respect rate limits
     }
     // KuCoin columns: time,open,close,high,low,volume,turnover -> ms + OHLC cache order.
-    let mut candles: Vec<[String; 5]> = raw.iter().map(|r| {
-        let ms = r[0].parse::<i64>().unwrap_or(0) * 1000;
-        [ms.to_string(), r[1].clone(), r[3].clone(), r[4].clone(), r[2].clone()]
-    }).collect();
+    let mut candles: Vec<[String; 5]> = raw
+        .iter()
+        .map(|r| {
+            let ms = r[0].parse::<i64>().unwrap_or(0) * 1000;
+            [
+                ms.to_string(),
+                r[1].clone(),
+                r[3].clone(),
+                r[4].clone(),
+                r[2].clone(),
+            ]
+        })
+        .collect();
     candles.sort_by_key(|r| r[0].parse::<i64>().unwrap_or(0)); // oldest first
-    candles.dedup_by_key(|r| r[0].clone());                    // de-duplicate across page boundaries
+    candles.dedup_by_key(|r| r[0].clone()); // de-duplicate across page boundaries
     let mut wtr = csv::Writer::from_path(out)?;
     wtr.write_record(["open_time_ms", "open", "high", "low", "close"])?;
-    for r in &candles { wtr.write_record(r)?; }
+    for r in &candles {
+        wtr.write_record(r)?;
+    }
     wtr.flush()?;
     println!("{}", dataset_hash(out)?);
     Ok(())
 }
 
-fn fetch_with_retry(symbol: &str, interval: &str, s: i64, e: i64) -> Result<Vec<[String; 7]>, Box<dyn std::error::Error>> {
+fn fetch_with_retry(
+    symbol: &str,
+    interval: &str,
+    s: i64,
+    e: i64,
+) -> Result<Vec<[String; 7]>, Box<dyn std::error::Error>> {
     let mut delay_ms: u64 = 500;
     for attempt in 0..6u32 {
         match fetch::fetch_page(KUCOIN_BASE, symbol, interval, s, e) {
@@ -223,7 +303,14 @@ fn fetch_with_retry(symbol: &str, interval: &str, s: i64, e: i64) -> Result<Vec<
     Err("fetch-data: exhausted retries on rate limit".into())
 }
 
-fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos: bool, oos_consumed: bool) -> Result<(), Box<dyn std::error::Error>> {
+fn backtest(
+    data: &str,
+    policy: &str,
+    mode: &str,
+    lock_path: Option<String>,
+    oos: bool,
+    oos_consumed: bool,
+) -> Result<(), Box<dyn std::error::Error>> {
     let candles = load_csv(data)?;
     let hash = dataset_hash(data)?;
     let params = default_sim_params();
@@ -238,7 +325,8 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
         "bootstrap_block_ms": BOOTSTRAP_BLOCK_MS,
         "bootstrap_resamples": 10_000,
         "bootstrap_seed": 42,
-    }).to_string();
+    })
+    .to_string();
 
     let cfg0 = Config::default_for(&[SYMBOL]);
     let cv = config_version(&cfg0.canonical_json());
@@ -286,10 +374,15 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
     println!("# config_version={cv}");
     println!("# path_policy={policy} target_mode={mode}");
     println!("# caveat: 4H synthesis (4 ticks/candle) => latency-insensitive; sim approximates engine net-R:R");
-    if non_confirmatory { println!("# NON-CONFIRMATORY (one-shot OOS overridden)"); }
+    if non_confirmatory {
+        println!("# NON-CONFIRMATORY (one-shot OOS overridden)");
+    }
 
     for m in &modes {
-        let cfg = Config { target_mode: *m, ..Config::default_for(&[SYMBOL]) };
+        let cfg = Config {
+            target_mode: *m,
+            ..Config::default_for(&[SYMBOL])
+        };
         let mut runs: Vec<(PathPolicy, RunResult)> = Vec::new();
         for p in &policies {
             runs.push((*p, run(SYMBOL, &candles, *p, &cfg, params)));
@@ -305,8 +398,14 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
             }
         }
         // Adversarial composite: longs from low_first, shorts from high_first.
-        let low = runs.iter().find(|(p, _)| *p == PathPolicy::LowFirst).map(|(_, r)| r);
-        let high = runs.iter().find(|(p, _)| *p == PathPolicy::HighFirst).map(|(_, r)| r);
+        let low = runs
+            .iter()
+            .find(|(p, _)| *p == PathPolicy::LowFirst)
+            .map(|(_, r)| r);
+        let high = runs
+            .iter()
+            .find(|(p, _)| *p == PathPolicy::HighFirst)
+            .map(|(_, r)| r);
         if let (Some(l), Some(h)) = (low, high) {
             let composite = adversarial_composite(&l.trades, &h.trades);
             let cs = summarize(&composite);
@@ -333,7 +432,9 @@ fn backtest(data: &str, policy: &str, mode: &str, lock_path: Option<String>, oos
             let mean15 = summarize(&adversarial_composite(&l15.trades, &h15.trades)).mean_r;
             let total_r: Decimal = composite.iter().map(|t| t.r).sum();
             let mut pair_totals: BTreeMap<String, Decimal> = BTreeMap::new();
-            for t in &composite { *pair_totals.entry(t.pair.clone()).or_default() += t.r; }
+            for t in &composite {
+                *pair_totals.entry(t.pair.clone()).or_default() += t.r;
+            }
             let max_pair_r = pair_totals.values().copied().max().unwrap_or(Decimal::ZERO);
             // Regime segmentation needs the pre-registered in-sample/OOS boundary (§10.4), which
             // the CLI cannot derive from a single cached file; not flagged until that is wired.

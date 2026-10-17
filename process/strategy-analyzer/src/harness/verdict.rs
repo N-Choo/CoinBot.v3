@@ -16,7 +16,11 @@ pub fn is_uptrend(closes: &[Decimal]) -> bool {
     if closes.len() < 200 {
         return false;
     }
-    let mean200: Decimal = closes[closes.len() - 200..].iter().copied().sum::<Decimal>() / Decimal::from(200);
+    let mean200: Decimal = closes[closes.len() - 200..]
+        .iter()
+        .copied()
+        .sum::<Decimal>()
+        / Decimal::from(200);
     closes.last().is_some_and(|c| *c >= mean200)
 }
 
@@ -59,7 +63,12 @@ pub fn verdict(
     max_pair_r: Decimal,
     mean_r_at_1_5x_cost: f64,
 ) -> Verdict {
-    let (mean_r, lower_95) = time_blocked_bootstrap(composite, BOOTSTRAP_BLOCK_MS, BOOTSTRAP_RESAMPLES, BOOTSTRAP_SEED);
+    let (mean_r, lower_95) = time_blocked_bootstrap(
+        composite,
+        BOOTSTRAP_BLOCK_MS,
+        BOOTSTRAP_RESAMPLES,
+        BOOTSTRAP_SEED,
+    );
     // Concentration is strict: exactly 50% is allowed, only "more than 50%" trips the gate.
     let half = Decimal::new(5, 1); // 0.5
     let concentrated = total_r > Decimal::ZERO && (max_pair_r / total_r) > half;
@@ -67,8 +76,13 @@ pub fn verdict(
     let outcome = if composite.len() < MIN_EXECUTED_TRADES {
         VerdictOutcome::Insufficient
     } else {
-        let all_gates_pass = mean_r > 0.0 && lower_95 > 0.0 && !one_regime_only && !concentrated && cost_stress_ok;
-        if all_gates_pass { VerdictOutcome::Pass } else { VerdictOutcome::Fail }
+        let all_gates_pass =
+            mean_r > 0.0 && lower_95 > 0.0 && !one_regime_only && !concentrated && cost_stress_ok;
+        if all_gates_pass {
+            VerdictOutcome::Pass
+        } else {
+            VerdictOutcome::Fail
+        }
     };
     Verdict {
         n: composite.len(),
@@ -88,10 +102,22 @@ mod tests {
     use std::str::FromStr;
 
     fn rec(r: &str) -> TradeRecord {
-        TradeRecord { direction: Direction::Long, r: Decimal::from_str(r).unwrap(), pair: "A".into(), entry_time_ms: 0, exit_time_ms: 0 }
+        TradeRecord {
+            direction: Direction::Long,
+            r: Decimal::from_str(r).unwrap(),
+            pair: "A".into(),
+            entry_time_ms: 0,
+            exit_time_ms: 0,
+        }
     }
     fn at(r: &str, day: i64) -> TradeRecord {
-        TradeRecord { direction: Direction::Long, r: Decimal::from_str(r).unwrap(), pair: "A".into(), entry_time_ms: day * 86_400_000, exit_time_ms: day * 86_400_000 }
+        TradeRecord {
+            direction: Direction::Long,
+            r: Decimal::from_str(r).unwrap(),
+            pair: "A".into(),
+            entry_time_ms: day * 86_400_000,
+            exit_time_ms: day * 86_400_000,
+        }
     }
     fn sum_r(data: &[TradeRecord]) -> Decimal {
         data.iter().map(|t| t.r).sum()
@@ -99,7 +125,9 @@ mod tests {
 
     #[test]
     fn healthy_sample_passes() {
-        let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
+        let data: Vec<_> = (0..220)
+            .map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") })
+            .collect();
         let total = sum_r(&data);
         let v = verdict(&data, false, total, total / Decimal::from(2), 0.5);
         assert_eq!(v.outcome, VerdictOutcome::Pass, "{v:?}");
@@ -113,7 +141,10 @@ mod tests {
         // 199 executed trades is below the pre-registered bar: Insufficient, not Fail.
         let data: Vec<_> = (0..199).map(|_| rec("3.0")).collect();
         let total = sum_r(&data);
-        assert_eq!(verdict(&data, false, total, total / Decimal::from(2), 0.5).outcome, VerdictOutcome::Insufficient);
+        assert_eq!(
+            verdict(&data, false, total, total / Decimal::from(2), 0.5).outcome,
+            VerdictOutcome::Insufficient
+        );
         // exactly 200 passes.
         let data: Vec<_> = (0..200).map(|_| rec("3.0")).collect();
         let total = sum_r(&data);
@@ -150,7 +181,13 @@ mod tests {
         assert!(!at_half.concentrated);
         assert_eq!(at_half.outcome, VerdictOutcome::Pass, "{at_half:?}");
         // Just over 50% trips the gate.
-        let over = verdict(&data, false, total, total / Decimal::from(2) + Decimal::new(1, 3), 0.5);
+        let over = verdict(
+            &data,
+            false,
+            total,
+            total / Decimal::from(2) + Decimal::new(1, 3),
+            0.5,
+        );
         assert!(over.concentrated);
         assert_eq!(over.outcome, VerdictOutcome::Fail);
     }
@@ -162,12 +199,17 @@ mod tests {
         let flat = verdict(&data, false, total, total / Decimal::from(2), 0.0);
         assert!(!flat.cost_stress_ok);
         assert_eq!(flat.outcome, VerdictOutcome::Fail);
-        assert_eq!(verdict(&data, false, total, total / Decimal::from(2), 0.01).outcome, VerdictOutcome::Pass);
+        assert_eq!(
+            verdict(&data, false, total, total / Decimal::from(2), 0.01).outcome,
+            VerdictOutcome::Pass
+        );
     }
 
     #[test]
     fn single_regime_and_concentration_block() {
-        let data: Vec<_> = (0..220).map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") }).collect();
+        let data: Vec<_> = (0..220)
+            .map(|i| if i % 4 == 0 { rec("-1.0") } else { rec("3.0") })
+            .collect();
         let total = sum_r(&data);
         let one_regime = verdict(&data, true, total, total / Decimal::from(2), 0.5);
         assert_eq!(one_regime.outcome, VerdictOutcome::Fail); // a single regime is inconclusive
@@ -186,7 +228,10 @@ mod tests {
         data.extend((0..100).map(|_| at("-1.0", 100))); // > 14 days later -> separate block
         let (mean, lower) = time_blocked_bootstrap(&data, BOOTSTRAP_BLOCK_MS, 10_000, 12_345);
         assert!((mean - 1.0).abs() < 1e-9, "portfolio mean = {mean}");
-        assert!(lower < mean, "calendar-block lower bound must be below the mean, got {lower}");
+        assert!(
+            lower < mean,
+            "calendar-block lower bound must be below the mean, got {lower}"
+        );
     }
 
     #[test]

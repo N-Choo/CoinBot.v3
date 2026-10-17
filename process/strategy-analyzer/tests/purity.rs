@@ -15,7 +15,9 @@ use std::path::{Path, PathBuf};
 /// token level. A string literal is a single `Literal` token and is skipped.
 fn scan_source(src: &str) -> Result<Vec<String>, String> {
     syn::parse_file(src).map_err(|e| format!("failed to parse Rust source: {e}"))?;
-    let tokens: proc_macro2::TokenStream = src.parse().map_err(|e| format!("failed to tokenize: {e}"))?;
+    let tokens: proc_macro2::TokenStream = src
+        .parse()
+        .map_err(|e| format!("failed to tokenize: {e}"))?;
     let mut hits = Vec::new();
     scan_tokens(tokens, &mut hits);
     Ok(hits)
@@ -41,7 +43,10 @@ fn scan_tokens(tokens: proc_macro2::TokenStream, hits: &mut Vec<String>) {
                     || s.starts_with("r\"")
                     || s.starts_with("r#");
                 if !stringy && (s.ends_with("f32") || s.ends_with("f64")) {
-                    hits.push(format!("float literal `{s}` at line {}", lit.span().start().line));
+                    hits.push(format!(
+                        "float literal `{s}` at line {}",
+                        lit.span().start().line
+                    ));
                 }
             }
             TokenTree::Group(g) => scan_tokens(g.stream(), hits),
@@ -67,7 +72,10 @@ fn strategy_core_contains_no_float_tokens() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/strategy");
     let mut files = Vec::new();
     rs_files(&root, &mut files);
-    assert!(!files.is_empty(), "no strategy source files found under {root:?}");
+    assert!(
+        !files.is_empty(),
+        "no strategy source files found under {root:?}"
+    );
 
     let mut violations = Vec::new();
     for file in &files {
@@ -77,7 +85,11 @@ fn strategy_core_contains_no_float_tokens() {
             violations.push(format!("{}: {hit}", file.display()));
         }
     }
-    assert!(violations.is_empty(), "float tokens in strategy core:\n{}", violations.join("\n"));
+    assert!(
+        violations.is_empty(),
+        "float tokens in strategy core:\n{}",
+        violations.join("\n")
+    );
 }
 
 #[test]
@@ -91,17 +103,26 @@ fn f() {
     let _ = (s, t);
 }
 "#;
-    assert!(scan_source(clean).unwrap().is_empty(), "comments/strings must not be flagged");
+    assert!(
+        scan_source(clean).unwrap().is_empty(),
+        "comments/strings must not be flagged"
+    );
 
     // A real f64 type token IS flagged, even on a line with a trailing comment.
     let dirty = r#"
 fn f() { let x: f64 = 1.0; } // trailing f64 comment
 "#;
-    assert!(!scan_source(dirty).unwrap().is_empty(), "a real f64 type must be flagged");
+    assert!(
+        !scan_source(dirty).unwrap().is_empty(),
+        "a real f64 type must be flagged"
+    );
 
     // A suffixed float literal is flagged too.
     let literal = r#"
 fn f() -> u8 { let _x = 1.0f64; 0 }
 "#;
-    assert!(!scan_source(literal).unwrap().is_empty(), "an f64 literal suffix must be flagged");
+    assert!(
+        !scan_source(literal).unwrap().is_empty(),
+        "an f64 literal suffix must be flagged"
+    );
 }

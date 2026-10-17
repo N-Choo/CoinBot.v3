@@ -6,7 +6,11 @@ use std::str::FromStr;
 /// How to handle missing intervals. KuCoin omits intervals with no trades, so `Skip`
 /// is the default (a gap must not abort a backtest).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum GapPolicy { Reject, Skip, ForwardFill }
+pub enum GapPolicy {
+    Reject,
+    Skip,
+    ForwardFill,
+}
 
 pub fn load_csv(path: &str) -> Result<Vec<Candle>, String> {
     // Forward-fill by default: KuCoin omits intervals with no trades, and the core rejects
@@ -14,13 +18,19 @@ pub fn load_csv(path: &str) -> Result<Vec<Candle>, String> {
     load_csv_with_policy(path, GapPolicy::ForwardFill, 4 * 60 * 60 * 1000)
 }
 
-pub fn load_csv_with_policy(path: &str, policy: GapPolicy, expected_interval_ms: i64) -> Result<Vec<Candle>, String> {
+pub fn load_csv_with_policy(
+    path: &str,
+    policy: GapPolicy,
+    expected_interval_ms: i64,
+) -> Result<Vec<Candle>, String> {
     let mut rdr = csv::Reader::from_path(path).map_err(|e| e.to_string())?;
     let mut raw = Vec::new();
     for rec in rdr.records() {
         let r = rec.map_err(|e| e.to_string())?;
         raw.push(Candle {
-            open_time_ms: r[0].parse().map_err(|e: std::num::ParseIntError| e.to_string())?,
+            open_time_ms: r[0]
+                .parse()
+                .map_err(|e: std::num::ParseIntError| e.to_string())?,
             open: Decimal::from_str(&r[1]).map_err(|e| e.to_string())?,
             high: Decimal::from_str(&r[2]).map_err(|e| e.to_string())?,
             low: Decimal::from_str(&r[3]).map_err(|e| e.to_string())?,
@@ -40,7 +50,13 @@ pub fn load_csv_with_policy(path: &str, policy: GapPolicy, expected_interval_ms:
                     GapPolicy::Skip => {}
                     GapPolicy::ForwardFill => {
                         let last = out.last().unwrap().close;
-                        out.push(Candle { open_time_ms: t, open: last, high: last, low: last, close: last });
+                        out.push(Candle {
+                            open_time_ms: t,
+                            open: last,
+                            high: last,
+                            low: last,
+                            close: last,
+                        });
                     }
                 }
             }

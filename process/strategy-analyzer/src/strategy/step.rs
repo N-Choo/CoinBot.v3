@@ -1,6 +1,8 @@
 use crate::strategy::config::Config;
 use crate::strategy::error::StrategyError;
-use crate::strategy::structure::{apply_bos, detect_bos, newly_confirmed_high, newly_confirmed_low};
+use crate::strategy::structure::{
+    apply_bos, detect_bos, newly_confirmed_high, newly_confirmed_low,
+};
 use crate::strategy::types::*;
 use crate::strategy::zones::{create_zone, invalidate_on_flip, update_lifecycle};
 use rust_decimal::Decimal;
@@ -24,15 +26,21 @@ pub fn step(
 
 fn on_tick(state: &mut StrategyState, t: Tick, cfg: &Config) -> Result<Vec<Output>, StrategyError> {
     if t.price <= Decimal::ZERO {
-        return Err(StrategyError::MalformedTick { price: t.price.to_string() });
+        return Err(StrategyError::MalformedTick {
+            price: t.price.to_string(),
+        });
     }
     let last = state.last_tick_time_ms.or(state.last_candle_time_ms);
     if let Some(prev) = last {
         if t.time_ms < prev {
-            return Err(StrategyError::OutOfOrderTick { got_ms: t.time_ms, last_ms: prev });
+            return Err(StrategyError::OutOfOrderTick {
+                got_ms: t.time_ms,
+                last_ms: prev,
+            });
         }
     }
-    let outputs = crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg);
+    let outputs =
+        crate::strategy::signals::try_entry(state, state.last_price, t.time_ms, t.price, cfg);
     state.last_tick_time_ms = Some(t.time_ms);
     state.last_price = Some(t.price);
     Ok(outputs)
@@ -44,13 +52,26 @@ fn on_candle(
     cfg: &Config,
 ) -> Result<Vec<Output>, StrategyError> {
     if c.high < c.low || c.high <= Decimal::ZERO || c.low <= Decimal::ZERO {
-        return Err(StrategyError::MalformedCandle { at_ms: c.open_time_ms, why: "bad range/price" });
+        return Err(StrategyError::MalformedCandle {
+            at_ms: c.open_time_ms,
+            why: "bad range/price",
+        });
     }
     if let Some(prev) = state.last_candle_time_ms {
-        if c.open_time_ms == prev { return Err(StrategyError::DuplicateCandle(c.open_time_ms)); }
-        if c.open_time_ms < prev { return Err(StrategyError::OutOfOrderCandle { got_ms: c.open_time_ms, prev_ms: prev }); }
+        if c.open_time_ms == prev {
+            return Err(StrategyError::DuplicateCandle(c.open_time_ms));
+        }
+        if c.open_time_ms < prev {
+            return Err(StrategyError::OutOfOrderCandle {
+                got_ms: c.open_time_ms,
+                prev_ms: prev,
+            });
+        }
         if c.open_time_ms != prev + TIMEFRAME_MS {
-            return Err(StrategyError::GappedCandle { expected_ms: prev + TIMEFRAME_MS, got_ms: c.open_time_ms });
+            return Err(StrategyError::GappedCandle {
+                expected_ms: prev + TIMEFRAME_MS,
+                got_ms: c.open_time_ms,
+            });
         }
     }
     let mut out = Vec::new();
@@ -60,20 +81,31 @@ fn on_candle(
 
     // Record into the bounded window and advance counters.
     state.window.push_back(c);
-    if state.window.len() > crate::strategy::types::WINDOW_CANDLES { state.window.pop_front(); }
+    if state.window.len() > crate::strategy::types::WINDOW_CANDLES {
+        state.window.pop_front();
+    }
     state.candle_count += 1;
     state.last_candle_time_ms = Some(c.open_time_ms);
 
     // Update window extremes for every live zone (window = breakout candle through latest close).
     for z in state.zones.iter_mut() {
         if z.state == ZoneState::Active {
-            if c.high > z.window_high { z.window_high = c.high; }
-            if c.low < z.window_low { z.window_low = c.low; }
+            if c.high > z.window_high {
+                z.window_high = c.high;
+            }
+            if c.low < z.window_low {
+                z.window_low = c.low;
+            }
         }
     }
 
     // Running ATR (incremental; fields live on the state).
-    let mut atr_state = crate::strategy::indicators::atr::AtrState { value: state.atr, seed_sum: state.atr_seed_sum, seen: state.atr_seen, period: cfg.atr_period };
+    let mut atr_state = crate::strategy::indicators::atr::AtrState {
+        value: state.atr,
+        seed_sum: state.atr_seed_sum,
+        seen: state.atr_seen,
+        period: cfg.atr_period,
+    };
     let atr_now = atr_state.update(state.prev_close, c.high, c.low);
     state.atr = atr_state.value;
     state.atr_seed_sum = atr_state.seed_sum;
@@ -104,13 +136,21 @@ fn on_candle(
                 let before = state.trend;
                 apply_bos(state, kind, broken_idx);
                 if state.trend != before {
-                    out.extend(invalidate_on_flip(&mut state.zones, state.trend).into_iter().map(Output::ZoneEvent));
+                    out.extend(
+                        invalidate_on_flip(&mut state.zones, state.trend)
+                            .into_iter()
+                            .map(Output::ZoneEvent),
+                    );
                 }
                 match create_zone(&state.window, kind, atr_b, &state.symbol.clone(), cfg) {
                     Ok(mut z) => {
                         z.activated_at_index = state.candle_count - 1;
                         state.zones_awaiting_first_tick.push(z.id.clone());
-                        out.push(Output::ZoneEvent(ZoneEvent { zone_id: z.id.clone(), kind: ZoneEventKind::Created, reason: None }));
+                        out.push(Output::ZoneEvent(ZoneEvent {
+                            zone_id: z.id.clone(),
+                            kind: ZoneEventKind::Created,
+                            reason: None,
+                        }));
                         state.zones.push(z);
                     }
                     Err(tag) => out.push(Output::StateChange { reason: tag }),
@@ -120,15 +160,34 @@ fn on_candle(
     }
 
     // Lifecycle (expiry + close-beyond-edge) for the just-closed candle.
-    out.extend(update_lifecycle(&mut state.zones, &c, state.candle_count - 1, cfg.zone_expiry_candles).into_iter().map(Output::ZoneEvent));
+    out.extend(
+        update_lifecycle(
+            &mut state.zones,
+            &c,
+            state.candle_count - 1,
+            cfg.zone_expiry_candles,
+        )
+        .into_iter()
+        .map(Output::ZoneEvent),
+    );
 
     // Bound state growth so per-tick cloning stays small at 1m volume: drop terminal zones
     // and broken pivots (never needed again), then clear any valid index whose pivot was pruned.
     state.zones.retain(|z| !z.is_terminal());
     state.swing_highs.retain(|p| !p.broken);
     state.swing_lows.retain(|p| !p.broken);
-    if state.valid_low_idx.is_some_and(|i| !state.swing_lows.iter().any(|p| p.index == i)) { state.valid_low_idx = None; }
-    if state.valid_high_idx.is_some_and(|i| !state.swing_highs.iter().any(|p| p.index == i)) { state.valid_high_idx = None; }
+    if state
+        .valid_low_idx
+        .is_some_and(|i| !state.swing_lows.iter().any(|p| p.index == i))
+    {
+        state.valid_low_idx = None;
+    }
+    if state
+        .valid_high_idx
+        .is_some_and(|i| !state.swing_highs.iter().any(|p| p.index == i))
+    {
+        state.valid_high_idx = None;
+    }
 
     state.prev_close = Some(c.close);
     Ok(out)
@@ -138,9 +197,17 @@ fn on_candle(
 mod tests {
     use super::*;
     use std::str::FromStr;
-    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn dec(s: &str) -> Decimal {
+        Decimal::from_str(s).unwrap()
+    }
     fn candle(ms: i64) -> Candle {
-        Candle { open_time_ms: ms, open: dec("1.0"), high: dec("1.2"), low: dec("0.9"), close: dec("1.1") }
+        Candle {
+            open_time_ms: ms,
+            open: dec("1.0"),
+            high: dec("1.2"),
+            low: dec("0.9"),
+            close: dec("1.1"),
+        }
     }
 
     #[test]
@@ -157,8 +224,14 @@ mod tests {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let s = StrategyState::new("XRP-USDT", 1);
         let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
-        assert!(matches!(step(&s, Input::ClosedCandle(candle(0)), &cfg), Err(StrategyError::DuplicateCandle(_))));
-        assert!(matches!(step(&s, Input::ClosedCandle(candle(-5)), &cfg), Err(StrategyError::OutOfOrderCandle { .. })));
+        assert!(matches!(
+            step(&s, Input::ClosedCandle(candle(0)), &cfg),
+            Err(StrategyError::DuplicateCandle(_))
+        ));
+        assert!(matches!(
+            step(&s, Input::ClosedCandle(candle(-5)), &cfg),
+            Err(StrategyError::OutOfOrderCandle { .. })
+        ));
     }
 
     #[test]
@@ -166,7 +239,10 @@ mod tests {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let s = StrategyState::new("XRP-USDT", 1);
         let (s, _) = step(&s, Input::ClosedCandle(candle(0)), &cfg).unwrap();
-        assert!(matches!(step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS * 2)), &cfg), Err(StrategyError::GappedCandle { .. })));
+        assert!(matches!(
+            step(&s, Input::ClosedCandle(candle(TIMEFRAME_MS * 2)), &cfg),
+            Err(StrategyError::GappedCandle { .. })
+        ));
     }
 
     #[test]
@@ -183,20 +259,68 @@ mod tests {
     fn rejects_malformed_and_out_of_order_tick() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let s = StrategyState::new("XRP-USDT", 1);
-        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 1, price: dec("-1"), is_bar_open: false }), &cfg), Err(StrategyError::MalformedTick { .. })));
-        let (s, _) = step(&s, Input::PriceTick(Tick { time_ms: 10, price: dec("1.0"), is_bar_open: true }), &cfg).unwrap();
-        assert!(matches!(step(&s, Input::PriceTick(Tick { time_ms: 5, price: dec("1.0"), is_bar_open: false }), &cfg), Err(StrategyError::OutOfOrderTick { .. })));
+        assert!(matches!(
+            step(
+                &s,
+                Input::PriceTick(Tick {
+                    time_ms: 1,
+                    price: dec("-1"),
+                    is_bar_open: false
+                }),
+                &cfg
+            ),
+            Err(StrategyError::MalformedTick { .. })
+        ));
+        let (s, _) = step(
+            &s,
+            Input::PriceTick(Tick {
+                time_ms: 10,
+                price: dec("1.0"),
+                is_bar_open: true,
+            }),
+            &cfg,
+        )
+        .unwrap();
+        assert!(matches!(
+            step(
+                &s,
+                Input::PriceTick(Tick {
+                    time_ms: 5,
+                    price: dec("1.0"),
+                    is_bar_open: false
+                }),
+                &cfg
+            ),
+            Err(StrategyError::OutOfOrderTick { .. })
+        ));
     }
 
     #[test]
     fn atr_zero_is_in_band_not_error() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let mut s = StrategyState::new("XRP-USDT", 1);
-        let flat = Candle { open_time_ms: 0, open: Decimal::ONE, high: Decimal::ONE, low: Decimal::ONE, close: Decimal::ONE };
+        let flat = Candle {
+            open_time_ms: 0,
+            open: Decimal::ONE,
+            high: Decimal::ONE,
+            low: Decimal::ONE,
+            close: Decimal::ONE,
+        };
         for i in 0..14 {
-            let (ns, outs) = step(&s, Input::ClosedCandle(Candle { open_time_ms: i * TIMEFRAME_MS, ..flat }), &cfg).unwrap();
+            let (ns, outs) = step(
+                &s,
+                Input::ClosedCandle(Candle {
+                    open_time_ms: i * TIMEFRAME_MS,
+                    ..flat
+                }),
+                &cfg,
+            )
+            .unwrap();
             s = ns;
-            if outs.iter().any(|o| matches!(o, Output::StateChange { reason: "atr_zero" })) {
+            if outs
+                .iter()
+                .any(|o| matches!(o, Output::StateChange { reason: "atr_zero" }))
+            {
                 // Candle still fully processed: counter and window advanced (no early return).
                 assert_eq!(s.candle_count, (i + 1) as u64);
                 assert_eq!(s.window.len(), (i + 1) as usize);
@@ -210,18 +334,39 @@ mod tests {
     fn signal_serializes_with_string_decimals() {
         use crate::strategy::types::{Direction, Signal, TrendState};
         let sig = Signal {
-            schema_version: 1, event_type: "strategy.entry_signal".into(), signal_id: "z:0".into(),
-            strategy: "supply_demand_4h".into(), strategy_version: "0.1.0".into(), config_version: "abc".into(),
-            symbol: "XRP-USDT".into(), market: "margin".into(), direction: Direction::Long,
-            timeframe: "4hour".into(), trend_state: TrendState::Bullish, zone_id: "z".into(),
-            zone_low: dec("1.96"), zone_high: dec("2.00"), zone_height_atr: dec("0.4"), atr: dec("0.1"),
-            trigger_price: dec("2.00"), reference_entry_price: dec("2.00"),
-            stop_loss: dec("1.95"), take_profit: dec("2.15"), target_mode: "fixed_r".into(),
-            target_r: dec("3.0"), min_gross_rr: dec("3.0"), gross_rr: dec("3.0"),
-            structure_obstacle_price: Some(dec("2.30")), obstacle_rr: Some(dec("6.0")),
-            triggered_at_ms: 1, candle_timestamp_ms: 0,
+            schema_version: 1,
+            event_type: "strategy.entry_signal".into(),
+            signal_id: "z:0".into(),
+            strategy: "supply_demand_4h".into(),
+            strategy_version: "0.1.0".into(),
+            config_version: "abc".into(),
+            symbol: "XRP-USDT".into(),
+            market: "margin".into(),
+            direction: Direction::Long,
+            timeframe: "4hour".into(),
+            trend_state: TrendState::Bullish,
+            zone_id: "z".into(),
+            zone_low: dec("1.96"),
+            zone_high: dec("2.00"),
+            zone_height_atr: dec("0.4"),
+            atr: dec("0.1"),
+            trigger_price: dec("2.00"),
+            reference_entry_price: dec("2.00"),
+            stop_loss: dec("1.95"),
+            take_profit: dec("2.15"),
+            target_mode: "fixed_r".into(),
+            target_r: dec("3.0"),
+            min_gross_rr: dec("3.0"),
+            gross_rr: dec("3.0"),
+            structure_obstacle_price: Some(dec("2.30")),
+            obstacle_rr: Some(dec("6.0")),
+            triggered_at_ms: 1,
+            candle_timestamp_ms: 0,
         };
         let j = serde_json::to_string(&sig).unwrap();
-        assert!(j.contains("\"stop_loss\":\"1.95\""), "decimals must serialize as strings: {j}");
+        assert!(
+            j.contains("\"stop_loss\":\"1.95\""),
+            "decimals must serialize as strings: {j}"
+        );
     }
 }
