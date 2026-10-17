@@ -217,3 +217,42 @@ mod lifecycle_tests {
         assert_eq!(zs[1].terminal_reason, Some(TerminalReason::TrendFlip));
     }
 }
+
+use crate::strategy::decimal::round_to;
+use crate::strategy::types::TrendState as TS;
+
+/// Active zone nearest to `price` in the trend direction (distance to the proximal edge).
+pub fn select_zone<'a>(zones: &'a [Zone], trend: TS, price: Decimal) -> Option<&'a Zone> {
+    let want = match trend { TS::Bullish => ZoneKind::Demand, TS::Bearish => ZoneKind::Supply, TS::Unknown => return None };
+    zones.iter()
+        .filter(|z| z.state == ZS::Active && z.kind == want)
+        .min_by_key(|z| {
+            let d = match want { ZoneKind::Demand => (z.high - price).abs(), ZoneKind::Supply => (z.low - price).abs() };
+            round_to(d, 8) // deterministic ordering key
+        })
+}
+
+#[cfg(test)]
+mod select_tests {
+    use super::*;
+    use std::str::FromStr;
+    fn dec(s: &str) -> Decimal { Decimal::from_str(s).unwrap() }
+    fn zone(id: &str, low: &str, high: &str) -> Zone {
+        Zone { id: id.into(), kind: ZoneKind::Demand, low: dec(low), high: dec(high), atr: dec("0.1"),
+            breakout_time_ms: 0, zone_candle_time_ms: 0, activated_at_index: 0, state: ZS::Active,
+            terminal_reason: None, consume_reason: None, attempt_made: false,
+            window_high: dec(high), window_low: dec(low) }
+    }
+
+    #[test]
+    fn picks_nearest_demand_zone() {
+        let zs = vec![zone("far","0.5","0.6"), zone("near","1.0","1.05")];
+        assert_eq!(select_zone(&zs, TS::Bullish, dec("1.2")).unwrap().id, "near");
+    }
+
+    #[test]
+    fn unknown_trend_selects_none() {
+        let zs = vec![zone("a","1.0","1.1")];
+        assert!(select_zone(&zs, TS::Unknown, dec("1.2")).is_none());
+    }
+}
