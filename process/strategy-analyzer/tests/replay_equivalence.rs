@@ -167,10 +167,29 @@ fn golden_hash_is_stable() {
         format!("{:x}", h.finalize())
     };
     let path = "tests/golden/outs.hash";
-    // No write-if-empty fallback: the golden hash is committed and must be compared on every CI
-    // matrix leg (x86_64 and arm64). A missing golden file is a hard failure, never a silent pass.
-    let golden = std::fs::read_to_string(path).unwrap_or_else(|e| {
-        panic!("required golden hash {path} is missing ({e}); it is never written by the test")
-    });
-    assert_eq!(golden.trim(), digest, "cross-platform golden hash mismatch");
+
+    // `UPDATE_GOLDEN=1` regenerates the committed golden without editing this assertion (report the
+    // before/after digest in the commit when the core output legitimately changes).
+    if std::env::var("UPDATE_GOLDEN").as_deref() == Ok("1") {
+        std::fs::write(path, format!("{digest}\n")).expect("write golden hash");
+        eprintln!("UPDATE_GOLDEN=1: wrote {path} = {digest}");
+        return;
+    }
+
+    // Default behavior: the golden hash is committed and must be compared on every CI matrix leg
+    // (x86_64 and arm64). A missing file is a hard failure, never a silent pass.
+    let golden = match std::fs::read_to_string(path) {
+        Ok(g) => g,
+        Err(e) => panic!(
+            "required golden hash {path} is missing ({e}); it is never written by the test \
+             (run with UPDATE_GOLDEN=1 to write it). computed digest: {digest}"
+        ),
+    };
+    assert_eq!(
+        golden.trim(),
+        digest,
+        "cross-platform golden hash mismatch: computed {digest}, golden {}. \
+         Re-run with UPDATE_GOLDEN=1 to regenerate.",
+        golden.trim()
+    );
 }
