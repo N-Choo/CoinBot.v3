@@ -152,3 +152,75 @@ mod bos_tests {
         assert_eq!(detect_bos(&s, dec("1.0"), &cfg), None);
     }
 }
+
+// `StrategyState` and `TrendState` are already in scope from Task 9.
+
+/// Apply a BOS: mark EVERY cleared level broken, set trend + valid low/high per §6.3.
+/// If no valid low/high can be assigned, the trend is left unchanged (state stays Unknown).
+pub fn apply_bos(state: &mut StrategyState, kind: BosKind, broken_idx: u64) {
+    let breakout = state.candle_count.saturating_sub(1);
+    let close = state.window.back().map(|c| c.close).unwrap_or(Decimal::ZERO);
+    match kind {
+        BosKind::Bullish => {
+            for h in state.swing_highs.iter_mut() {
+                if !h.broken && h.price <= close { h.broken = true; }
+            }
+            let vl = state.swing_lows.iter()
+                .filter(|l| l.index > broken_idx && l.index < breakout).map(|l| l.index).max()
+                .or_else(|| state.swing_lows.iter().filter(|l| l.index < broken_idx).map(|l| l.index).max());
+            state.valid_low_idx = vl;
+            state.trend = if vl.is_some() { TrendState::Bullish } else { TrendState::Unknown };
+        }
+        BosKind::Bearish => {
+            for l in state.swing_lows.iter_mut() {
+                if !l.broken && l.price >= close { l.broken = true; }
+            }
+            let vh = state.swing_highs.iter()
+                .filter(|h| h.index > broken_idx && h.index < breakout).map(|h| h.index).max()
+                .or_else(|| state.swing_highs.iter().filter(|h| h.index < broken_idx).map(|h| h.index).max());
+            state.valid_high_idx = vh;
+            state.trend = if vh.is_some() { TrendState::Bearish } else { TrendState::Unknown };
+        }
+    }
+}
+
+#[cfg(test)]
+mod trend_tests {
+    use super::*;
+    use crate::strategy::types::{Candle, Pivot, StrategyState, TrendState};
+    use rust_decimal::Decimal;
+
+    fn st(count: u64, close: i64, highs: Vec<(u64, i64)>, lows: Vec<(u64, i64)>) -> StrategyState {
+        let mut s = StrategyState::new("XRP-USDT", 1);
+        s.candle_count = count;
+        s.window.push_back(Candle { open_time_ms: 0, open: Decimal::from(close), high: Decimal::from(close), low: Decimal::from(close), close: Decimal::from(close) });
+        s.swing_highs = highs.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: Decimal::from(p), broken: false }).collect();
+        s.swing_lows = lows.into_iter().map(|(i, p)| Pivot { index: i, time_ms: 0, price: Decimal::from(p), broken: false }).collect();
+        s
+    }
+
+    #[test]
+    fn bullish_bos_marks_all_cleared_highs_and_sets_valid_low() {
+        let mut s = st(6, 5, vec![(1, 2), (2, 3)], vec![(0, 1), (3, 2)]);
+        apply_bos(&mut s, BosKind::Bullish, 2);
+        assert_eq!(s.trend, TrendState::Bullish);
+        assert!(s.swing_highs.iter().all(|h| h.broken)); // both cleared in ONE BOS
+        assert_eq!(s.valid_low_idx, Some(3)); // low after the broken high, before breakout
+    }
+
+    #[test]
+    fn trend_stays_unknown_when_no_valid_low() {
+        let mut s = st(6, 5, vec![(1, 2)], vec![]);
+        apply_bos(&mut s, BosKind::Bullish, 1);
+        assert_eq!(s.trend, TrendState::Unknown);
+        assert_eq!(s.valid_low_idx, None);
+        assert!(s.swing_highs[0].broken); // level still marked broken
+    }
+
+    #[test]
+    fn valid_low_falls_back_to_before_broken_high() {
+        let mut s = st(6, 5, vec![(3, 9)], vec![(1, 5)]);
+        apply_bos(&mut s, BosKind::Bullish, 3);
+        assert_eq!(s.valid_low_idx, Some(1));
+    }
+}
