@@ -13,6 +13,8 @@
 > **Revision (2026-10-17, second review).** Applied after the first plan draft: (1) bounded rolling-window state + running ATR (no per-tick full-history clone); (2) BOS marks **every** cleared level and follows the §6.3 eligibility table, and trend stays `Unknown` when no valid low/high exists; (3) a separate `TerminalReason` enum; (4) `try_entry` takes the touching tick's time and uses the zone's incremental window extremes for the obstacle; (5) `ATR == 0` skips only BOS/zone creation; (6) sim fills TP at its limit and the stop at the stop price (or the gap tick); (7) calendar-block bootstrap with trade timestamps; (8) dataset gap policy; (9) fetch sorting/dedup/ms/retry; (10) signal-producing fixture + edge-case/verdict/perturbation/calibration tasks (27–31) and review gates.
 >
 > **Revision (2026-10-17, third review — Tasks 30–31 implemented + CI hardening).** Tasks 30/31 are implemented with pre-registered constants, not ad-hoc logic: `perturb::DIAGNOSTICS_BUDGET_SECS` (4H-synthesis-only, seeded via `report::Lcg`, reports variant counts, diagnostics-only — never a selector) and `report::AGG_TOLERANCE` = 1e-9 relative (1m aggregate vs. fetched 4H: mismatches reported, the run refused above tolerance, never patched; offline — network stays in `fetch-data`). The verdict is a three-state `VerdictOutcome { Insufficient, Fail, Pass }` with `n < MIN_EXECUTED_TRADES` → `Insufficient`. CI: a `syn` token-level purity test (the grep is a comment-stripped pre-filter), a `check_lock` mismatch test, no golden write-if-empty fallback, and the matrix named by architecture (x86_64 + arm64). Spec §3/§4/§5/§8.4/§10.2/§10.4/§10.5/§13 updated to match.
+>
+> **Revision (2026-10-17, fourth review — core missed-touch / gap semantics).** Three core changes, spec §4/§5/§6/§7.2/§10 and the Task 15 comment matched here: **(A) missed-touch is the approach-from-outside rule** — a first observation is `missed_touch` iff the price is inside/beyond the zone *and* the approach did not come from outside (`prev` is `None`, or `prev` was already inside/beyond), replacing the earlier `prev == None` narrowing (`observe_first_tick`); **(B) candle-close wick reconciliation** — a still-`Active` zone whose candle range was reached but for which no tick touch was observed this candle is consumed as `missed_touch` at `ClosedCandle` (new `reconcile_candle_close`, keyed to an observed-touch ledger `zones_touched_this_candle`, reset per zone on creation). Synthetic paths sample every candle's low/high, so the four fixtures and their golden hash are unchanged; **(C) `Input::Resume`** — a pure restart/gap input that forgets the last observed price and re-arms first-tick observation for every `Active` zone; the harness injects it, the snapshot-resume test routes through it, and a downtime test where the price moves through a zone during the gap asserts `missed_touch`, never a signal. `STATE_SCHEMA_VERSION` bumped to 2 for the added state field.
 
 ---
 
@@ -1756,7 +1758,11 @@ pub fn try_entry(state: &mut StrategyState, prev_price: Option<Decimal>, tick_ti
     // Select the nearest active zone in the trend direction (immutably first).
     let zone_snapshot = match select_zone(&state.zones, state.trend, price) { Some(z) => z.clone(), None => return out };
 
-    // Missed touch: the first observed price after activation is already inside/beyond.
+    // Missed touch: the first observation is missed UNLESS it is an approach from outside the zone.
+    // Missed iff the price is inside/beyond (demand price <= zone_high; supply price >= zone_low)
+    // AND the approach did not come from outside this tick (prev is None, or prev was already
+    // inside/beyond). A genuine approach from outside (demand prev > zone_high; supply
+    // prev < zone_low) is left Active for the normal first-touch path.
     if state.zones_awaiting_first_tick.iter().any(|id| id == &zone_snapshot.id) {
         state.zones_awaiting_first_tick.retain(|id| id != &zone_snapshot.id);
         if is_missed_touch(dir, &zone_snapshot, price) {

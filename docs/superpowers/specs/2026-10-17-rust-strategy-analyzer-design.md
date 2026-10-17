@@ -154,6 +154,7 @@ All values configurable and versioned; `config_version` is attached to every sig
 enum Input {
     ClosedCandle(Candle),   // structure, zones, indicators
     PriceTick(Tick),        // touch detection ONLY
+    Resume,                 // restart / reconnect / data-gap (pure, no I/O)
 }
 // EngineAck and Clock are deferred to the transport phase (§12).
 
@@ -181,6 +182,8 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 **Gap recovery:** on `GappedCandle` the adapter **feeds the missing candles in order**, then resumes normal event delivery; the core treats the gap as an error only until the missing candles are supplied. Recovery never generates a historical entry (§7.2).
 
+**`Resume` input (restart / reconnect / data-gap).** After any restart, reconnect, or data-gap the adapter injects `Input::Resume`, a pure core input (no wall-clock, no I/O) whose effect is: forget the last observed price (the next tick's approach side is unknown) and flag **every** `Active` zone as awaiting its first tick. A zone the price moved through during downtime therefore becomes a `missed_touch` (§7.2), never a stale entry, and the restart/gap path is testable in isolation. The harness (`run`) can inject `Resume` mid-stream, which makes the Phase 1 "≥ 3 restarts" exit criterion testable.
+
 **State must be serializable and schema-versioned** (`STATE_SCHEMA_VERSION`) to support snapshot-resume replay equivalence (§10). Decimal scales are normalized on store so round-trips are byte-identical.
 
 ---
@@ -194,6 +197,7 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
   - **Explicit same-candle branch:** if pivot confirmation and the BOS occur on the same candle (pivot available exactly on the breakout candle), the valid high/low is taken from candles strictly before the breakout candle; if none, fall back as above.
   - > **TO-CONFIRM (human gate):** §6.3 valid high/low is the spec's working definition. A human must verify it against the source video at **00:29–04:30** (or a transcript) **before** the OOS run; if it differs, capture the difference as a **config option** and document the deviation. Phase 0 does not perform this check.
 - **Consequences:** only `Bullish` produces longs, only `Bearish` shorts, `Unknown` none. On trend flip, every `Active` zone in the now-wrong direction → `Invalidated` (reason `trend_flip`).
+- **Restart / resume:** a `Resume` input (§4) clears the last observed price and re-arms first-tick observation for every `Active` zone, and nothing else. It never reconstructs structure, synthesizes pivots/BOS, or generates a historical touch; the resumed stream continues from the same structure and zone state.
 
 ---
 
@@ -201,7 +205,7 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 - **Demand zone (after bullish BOS):** search back up to `zone_search_lookback` completed candles before the breakout candle; select the most recent bearish candle (`close < open`); require breakout candle body ≥ `impulse_body_threshold`; zone = that candle's full range `[low, high]`; apply size limits and mitigation; activate when the breakout candle closes; record pre-breakout ATR as the zone's `A`. Supply mirrored after bearish BOS. No qualifying candle / any check fails → no zone, log reason.
 - **Lifecycle states:** `Active | Consumed | Invalidated | Expired`. **In Phase 0 every non-`Active` state is terminal — `Invalidated | Expired | Consumed` never return to `Active`.** (The re-armable distinction from v2 depends on `EngineAck`/`Clock` and is inactive in Phase 0, per §0.4.) This removes the double-order ambiguity. Terminal transitions without a signal record a separate **`TerminalReason`** (`trend_flip | close_beyond_edge | expired`); **`ConsumeReason`** is reserved for signal/consumption cases (`signal_published | missed_touch | engine_* | expired_undelivered`).
-- **Rules:** expire an untouched zone after `zone_expiry_candles`; invalidate a demand zone on a completed close below `zone_low` (supply mirrored above `zone_high`); invalidate opposite zones on trend flip; one entry attempt per zone; **mark `Consumed` + persist the pending signal atomically before publishing** (persistence is Phase ≥ 2; Phase 0 only marks state in-memory and emits the signal). Never reactivate a terminal zone, including after restart.
+- **Rules:** expire an untouched zone after `zone_expiry_candles`; invalidate a demand zone on a completed close below `zone_low` (supply mirrored above `zone_high`); invalidate opposite zones on trend flip; **candle-close wick reconciliation:** a still-`Active` zone whose candle range was reached (demand `candle.low <= zone.high`; supply `candle.high >= zone.low`) but for which no tick touch was observed that candle is consumed as `missed_touch` (§7.2), because polling can skip a wick; one entry attempt per zone; **mark `Consumed` + persist the pending signal atomically before publishing** (persistence is Phase ≥ 2; Phase 0 only marks state in-memory and emits the signal). Never reactivate a terminal zone, including after restart.
 - **Consumption reasons:** `signal_published`, `missed_touch`, `vetoed_obstacle_too_close`, `vetoed_obstacle_none`, `vetoed_risk_nonpositive`, `engine_accepted`, `engine_rejected_strategy`, `engine_rejected_transient`, `expired_undelivered`. Every terminal transition records a reason code. The `vetoed_*` reasons are the first-touch entry vetoes (§7.5): the veto itself consumes the zone, honoring "one entry attempt per zone". (In Phase 0 all of these are terminal; the reason codes are carried for forward compatibility, not to enable re-arm.)
 - **Mitigation (revisit before activation):** examine completed candles **strictly after** the zone candle and **strictly before** the breakout candle; skip the first `mitigation_grace_candles`; demand mitigated if `low <= zone_high` (supply if `high >= zone_low`); the zone candle and breakout candle are never counted.
 - **Zone size limits (§7.5):** reject when `(zone_high − zone_low) / A` is outside `[min_zone_height, max_zone_height]`. **Both bounds are instrumented** (count how often each binds) — the 0.5 A minimum is expected to bind more often than the 3.0 A cap for single-candle zones. The 3.0 A cap is retained as spec'd pending backtest evidence.
@@ -215,7 +219,9 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 Long eligible when: trend `Bullish`; an `Active`, unconsumed demand zone exists; previous observed price was above `zone_high`; current price touches/crosses `zone_high` (first touch); no prior attempt; obstacle check passes. Short mirrored. Entry is a **touch trigger from `PriceTick`**, never a 4H close.
 
 ### 7.2 Missed touches
-If the first price observed after activation / restart / reconnect / data-gap is already inside or beyond the zone, do not signal; mark `Consumed` with reason `missed_touch`. Never emit historical touches.
+A zone is a `missed_touch` **unless the first observation is an approach from outside the zone**. Per direction, the first observation is missed iff the price is inside/beyond the zone (demand `price <= zone_high`; supply `price >= zone_low`) **and** the approach did not come from outside this tick — i.e. there is no trustworthy previous price (cold start / restart / reconnect / data-gap, §4) or the previous price was already inside/beyond (demand `prev <= zone_high`; supply `prev >= zone_low`). Equivalently: `missed = inside_or_beyond(price) && !(prev is Some(approach_from_outside))`, where the demand approach side is above `zone_high` and the supply approach side is below `zone_low`. A genuine approach from outside is left `Active` for the normal first-touch path (§7.1). When missed, do not signal; mark `Consumed` with reason `missed_touch`. Never emit historical touches.
+
+**Candle-close reconciliation (a wick-miss that polling can miss).** Touch tracking is keyed strictly to **observed** ticks: any tick inside/beyond a zone during a candle records that zone for the candle. At each `ClosedCandle`, every still-`Active` zone whose range the candle reached but which had **no observed tick touch** that candle is consumed as `missed_touch` and emits the corresponding `ZoneEvent`. A zone whose touch *was* observed is already consumed by its signal or veto, so reconciliation never fires for it; the observed-touch ledger is reset for a newly created zone. Synthetic backtest paths include each candle's low and high, so on them the reconciliation is a no-op (the four fixtures are unchanged).
 
 ### 7.3 Signal price
 The signal carries the observed trigger price + timestamp. The reference entry price is a reference, not a guaranteed fill; the engine validates the executable price.
@@ -311,12 +317,12 @@ triggered_at, candle_timestamp
 ## 10. Testing & Phase 0 exit criteria
 
 ### 10.1 Unit tests (§15.1 coverage)
-Pivots incl. tie rule and confirmation delay; BOS thresholds + no-lookahead ATR; ATR seed and first-candle TR; trend machine incl. valid high/low + reversal + same-candle branch; zone invalidation on flip; zone selection/size/mitigation incl. grace; lifecycle incl. terminal-state rules; first-touch/approach/missed; SL/TP/obstacle incl. no-obstacle and short-sign; serialization + stable IDs; **typed data-integrity errors** (out-of-order / duplicate / gapped / malformed candles) leave state unchanged; **config validation** (periods, height bounds, ATR multipliers, `price_scale`); and a **coarse-price-scale test** (a large-tick symbol) confirming the obstacle/R:R gate and the serialized levels agree after rounding.
+Pivots incl. tie rule and confirmation delay; BOS thresholds + no-lookahead ATR; ATR seed and first-candle TR; trend machine incl. valid high/low + reversal + same-candle branch; zone invalidation on flip; zone selection/size/mitigation incl. grace; lifecycle incl. terminal-state rules; first-touch/approach/missed — including a zone activated while the price is already inside it (→ `missed_touch`, not a signal) and the candle-close wick reconciliation (an overlapping candle with no observed tick touch consumes the zone as `missed_touch`); the `Resume` input (clears the last price, re-arms first-tick observation); SL/TP/obstacle incl. no-obstacle and short-sign; serialization + stable IDs; **typed data-integrity errors** (out-of-order / duplicate / gapped / malformed candles) leave state unchanged; **config validation** (periods, height bounds, ATR multipliers, `price_scale`); and a **coarse-price-scale test** (a large-tick symbol) confirming the obstacle/R:R gate and the serialized levels agree after rounding.
 
 ### 10.2 Replay equivalence (strengthened)
 A pure function replayed on one machine usually matches itself, so add:
 1. **Determinism:** same input stream twice → byte-identical outputs.
-2. **Snapshot resume:** serialize `StrategyState` mid-stream (schema-versioned), deserialize, resume, and compare against an uninterrupted run — this is the §13 restart property, nearly free here.
+2. **Snapshot resume:** serialize `StrategyState` mid-stream (schema-versioned), deserialize, inject `Input::Resume`, and compare against an uninterrupted run at candle boundaries — this is the §13 restart property. A dedicated downtime case moves the price through a zone between snapshot and resume: the first tick back is a `missed_touch`, never a signal.
 3. **Cross-platform golden hash:** the committed golden file `tests/golden/outs.hash` is compared on the two-leg **architecture** matrix in `ci.yml` (x86_64 `ubuntu-latest` + arm64 `ubuntu-24.04-arm`). The test never writes the golden file: a missing file fails the leg (no write-if-empty fallback).
 4. **No `HashMap`/`HashSet` iteration in `strategy/`** (CI-enforced; use `BTreeMap`/`Vec`).
 
