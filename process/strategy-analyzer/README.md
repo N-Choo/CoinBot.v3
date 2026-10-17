@@ -106,6 +106,12 @@ exponential backoff on rate limits, and writes a provenance sidecar (`<out>.prov
 symbol, interval, range, row count, dataset hash) next to the cache; a malformed exchange timestamp
 is an error (never silently coerced to `0`).
 
+**Price increment is core instance data, not (yet) a CLI flag.** `Config::price_increment` (the
+symbol's actual price step, e.g. `0.0005`) is set per symbol when the core is embedded; the
+`backtest`/`count-signals` CLI does not expose a `--price-increment`, so those runs use dp
+`--price-scale` rounding. The Phase 1 adapter fills the increment from `/api/v2/symbols`
+`priceIncrement` (live spec §3b/§7); a dedicated flag is a small follow-up if the harness needs it.
+
 **Resolution: `backtest`/`count-signals` are 4H-synthesis-only in Phase 0** (spec §8.1's
 cross-resolution comparison is not exposed on the CLI, so there is no `--resolution` flag). The
 `OneMinuteExpansion` `TickSource` exists in `harness::tick_source` and 1m data is used by
@@ -122,6 +128,10 @@ back to 4H synthesis to stay within budget, per spec §10.4).
 - **One rounding helper:** `decimal::round_price(value, price_scale)`, half-up
   (`rust_decimal`'s default is half-even, so it is requested explicitly). Price scale is
   **per-symbol** (ideally the exchange tick size), applied only to levels that appear in signals.
+  When a symbol's actual **`price_increment`** is configured (e.g. KuCoin `0.0005`, a step-5 grid a
+  dp scale cannot express), the core snaps stop/take-profit/reference levels to it
+  (`decimal::snap_to_increment`): stop **away from** entry, take-profit **toward** entry, so
+  published prices are valid exchange multiples; with no increment it uses dp `round_price`.
 - **Ratios are compared unrounded**, at working scale; they are rounded (toward zero, 4 dp) only
   when serialized or reported. This avoids `2.99996` rounding up to pass a `3.0` floor.
 - **Self-consistent payload:** stop / take-profit / ratios derive from the *already-rounded*
@@ -131,7 +141,8 @@ back to 4H synthesis to stay within budget, per spec §10.4).
   emitted in-band as a `StateChange` so the stream does not stall.
 - **Serialization:** `Decimal`s serialize as fixed-scale **strings**, never JSON numbers.
   Timestamps are `i64` UTC milliseconds internally.
-- **`config_version`** = hash of the canonical `Config` JSON; it feeds the freeze lock.
+- **`config_version`** = hash of the canonical **strategy parameters** (per-symbol `price_scale` /
+  `price_increment` instance data excluded); it feeds the freeze lock.
 - **Replay:** no RNG; replaying the same events is byte-identical, and a mid-stream state
   snapshot that is serialized and resumed produces the same final state.
 

@@ -34,6 +34,13 @@ pub struct Config {
     pub ratio_serialization_scale: u32,
     /// Per-symbol price scale (dp).
     pub price_scale: BTreeMap<String, u32>,
+    /// Per-symbol price **increment** (an actual price step, e.g. KuCoin `0.0005`). A dp
+    /// `price_scale` cannot express a step-5/step-25 grid, so when a symbol's increment is present
+    /// the core snaps stop/TP/reference levels to it (spec §7.4/§7.6): stop **away from** entry,
+    /// take-profit **toward** entry, so published prices are valid multiples the engine can
+    /// re-validate. **Instance data**, like `price_scale`: excluded from `config_version`. A symbol
+    /// with no entry falls back to the Phase 0 `round_price(price_scale)` rounding.
+    pub price_increment: BTreeMap<String, Decimal>,
 }
 
 impl Config {
@@ -60,6 +67,9 @@ impl Config {
             working_scale: 12,
             ratio_serialization_scale: 4,
             price_scale: symbols.iter().map(|s| (s.to_string(), 4)).collect(),
+            // Empty by default: without an explicit increment the core uses `round_price(price_scale)`
+            // (the Phase 0 path), so existing fixtures/goldens are unchanged. Set per symbol to snap.
+            price_increment: BTreeMap::new(),
         }
     }
 
@@ -92,15 +102,21 @@ impl Config {
         Ok(())
     }
 
+    /// The explicit price increment configured for `symbol`, if any. `None` means the core falls
+    /// back to dp `price_scale` rounding for that symbol (see the `price_increment` field).
+    pub fn price_increment_for(&self, symbol: &str) -> Option<Decimal> {
+        self.price_increment.get(symbol).copied()
+    }
+
     /// Deterministic canonical JSON of the **strategy parameters**, used for `config_version`.
     ///
-    /// `price_scale` is deliberately omitted: it is per-symbol **instance data** (the symbol's
-    /// price increment, discovered at activation), not a strategy parameter. Hashing it would change
-    /// the version — and invalidate the freeze lock — every time a ticker is added or a symbol's
-    /// scale is refined. The core still reads `price_scale` from `Config` for level rounding; only
-    /// the hash input excludes it. Decimal fields are normalized (trailing zeros removed) before
-    /// serialization, so `"3"` and `"3.0"` hash identically: the strategy places no meaning on a
-    /// Decimal's scale, only on its value.
+    /// `price_scale` and `price_increment` are deliberately omitted: they are per-symbol **instance
+    /// data** (the symbol's price scale/increment, discovered at activation), not strategy
+    /// parameters. Hashing them would change the version — and invalidate the freeze lock — every
+    /// time a ticker is added or a symbol's scale/increment is refined. The core still reads them
+    /// from `Config` for level rounding/snapping; only the hash input excludes them. Decimal fields
+    /// are normalized (trailing zeros removed) before serialization, so `"3"` and `"3.0"` hash
+    /// identically: the strategy places no meaning on a Decimal's scale, only on its value.
     pub fn canonical_params_json(&self) -> String {
         let mut c = self.clone();
         c.bos_min_distance_atr = c.bos_min_distance_atr.normalize();
@@ -115,6 +131,7 @@ impl Config {
         let mut value = serde_json::to_value(&c).expect("config is serializable");
         if let serde_json::Value::Object(map) = &mut value {
             map.remove("price_scale");
+            map.remove("price_increment");
         }
         serde_json::to_string(&value).expect("config is serializable")
     }
@@ -194,5 +211,34 @@ mod tests {
             c.canonical_params_json(),
             "changing a symbol's price scale must not change the hashed params"
         );
+    }
+
+    #[test]
+    fn config_version_excludes_price_increment() {
+        // `price_increment` is per-symbol instance data (like `price_scale`): setting or refining it
+        // must NOT move `config_version` — that would invalidate the freeze lock per ticker.
+        let a = Config::default_for(&["XRP-USDT"]);
+        let mut b = a.clone();
+        b.price_increment
+            .insert("XRP-USDT".to_string(), dec("0.0005"));
+        assert_eq!(
+            a.canonical_params_json(),
+            b.canonical_params_json(),
+            "setting a symbol's price increment must not change the hashed params"
+        );
+        assert_eq!(
+            config_version(&a.canonical_params_json()),
+            config_version(&b.canonical_params_json())
+        );
+    }
+
+    #[test]
+    fn price_increment_for_reports_only_configured_symbols() {
+        let mut c = Config::default_for(&["XRP-USDT"]);
+        assert_eq!(c.price_increment_for("XRP-USDT"), None);
+        c.price_increment
+            .insert("XRP-USDT".to_string(), dec("0.0005"));
+        assert_eq!(c.price_increment_for("XRP-USDT"), Some(dec("0.0005")));
+        assert_eq!(c.price_increment_for("BTC-USDT"), None);
     }
 }

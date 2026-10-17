@@ -1,5 +1,7 @@
 use crate::strategy::config::{Config, TargetMode};
-use crate::strategy::decimal::{round_price, round_ratio_for_output, round_to};
+use crate::strategy::decimal::{
+    round_price, round_ratio_for_output, round_to, snap_to_increment, SnapSide,
+};
 use crate::strategy::error::StrategyError;
 use crate::strategy::types::*;
 use rust_decimal::Decimal;
@@ -62,17 +64,33 @@ pub fn obstacle_for_short(
     c.into_iter().max()
 }
 
-/// Rounded levels + the mode's gate. `Err(tag)` = veto, `tag` names the reason
-/// (`risk_nonpositive` / `obstacle_none` / `obstacle_too_close`).
+/// Rounded levels + the mode's gate. `Err(tag)` = veto; `attempt_zone` maps `tag` to the
+/// first-touch `ConsumeReason` (`risk_nonpositive` → `VetoedInvalidLevels`, `obstacle_none` →
+/// `VetoedNoObstacle`, `obstacle_too_close` → `VetoedObstacleTooClose`).
 pub fn compute_levels(
     direction: Direction,
     zone: &Zone,
     trigger: Decimal,
     obstacle: Option<Decimal>,
     price_scale: u32,
+    price_increment: Option<Decimal>,
     cfg: &Config,
 ) -> Result<Levels, &'static str> {
-    let t = round_price(trigger, price_scale);
+    // Level rounding. With an explicit per-symbol `price_increment` (e.g. KuCoin 0.0005, step 5) the
+    // core snaps to valid multiples instead of a dp grid; without one it keeps the Phase 0
+    // `round_price(price_scale)`. `side` is the conservative direction: stop **away from** entry
+    // (never tighten it), take-profit **toward** entry (never ask for more than the level),
+    // reference/obstacle levels to the nearest multiple.
+    let snap = |v: Decimal, side: SnapSide| match price_increment {
+        Some(inc) if inc > Decimal::ZERO => snap_to_increment(v, inc, side),
+        _ => round_price(v, price_scale),
+    };
+    let (stop_side, tp_side) = match direction {
+        Direction::Long => (SnapSide::Floor, SnapSide::Floor),
+        Direction::Short => (SnapSide::Ceil, SnapSide::Ceil),
+    };
+
+    let t = snap(trigger, SnapSide::Nearest);
     let buffer = cfg.stop_buffer_atr * zone.atr;
     let (stop_raw, risk) = match direction {
         Direction::Long => (zone.low - buffer, t - (zone.low - buffer)),
@@ -81,7 +99,7 @@ pub fn compute_levels(
     if risk <= Decimal::ZERO {
         return Err("risk_nonpositive");
     }
-    let stop = round_price(stop_raw, price_scale);
+    let stop = snap(stop_raw, stop_side);
     let risk = match direction {
         Direction::Long => t - stop,
         Direction::Short => stop - t,
@@ -90,7 +108,7 @@ pub fn compute_levels(
         return Err("risk_nonpositive");
     }
 
-    let obstacle_rounded = obstacle.map(|o| round_price(o, price_scale));
+    let obstacle_rounded = obstacle.map(|o| snap(o, SnapSide::Nearest));
     let obstacle_rr = obstacle_rounded.map(|o| match direction {
         Direction::Long => (o - t) / risk,
         Direction::Short => (t - o) / risk,
@@ -112,7 +130,7 @@ pub fn compute_levels(
                 Direction::Long => t + cfg.target_r * risk,
                 Direction::Short => t - cfg.target_r * risk,
             };
-            (round_price(tp, price_scale), cfg.target_r)
+            (snap(tp, tp_side), cfg.target_r)
         }
         TargetMode::Structural => {
             let o = match obstacle_rounded {
@@ -127,7 +145,7 @@ pub fn compute_levels(
                     };
                     return Ok(Levels {
                         stop_loss: stop,
-                        take_profit: round_price(tp, price_scale),
+                        take_profit: snap(tp, tp_side),
                         gross_rr: cfg.target_r,
                         obstacle: None,
                         obstacle_rr: None,
@@ -139,7 +157,7 @@ pub fn compute_levels(
                 Direction::Long => o - buf,
                 Direction::Short => o + buf,
             };
-            let tp = round_price(tp, price_scale);
+            let tp = snap(tp, tp_side);
             let gross = match direction {
                 Direction::Long => (tp - t) / risk,
                 Direction::Short => (t - tp) / risk,
@@ -195,13 +213,28 @@ mod tests {
     fn long_levels_and_obstacle_veto() {
         let cfg = Config::default_for(&["XRP-USDT"]);
         let z = zone(ZoneKind::Demand, "1.96", "2.00");
-        let ok =
-            compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.20")), 2, &cfg).unwrap();
+        let ok = compute_levels(
+            Direction::Long,
+            &z,
+            dec("2.00"),
+            Some(dec("2.20")),
+            2,
+            None,
+            &cfg,
+        )
+        .unwrap();
         assert_eq!(ok.stop_loss, dec("1.95"));
         assert_eq!(ok.take_profit, dec("2.15"));
-        assert!(
-            compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.05")), 2, &cfg).is_err()
-        );
+        assert!(compute_levels(
+            Direction::Long,
+            &z,
+            dec("2.00"),
+            Some(dec("2.05")),
+            2,
+            None,
+            &cfg
+        )
+        .is_err());
     }
 
     #[test]
@@ -214,6 +247,7 @@ mod tests {
             dec("1.90"),
             Some(dec("1.70")),
             2,
+            None,
             &cfg,
         )
         .unwrap();
@@ -232,6 +266,7 @@ mod tests {
             dec("2.001"),
             Some(dec("2.500")),
             2,
+            None,
             &cfg,
         )
         .unwrap();
@@ -248,8 +283,16 @@ mod tests {
         };
         let z = zone(ZoneKind::Demand, "1.96", "2.00");
         // obstacle 2.50, buffer = 0.1*atr(0.1) = 0.01 -> TP = 2.49; risk 0.05 -> gross 9.8
-        let l =
-            compute_levels(Direction::Long, &z, dec("2.00"), Some(dec("2.50")), 2, &cfg).unwrap();
+        let l = compute_levels(
+            Direction::Long,
+            &z,
+            dec("2.00"),
+            Some(dec("2.50")),
+            2,
+            None,
+            &cfg,
+        )
+        .unwrap();
         assert_eq!(l.take_profit, dec("2.49"));
         assert_eq!(l.gross_rr, dec("9.8"));
     }
@@ -261,12 +304,64 @@ mod tests {
             allow_no_obstacle: true,
             ..Config::default_for(&["XRP-USDT"])
         };
-        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &allow).is_ok());
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, None, &allow).is_ok());
         let deny = Config {
             allow_no_obstacle: false,
             ..Config::default_for(&["XRP-USDT"])
         };
-        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, &deny).is_err());
+        assert!(compute_levels(Direction::Long, &z, dec("2.00"), None, 2, None, &deny).is_err());
+    }
+
+    /// With an explicit per-symbol increment the levels snap to valid multiples: the stop moves
+    /// *away* from entry and the take-profit *toward* entry. Increment 0.02 divides the trigger
+    /// (2.00) but not the ATR-scaled stop/buffer; a structural TP is used because a fixed_r TP is
+    /// always an exact multiple once the trigger and stop are on the grid.
+    #[test]
+    fn increment_snaps_stop_away_and_take_profit_toward_entry() {
+        let cfg = Config {
+            target_mode: TargetMode::Structural,
+            ..Config::default_for(&["XRP-USDT"])
+        };
+        let inc = dec("0.02");
+        // demand [1.955, 2.00], atr 0.1 -> stop_raw = 1.945. Floor at 0.02 -> 1.94 (away).
+        // risk = 2.00 - 1.94 = 0.06; obstacle 2.50 -> 2.50; buffer 0.01 -> tp_raw 2.49.
+        // Toward entry (Floor) at 0.02 -> 2.48.
+        let z = zone(ZoneKind::Demand, "1.955", "2.00");
+        let l = compute_levels(
+            Direction::Long,
+            &z,
+            dec("2.00"),
+            Some(dec("2.50")),
+            2,
+            Some(inc),
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(l.stop_loss, dec("1.94"), "long stop floors away from entry");
+        assert_eq!(l.take_profit, dec("2.48"), "long TP floors toward entry");
+        assert_eq!(l.obstacle, Some(dec("2.50")));
+    }
+
+    /// Short mirror: the stop ceilings *away* from entry (above) and the TP ceilings *toward* entry.
+    #[test]
+    fn increment_snaps_short_stop_up_and_take_profit_down() {
+        let cfg = Config::default_for(&["XRP-USDT"]);
+        let inc = dec("0.02");
+        // supply [1.9, 2.005], atr 0.1 -> stop_raw = 2.005 + 0.01 = 2.015. Ceil at 0.02 -> 2.02.
+        // trigger 1.98 -> risk = 2.02 - 1.98 = 0.04; fixed_r TP raw = 1.98 - 0.12 = 1.86 (on grid).
+        let z = zone(ZoneKind::Supply, "1.9", "2.005");
+        let l = compute_levels(
+            Direction::Short,
+            &z,
+            dec("1.98"),
+            Some(dec("1.70")),
+            2,
+            Some(inc),
+            &cfg,
+        )
+        .unwrap();
+        assert_eq!(l.stop_loss, dec("2.02"), "short stop ceils away from entry");
+        assert_eq!(l.take_profit, dec("1.86"), "short TP ceils toward entry");
     }
 }
 
@@ -450,7 +545,15 @@ fn attempt_zone(
             zone_snapshot.window_low,
         ),
     };
-    let levels = match compute_levels(dir, &zone_snapshot, price, obstacle, price_scale, cfg) {
+    let levels = match compute_levels(
+        dir,
+        &zone_snapshot,
+        price,
+        obstacle,
+        price_scale,
+        cfg.price_increment_for(&state.symbol),
+        cfg,
+    ) {
         Ok(l) => l,
         Err(tag) => {
             // §7.1 first touch + §6 first touch only: a first-touch veto CONSUMES the zone (no
