@@ -1,6 +1,9 @@
 # Rust Strategy Analyzer — Phase 0 Design (Pure Core + Backtest Harness)
 
 - **Status:** Design — revised per review, awaiting approval
+- **Implementation status (2026-10-17):** core (Tasks 1–16) and harness (Tasks 17–24) landed and
+  green; Phase 0 exit criteria (§10.5) are met apart from the human §6.3 video check and the
+  OOS backtest run. Crate overview: `process/strategy-analyzer/README.md`.
 - **Date:** 2026-10-17
 - **Scope:** Phase 0 only
 - **Supersedes (for Phase 0):** the "Rust strategy analyzer for CoinBot" v2 spec
