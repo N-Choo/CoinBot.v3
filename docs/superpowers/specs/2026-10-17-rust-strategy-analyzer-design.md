@@ -14,7 +14,7 @@
 ### 0.1 Repository reality (verified)
 
 - Backend is a Rust Cargo workspace: `process/api_gateway` (api-gateway), `lib/share` (share), `process/deposit-worker` (deposit), `process/trade-engine` (trade-engine). `lib/kucoin` is **excluded** from the workspace; the build uses crates.io `kucoin = "0.8.1"`.
-- Signal flow is **already push over Redis Pub/Sub**: the Python `process/analyzer/` PUBs `signals:result`; `trade-engine` SUBs it and deserializes `Vec<TradeSignal>` (`lib/share/src/models/signals.rs`). There is **no pull path** and no signals table. `process/proto/analyzer.proto` is dead scaffolding.
+- Signal flow is **engine-triggered request/response over Redis Pub/Sub**: `trade-engine` PUBs `tickers:analyze` (on a 24h timer) to trigger the Python analyzer, which replies on `signals:result`; the engine SUBs that and deserializes `Vec<TradeSignal>` (`lib/share/src/models/signals.rs`). There is no HTTP/gRPC pull and no signals table. `process/proto/analyzer.proto` is dead scaffolding. **Note:** the v2 rule "the engine must not request signals" would require changing this existing trigger; Phase 0 has no transport, so this design does not depend on that rule either way.
 - There is **no websocket feed**; Rust price access is REST polling of `level1`. Candle ingestion exists **only** in Python (`process/analyzer/fetchers/kucoin.py`).
 - No market-structure / supply-demand / pivot / BOS logic exists in any language. All such logic is net-new.
 - `trade-engine` does not run migrations; only `api_gateway` and `deposit-worker` do. There is no dedup/signals persistence.
@@ -96,8 +96,8 @@ process/strategy-analyzer/
 - **One rounding helper:** `round_price(value, price_scale)`; rounding strategy is **half-up**, requested explicitly via `round_dp_with_strategy` (rust_decimal's default is half-even). Nobody calls `.round_dp()` directly. Any change to the strategy is a one-line change in `decimal.rs`.
 - **Ratios are NOT rounded before comparison.** `gross_rr`, `zone_height_atr`, and `obstacle_rr` are compared at working scale (rounding to 4 dp first could turn 2.99996 into 3.0000 and pass a 3.0 floor). They are rounded (toward zero, 4 dp) **only when serializing or reporting**.
 - **Self-consistent payload:** stop, take-profit, and ratios are derived from the **already-rounded** trigger and stop, so the serialized fields reconcile exactly.
-- **ATR (pinned):** Wilder smoothing; seed = simple mean of the first 14 true ranges; **the first candle's true range = high − low** (no previous close); each step rounded at working scale; warm-up = no signals until 14 completed candles exist. Documented to avoid drift vs. the Python analyzer.
-- **No panics:** all `Decimal` operations use checked variants; overflow / divide-by-zero return `StrategyError`. `ATR == 0` on a flat series is the realistic trigger and must be handled (no zone/signal, log reason).
+- **ATR (pinned):** Wilder smoothing; seed = simple mean of the first 14 true ranges; **the first candle's true range = high − low** (no previous close); each step rounded at working scale; warm-up = no signals until 14 completed candles exist. Documented so implementations agree; note the claim "avoid drift vs. the Python analyzer" holds **only if that analyzer has an ATR implementation** (its current signals are RSI-divergence based) — otherwise drop the cross-check claim.
+- **No panics:** all `Decimal` operations use checked variants; overflow / divide-by-zero return `StrategyError`. **`ATR == 0` on a flat series is *not* an error** — it is handled in-band (§4) as a `StateChange`, so the stream does not stall.
 - **Serialization:** Decimals serialize as fixed-scale **strings**, never JSON numbers. Timestamps are `i64` UTC milliseconds internally; ISO-8601 only at the serialization edge.
 - **Float carve-out:** the harness's reporting statistics (expectancy, drawdown, Sharpe-style ratios, bootstrap bounds) may use `f64`. They never feed the core. The **trade ledger is `Decimal`**.
 - **`config_version` = hash of the canonical config.** The version attached to signals is derived by hashing the canonicalized config (deterministic field order), so it equals the freeze-lock value (§10.4).
@@ -137,7 +137,7 @@ All values configurable and versioned; `config_version` is attached to every sig
 | `rounding_strategy` | half-up | explicit via helper |
 | `config_version` | string (hash) | derived as a hash of the canonical config; matches the freeze lock (§10.4) |
 
-**Validation (reject config otherwise):** all periods ≥ 1; `min_zone_height <= max_zone_height`; positive ATR multipliers; `price_scale` present for each configured symbol. (The earlier `target_r >= min_gross_rr` rule is **dropped**: `min_gross_rr` applies to `structural` only, and equality in `fixed_r` produced a rounding-sensitive tautology, see §7.5.)
+**Validation (reject config otherwise):** all periods ≥ 1; `min_zone_height <= max_zone_height`; positive ATR multipliers; `price_scale` present for each configured symbol; and **`target_r > engine_net_floor` and `min_gross_rr > engine_net_floor`** (`engine_net_floor = 2.5`, recorded in config) so a typo cannot undercut the cushion. (The earlier `target_r >= min_gross_rr` rule is **dropped**: `min_gross_rr` applies to `structural` only, and equality in `fixed_r` produced a rounding-sensitive tautology, see §7.5.)
 
 **Pre-registered backtest parameters** (recorded in the freeze lock, §10.4 — not strategy config): fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, bootstrap block length / resample count / seed, and the chosen `target_mode`.
 
@@ -172,7 +172,11 @@ pub fn step(state: &StrategyState, input: Input, cfg: &Config)
 
 **State is per symbol.** The core holds no cross-symbol logic; correlation caps and portfolio risk are engine-side (later phase). A different symbol is a different `StrategyState` instance.
 
-**Typed errors (data integrity):** `StrategyError` includes `OutOfOrderCandle`, `DuplicateCandle`, `GappedCandle`, `MalformedCandle` (negative/zero, `high < low`, non-finite), plus `AtrZero`, `DecimalOverflow`, `DivideByZero`, `ConfigInvalid`. Candle validation — ordering, duplicates, missing intervals, malformed values (v2 §5 checks) — lives **in the core** so backtest and live behave identically. On any of these the state is unchanged and no output is produced.
+**Typed errors (data integrity):** `StrategyError` includes `OutOfOrderCandle`, `DuplicateCandle`, `GappedCandle`, `MalformedCandle` (negative/zero, `high < low`, non-finite), **`MalformedTick`** (zero/negative price), **`OutOfOrderTick`** (timestamp earlier than the previous tick or the last closed candle), plus `DecimalOverflow`, `DivideByZero`, `ConfigInvalid`. Candle **and tick** validation lives **in the core** so backtest and live behave identically — the core catches violations of the event-ordering contract rather than trusting the caller. On any of these the state is unchanged and no output is produced.
+
+**`ATR == 0` is in-band, not an error.** A flat warm-up series yields `ATR == 0`; it is emitted as a `StateChange` (reason `atr_zero`) with no zone/signal created, and the candle is **still recorded**. (Making it an `Err` would leave the candle unrecorded, so the next candle would read as `GappedCandle` and the stream would stall.)
+
+**Gap recovery:** on `GappedCandle` the adapter **feeds the missing candles in order**, then resumes normal event delivery; the core treats the gap as an error only until the missing candles are supplied. Recovery never generates a historical entry (§7.2).
 
 **State must be serializable and schema-versioned** (`STATE_SCHEMA_VERSION`) to support snapshot-resume replay equivalence (§10). Decimal scales are normalized on store so round-trips are byte-identical.
 
@@ -218,7 +222,7 @@ Long: `stop_loss = L − stop_buffer·A`; `risk_t = T − stop_loss`; take-profi
 Short: `stop_loss = H + stop_buffer·A`; `risk_t = stop_loss − T`.
 
 ### 7.5 Obstacle check (the R:R filter)
-For a long, obstacle = the **nearest** of: the nearest unbroken confirmed swing high above `T`; the **highest high of completed candles since zone activation** (catches unconfirmed impulse extremes from fast pullbacks); the lower boundary of the nearest `Active` supply zone above `T`. Short mirrored (nearest swing low / **lowest low since activation** / upper boundary of nearest `Active` demand zone below `T`). `obstacle_rr = |obstacle − T| / risk_t` (correct sign per direction; a sign error would reject every short — covered by tests).
+For a long, obstacle = the **nearest** of: the nearest unbroken confirmed swing high above `T`; the **highest high over the window from the breakout candle through the latest completed candle** (this **includes the breakout candle itself**, whose extreme is often the nearest obstacle, and catches unconfirmed impulse extremes from fast pullbacks); the lower boundary of the nearest `Active` supply zone above `T`. Short mirrored (nearest swing low / the **lowest low over the same window including the breakout candle** / upper boundary of the nearest `Active` demand zone below `T`). `obstacle_rr = |obstacle − T| / risk_t` (correct sign per direction; a sign error would reject every short — covered by tests).
 
 **Target modes:**
 - `fixed_r`: `take_profit = T + target_r·risk_t`; **the only gate is the obstacle veto — veto if `obstacle_rr < target_r`** (target never placed past an obstacle). There is deliberately **no `min_gross_rr` comparison here**: gross R:R ≡ `target_r` by construction, so that gate would be a tautology (and rounding-sensitive at equality). The cushion in this mode is the config choice `target_r` > engine net floor.
@@ -240,7 +244,7 @@ Vetoes log reason (`obstacle_too_close` / `obstacle_none`) and leave the zone `A
 
 ### 8.1 TickSource
 Trait producing an ordered `(PriceTick, ClosedCandle)` event stream with the §4 ordering. Implementations:
-- **`OneMinuteExpansion`** — fetch/cached 1m candles, each expanded into an ordered path per §8.3.
+- **`OneMinuteExpansion`** — fetch/cached 1m candles; `ClosedCandle` events are **4H aggregates built from the 1m series**, aligned to the 4H grid (boundaries at 4H multiples of the epoch, i.e. 00:00/04:00/… UTC). Before trusting a 1m run, **validate the 1m-derived 4H series against the independently fetched 4H series**.
 - **`Ohlcv4hSynthesis`** — expand each cached 4H candle into an ordered path; works with any OHLCV file.
 
 The core never knows which source is used. Resolution is stamped on every report; cross-resolution comparison is refused unless explicitly forced.
@@ -258,7 +262,7 @@ Two **global** policies — the harness does not need to know trade direction:
 **Both are run on every backtest.** Structure and zones depend only on closed candles, so the signal set is nearly identical across policies; the difference is touch/exit ordering. The **adversarial composite** is assembled in reporting (longs from `low_first`, shorts from `high_first`). Determinism: no RNG; replay must be byte-identical. The chosen policy is recorded per run.
 
 ### 8.4 Position simulation (harness-only, engine-standing-in)
-- **Entry:** at the first tick that crosses the zone boundary (not at the boundary price), plus the pre-registered **latency assumption** (fills occur one poll interval after the crossing tick — live access is REST polling, §0.1) and a configurable slippage model.
+- **Entry:** at the first tick that crosses the zone boundary (not at the boundary price), plus a pre-registered **latency assumption expressed in ticks or wall-time** (proposed default: **1 tick** of the active resolution; for live, the poll interval from §0.1) and a configurable slippage model. For **4H synthesis** (≈ 4 ticks per candle) sub-candle latency is not representable, so those results are labeled **latency-insensitive**.
 - **Exit:** stop or take-profit resolved tick-by-tick along the same path, with costs applied. **Stop fills use a separate, worse slippage** than target fills (stops are hit in fast moves).
 - **Pre-registered sim parameters:** latency, entry slippage, stop slippage, and fee/borrow rates are all fixed in the freeze lock (§10.4), not chosen after seeing results.
 - **Open-position policy:** if a signal fires while a position is already open on that symbol, **skip it and count `skipped_open_position`** (otherwise the sim would take overlapping trades the engine's caps would block). These skips count against the trade bar.
@@ -269,7 +273,7 @@ Two **global** policies — the harness does not need to know trade direction:
 - Trade ledger in `Decimal`; statistics in `f64`.
 - **Both target modes on identical data, side by side** (evidence-based mode choice).
 - **Both path policies**, with the adversarial composite.
-- **Cushion calibration:** realized average cost per trade in R (fees + slippage + interest). Flag if > 0.5 R → the 3.0 gross floor is too low.
+- **Cushion calibration:** realized average cost per trade in R (fees + slippage + interest). Flag if > 0.5 R → the **analyzer's floor (`target_r` in `fixed_r`, `min_gross_rr` in `structural`) is too low**.
 - **1m calibration (when 1m data exists):** report how often the assumed intrabar order was wrong on the overlapping window. Stated in the report header.
 - **Header** encodes: symbol(s), resolution, dataset hash, `config_version`, path policy, target mode, and the resolution caveat.
 
@@ -315,22 +319,23 @@ Event ordering (ticks before `ClosedCandle`); `low_first` vs `high_first`; both 
 ### 10.4 Backtest bar (pre-registered — fixed before the OOS run)
 Exploration is free **in-sample** (counts only, no PnL, to size pairs/history). The bar is frozen **before the OOS segment is first run**, and the harness enforces it:
 
-- **Parameter-freeze lock file:** a hash of the canonical config (same value as `config_version`) plus the pre-registered backtest parameters. The OOS run **refuses to start** without a matching lock and **logs how many variants were tried**.
+- **Parameter-freeze lock file:** `lock = hash(config_version + backtest_params)` — a single hash over the canonical config **plus** the pre-registered backtest parameters (not "the config_version" alone). The OOS run **refuses to start** without a matching lock and **logs how many variants were tried**.
 - **Lock contents (pre-registered):** chosen `target_mode` (mode comparison is **in-sample only** — selecting on OOS is a hidden degree of freedom), fee rate, entry slippage model, **separate worse stop-fill slippage**, borrow rate, latency assumption, and the bootstrap settings below.
-- **OOS is one-shot:** every OOS invocation is logged; a second run on the same data is refused without an explicit `--oos-consumed` override. After a failure, further tuning requires **fresh data**.
+- **OOS is one-shot:** every OOS invocation is logged; a second run on the same data is refused without an explicit `--oos-consumed` override, and an overridden run is **stamped non-confirmatory** in its report and **records the earlier run's hash**. After a failure, further tuning requires **fresh data**.
 
 Proposed bar (thresholds are proposals; **"no edge" is a valid, documented Phase 0 outcome**):
 
 - **≥ 200 OOS executed trades**, where "executed" **excludes `skipped_open_position`**. If the in-sample **signal count** (counts only) shows this is unreachable with 3 pairs / 2 years, **size pairs and history up before the OOS run** — do not lower the bar afterwards.
 - **OOS mean net R > 0**, with the **95% lower bound > 0** under a **time-blocked bootstrap** computed on the **adversarial composite** (longs from `low_first`, shorts from `high_first`) — not on a single policy.
-- **Bootstrap settings fixed:** calendar-based block length (pre-registered), fixed resample count (proposed 10,000), fixed seed.
+- **Bootstrap settings fixed:** calendar-based block length (proposed default **2 weeks**), fixed resample count (proposed 10,000), fixed seed.
 - **Positive under both path policies** (a separate gate from the composite bound).
 - **Cost stress:** the composite mean is still positive at **1.5× costs**.
 - **Perturbation gates are diagnostics, not selectors:**
   - one parameter at a time, ±20%, with **≥ 70% of cells positive**;
   - **seeded joint perturbation**, 200 draws, each parameter uniform in ±20%, with **≥ 60% positive**.
+- **Diagnostics performance budget:** the perturbation diagnostics run on **4H synthesis only** (not tick granularity) and must complete within a pre-registered wall-clock budget (proposed: the full OOS + diagnostics run under a few hours per pair). If 1m data is present, diagnostics still use 4H synthesis to stay within budget.
 - **Sizing guidance from the bar itself:** with +3R / −1R, per-trade σ ≈ 1.8R. At n = 200 a plain 95% lower bound above zero needs a mean ≈ **+0.25R** (≈ 31% win vs. 25% break-even); a **block** bootstrap needs more. At n = 100 it is ≈ **+0.36R**. Size the sample accordingly.
-- **Regime & concentration:** report **long/short** and **per-pair** splits. Define regime **objectively** (proposed: close vs. its 200-day average). Flag an OOS segment containing **only one regime** as **inconclusive**. **No single pair may supply most of the total R.**
+- **Regime & concentration:** report **long/short** and **per-pair** splits. Define regime **objectively** (proposed: close vs. its 200-day average). Flag an OOS segment containing **only one regime** as **inconclusive**. **No single pair may supply more than 50% of the total R.**
 
 Data/cost requirements: ≥ 2 years across ≥ 3 liquid pairs spanning up + down regimes (subject to the in-sample count above); OOS ≥ 30% (most recent); costs = fees + slippage + borrow interest; intrabar ambiguity = stop-first; paper-trading (≥ 4 weeks, ≥ 30 signals) is a **later phase**, not Phase 0.
 
@@ -348,7 +353,7 @@ Structured logs (harness side; the core returns typed `Output`/`StrategyError` r
 
 ## 12. Deferred items (later phases — recorded here for traceability)
 
-1. **Transport:** push signals to the engine (the mechanism already exists: Redis Pub/Sub `signals:result`). Contract migration path from `Vec<TradeSignal>` to the new schema, and a compatibility window.
+1. **Transport:** deliver signals to the engine. The existing mechanism is **engine-triggered request/response** over Redis Pub/Sub (engine PUBs `tickers:analyze` → analyzer replies `signals:result`), not a passive push with no trigger. Contract migration path from `Vec<TradeSignal>` to the new schema, and a compatibility window.
 2. **Persistence + outbox** and its storage owner; a migration runner for `trade-engine`; a processed-signal-id dedup table.
 3. **Live price feed** for tick-based touches (no websockets exist today) — or a documented v1 fallback to candle-close entries.
 4. **Engine-side risk** the v2 doc assumed but which does not exist: daily-DD, total open-risk, correlation caps, net-R:R with fees/slippage/borrow, protective-order placement + fill capture.
@@ -367,7 +372,12 @@ Structured logs (harness side; the core returns typed `Output`/`StrategyError` r
 6. Open-position policy = skip + `skipped_open_position`.
 7. `step` takes `&StrategyState`, validate-then-commit; typed data-integrity errors (§4).
 8. `min_gross_rr` gates `structural` only; `fixed_r` uses the obstacle veto alone; gates evaluate rounded payload levels (§3, §7).
-9. Obstacle set includes unconfirmed extremes (highest high / lowest low since activation) (§7.5).
+9. Obstacle set includes the window from the breakout candle through the latest completed candle (highest high / lowest low, **including the breakout candle**) (§7.5).
 10. Per-symbol state; no cross-symbol logic in the core (§4).
 11. `bin/backtest.rs` requires the `harness` feature; cross-platform golden hash needs a ≥ 2-entry CI matrix (none exists today).
 12. `config_version` = hash of canonical config; Decimal scale normalized on state store.
+13. `ATR == 0` handled in-band as a `StateChange` (candle still recorded); `GappedCandle` recovery = adapter feeds the missing candles in order, then resumes (§4).
+14. Tick validation lives in the core: `MalformedTick`, `OutOfOrderTick` (§4).
+15. Latency assumption defined in ticks/wall-time (default 1 tick); 4H-synthesis results labeled latency-insensitive (§8.4).
+16. 1m mode builds 4H `ClosedCandle`s from the 1m series, aligned to the 4H grid, validated against the independently fetched 4H series (§8.1).
+17. `lock = hash(config_version + backtest_params)`; `--oos-consumed` overrides are stamped non-confirmatory and record the earlier run. Bootstrap block = 2 weeks; "most of the R" = a single pair > 50%. Perturbation diagnostics run on 4H synthesis only, within a wall-clock budget (§10.4).
