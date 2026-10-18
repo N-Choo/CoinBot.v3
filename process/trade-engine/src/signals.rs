@@ -8,7 +8,6 @@ use share::db::user::User;
 use share::models::signals::TradeSignal;
 use sqlx::{Pool, Postgres};
 
-use crate::app_state::AppState;
 use crate::trader;
 
 /// Analyse a signal and act on every active contract authorising its ticker.
@@ -71,18 +70,3 @@ pub async fn signal_handler(
     Ok(())
 }
 
-pub async fn signal_generator(app_state: &AppState) -> Result<(), ProcessError> {
-    let pool = &app_state.db_pool;
-    let cache = &app_state.redis_cache;
-
-    loop {
-        let tickers = ContractFilter::new()
-            .with_status(Status::Active)
-            .execute_tickers(pool)
-            .await?;
-
-        let msg = serde_json::to_string(&tickers)?;
-        cache.publish("tickers:analyze", &msg).await;
-        tokio::time::sleep(std::time::Duration::from_secs(24 * 60 * 60)).await;
-    }
-}
