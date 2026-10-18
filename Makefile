@@ -102,8 +102,7 @@ clean:
 	docker compose --profile prod down --rmi all --volumes --remove-orphans
 
 clean-all:
-	docker compose stop
-	docker compose down --rmi all --volumes --remove-orphans
+	docker compose --profile dev --profile prod down --rmi all --volumes --remove-orphans
 	docker volume prune -f
 
 status:
