@@ -69,4 +69,3 @@ pub async fn signal_handler(
 
     Ok(())
 }
-

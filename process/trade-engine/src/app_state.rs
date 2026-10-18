@@ -19,9 +19,6 @@ impl AppState {
             &cfg.kc_passphrase,
         ));
 
-        Ok(Self {
-            db_pool,
-            kucoin,
-        })
+        Ok(Self { db_pool, kucoin })
     }
 }

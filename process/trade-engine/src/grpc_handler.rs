@@ -39,7 +39,6 @@ impl EngineService for EngineServer {
         &self,
         _request: Request<Empty>,
     ) -> Result<Response<Symbols>, Status> {
-
         let tickers = ContractFilter::new()
             .with_status(ContractStatus::Active)
             .execute_tickers(&self.db)
