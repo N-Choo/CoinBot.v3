@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -9,14 +9,11 @@ help:
 	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
 	@echo ""
 	@echo "Testing (starts Postgres + Redis automatically)"
-	@echo "  make test         Run all tests (Rust + Python)"
-	@echo "  make analyzer-test  Python analyzer unit tests only"
-	@echo "  make benchmark-test  Benchmark unit tests only"
+	@echo "  make test         Run all Rust tests"
 	@echo "  make frontend-test  Frontend tests only"
 	@echo ""
 	@echo "Trading"
-	@echo "  make trade        Run trade-engine + Python analyzer live (needs DB + Redis)"
-	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
+	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -51,7 +48,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test strategy-check analyzer-test frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test strategy-check frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -70,9 +67,8 @@ test:
 		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)) && \
 		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test -p strategy-analyzer --all-features; \
 		rst=$$?; \
-		if [ -d process/analyzer ]; then (cd process/analyzer && python3 -m pytest . -v); pst=$$?; else echo "skipping analyzer tests (process/analyzer absent)"; pst=0; fi; \
 		docker compose stop redis postgres; \
-		exit $$(( rst + pst ))
+		exit $$rst
 
 # Purity gate for the deterministic core: no float arithmetic and no hash-map iteration
 # under src/strategy. The greps below are fast pre-filters that strip trailing `//` comments;
@@ -85,15 +81,6 @@ strategy-check:
 	cargo test -p strategy-analyzer --no-default-features --test purity
 	cargo build -p strategy-analyzer --no-default-features
 	cargo build -p strategy-analyzer --all-features
-
-analyzer-test:
-	@cd process/analyzer && python3 -m pytest . -v
-
-benchmark-test:
-	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
-
-benchmark:
-	@cd process && python3 -m analyzer.benchmark.main
 
 frontend-install:
 	cd react && npm ci
@@ -145,14 +132,15 @@ test-api:
 	./scripts/test-api.sh
 
 trade:
-	@docker compose up -d postgres redis && \
+	@docker compose up -d postgres && \
 		sleep 2 && \
-		(cd process && DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
-		PID=$$!; sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
-		sleep 3; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
+		(GRPC_ADDR=127.0.0.1:50051 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo run -p trade-engine & \
+		PID=$$!; sleep 5 && \
+		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT LIVE_CANDLE_INTERVAL=15min \
+		cargo run -p strategy-analyzer --features "harness live grpc" --bin serve -- live; st=$$?; \
+		kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \
-		docker compose stop redis postgres
+		docker compose stop postgres
 
 proto:
 	cargo build -p common --timings
