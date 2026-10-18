@@ -188,7 +188,57 @@ services:
     profiles:
       - prod
 
-  # ── Analyzer (prod only) ───────────────────
+  # ── Strategy Analyzer (Rust) ───────────────
+
+  strategy-analyzer:
+    profiles:
+      - dev
+    build:
+      context: .
+      dockerfile: process/strategy-analyzer/Dockerfile
+      target: dev-builder
+    command: cargo run -p strategy-analyzer --features "harness live grpc" --bin serve -- live
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=debug
+      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
+      - LIVE_CANDLE_INTERVAL=${LIVE_CANDLE_INTERVAL:-15min}
+      - LIVE_STATE_DIR=/app/process/strategy-analyzer/data/live/state
+      - LIVE_STREAM_DIR=/app/process/strategy-analyzer/data/live/stream
+      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
+    depends_on:
+      - trade-engine
+    networks:
+      - app-network
+
+  strategy-analyzer-prod:
+    image: ghcr.io/n-choo/coinbot-strategy-analyzer:latest
+    build:
+      context: .
+      dockerfile: process/strategy-analyzer/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
+      - LIVE_CANDLE_INTERVAL=${LIVE_CANDLE_INTERVAL:-4hour}
+      - LIVE_STATE_DIR=/app/data/live/state
+      - LIVE_STREAM_DIR=/app/data/live/stream
+      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine-prod:50051
+    volumes:
+      - analyzer_data:/app/data
+    depends_on:
+      - trade-engine-prod
+    networks:
+      - app-network
+    profiles:
+      - prod
+
+  # ── Analyzer (Python, rollback only) ───────
 
   analyzer:
     image: ghcr.io/n-choo/coinbot-analyzer:latest
@@ -213,3 +263,4 @@ networks:
 
 volumes:
   postgres_data:
+  analyzer_data:

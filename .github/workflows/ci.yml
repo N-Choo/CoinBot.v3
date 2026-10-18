@@ -2,15 +2,25 @@ name: Full-Stack CI
 
 on:
   push:
-    branches: [main, "feature/**", "FEAT/**"]
+    branches: [main, "feature/**", "FEAT/**", "feat/**"]
   pull_request:
     branches: [main]
 
 jobs:
   # --- Backend Checks ---
+  # The Rust matrix is an **architecture** matrix (x86_64 vs arm64), not an OS matrix: it exists
+  # so the cross-platform golden-hash check (replay_equivalence) compares on both architectures.
   backend-test:
-    name: Rust (Server)
-    runs-on: ubuntu-latest
+    name: Rust (Server, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust
@@ -26,6 +36,10 @@ jobs:
         run: make fmt
       - name: Clippy (Linter)
         run: make clippy
+      - name: Strategy core purity + feature builds
+        run: make strategy-check
+      - name: Strategy golden hash (cross-platform)
+        run: cargo test -p strategy-analyzer --features harness --test replay_equivalence
       - name: Setup Python
         uses: actions/setup-python@v5
         with:

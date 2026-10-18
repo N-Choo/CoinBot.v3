@@ -1,0 +1,12 @@
+# Editor-agnostic rust-analyzer configuration (rust-analyzer reads this file from the
+# workspace root, whatever editor you use). Keeps the workspace in sync with the crate's
+# feature-gated modules so they analyze without "unresolved"/cfg errors.
+#
+# strategy-analyzer is `default = []` with `harness`/`live`/`grpc` modules behind
+# #[cfg(feature = ...)], and its `backtest`/`serve` bins are `required-features`.
+# Analyze with all features so rust-analyzer checks the whole crate (grpc needs `protoc` on PATH).
+[check]
+command = "clippy"
+
+[cargo]
+allFeatures = true

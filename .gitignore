@@ -8,3 +8,5 @@ target/
 graphify-out/
 __pycache__/
 .venv/
+# strategy-analyzer runtime data: fetched CSVs, live state/stream artifacts
+process/strategy-analyzer/data/
