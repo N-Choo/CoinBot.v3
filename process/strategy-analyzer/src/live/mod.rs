@@ -17,10 +17,14 @@
 
 pub mod clock;
 pub mod config;
+#[cfg(feature = "grpc")]
+pub mod grpc;
+pub mod logger;
 pub mod poller;
 pub mod state_store;
 pub mod supervisor;
 pub mod sym_loop;
+pub mod symbol_state;
 
 pub use clock::{Clock, ExchangeClock, ManualClock};
 pub use config::{LiveConfig, LiveConfigError};
@@ -31,3 +35,4 @@ pub use poller::{
 pub use state_store::{ColdReason, LoadOutcome, StateStore, StateStoreError};
 pub use supervisor::{shutdown_signal, LiveError, Supervisor};
 pub use sym_loop::{LiveEvent, LiveInput, SymbolLoop};
+pub use symbol_state::{to_contract, to_kucoin, SymbolState};

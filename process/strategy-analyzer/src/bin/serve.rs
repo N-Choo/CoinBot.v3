@@ -13,9 +13,10 @@ use clap::{Parser, Subcommand};
 use std::sync::Arc;
 use strategy_analyzer::harness::dataset::load_csv;
 use strategy_analyzer::harness::tick_source::{Ohlcv4hSynthesis, PathPolicy, TickSource};
+use strategy_analyzer::live::logger::init_logger;
 use strategy_analyzer::live::{
     Clock, ExchangeClock, LiveConfig, LiveEvent, LiveInput, MarketData, StateStore, Supervisor,
-    SymbolLoop, UreqMarketData,
+    SymbolLoop, SymbolState, UreqMarketData,
 };
 use strategy_analyzer::strategy::config::Config;
 use strategy_analyzer::strategy::STATE_SCHEMA_VERSION;
@@ -55,7 +56,7 @@ enum Cmd {
 
 #[tokio::main]
 async fn main() -> Res<()> {
-    env_logger::Builder::from_env(env_logger::Env::default().default_filter_or("info")).init();
+    init_logger();
     match Cli::parse().cmd {
         Cmd::Live { config } => run_live(config).await,
         Cmd::Replay {
@@ -71,12 +72,48 @@ async fn run_live(config: Option<String>) -> Res<()> {
     let cfg = LiveConfig::load_with_file(config.as_deref())?;
     let market: Arc<dyn MarketData> = Arc::new(UreqMarketData::new(cfg.exchange_base_url.clone()));
     let clock: Arc<dyn Clock> = Arc::new(ExchangeClock::new());
+    let active_symbols = Arc::new(SymbolState::new());
+
     let supervisor = Supervisor::new(cfg, market, clock)?;
-    log::info!("strategy-analyzer live shadow starting (Phase 1: log only, no gRPC)");
+
+    // Signal sink: built with `grpc`, emitted signals are pushed to the engine's `EngineService`.
+    let signal_tx: Option<tokio::sync::mpsc::Sender<strategy_analyzer::strategy::types::Signal>> = {
+        #[cfg(feature = "grpc")]
+        {
+            use strategy_analyzer::live::grpc;
+            let endpoint = std::env::var("GRPC_TRADE_ENGINE_ENDPOINT")
+                .unwrap_or_else(|_| "http://127.0.0.1:50051".to_string());
+
+            match grpc::EngineClient::connect(&endpoint) {
+                Ok(client) => {
+                    let (tx, rx) = tokio::sync::mpsc::channel(1024);
+                    tokio::spawn(grpc::run_publisher(client.clone(), rx));
+                    tokio::spawn(grpc::run_activation(client, Arc::clone(&active_symbols)));
+                    log::info!("gRPC client to engine at {endpoint}");
+                    Some(tx)
+                }
+                Err(e) => {
+                    log::warn!("gRPC client disabled ({e}); signals will only be logged");
+                    None
+                }
+            }
+        }
+        #[cfg(not(feature = "grpc"))]
+        {
+            None
+        }
+    };
+
+    log::info!("strategy-analyzer live starting");
     supervisor
-        .run(strategy_analyzer::live::shutdown_signal())
+        .run(
+            strategy_analyzer::live::shutdown_signal(),
+            signal_tx,
+            active_symbols,
+        )
         .await?;
-    log::info!("strategy-analyzer live shadow stopped");
+    log::info!("strategy-analyzer live stopped");
+
     Ok(())
 }
 

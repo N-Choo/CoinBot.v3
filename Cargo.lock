@@ -4783,6 +4783,7 @@ dependencies = [
  "env_logger",
  "log",
  "proc-macro2",
+ "prost",
  "rust_decimal",
  "serde",
  "serde_json",
@@ -4790,6 +4791,8 @@ dependencies = [
  "syn 2.0.117",
  "thiserror 1.0.69",
  "tokio",
+ "tonic",
+ "tonic-build",
  "ureq",
 ]
 

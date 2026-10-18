@@ -13,13 +13,16 @@ use crate::live::poller::{
 };
 use crate::live::state_store::{StateStore, StateStoreError};
 use crate::live::sym_loop::{LiveEvent, LiveInput, SymbolLoop};
+use crate::live::{to_kucoin, SymbolState};
 use crate::strategy::config::Config;
+use crate::strategy::types::Signal;
 use crate::strategy::STATE_SCHEMA_VERSION;
+use std::collections::{BTreeMap, BTreeSet};
 use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::sync::{broadcast, watch};
-use tokio::task::JoinSet;
+use tokio::sync::{broadcast, mpsc, watch};
+use tokio::task::{Id, JoinError, JoinSet};
 
 /// Errors from the live adapter.
 #[derive(Debug, thiserror::Error)]
@@ -43,6 +46,9 @@ pub enum LiveError {
 
 /// How often the exchanged-time offset is refreshed (spec §3a "refreshed periodically").
 const CLOCK_REFRESH: Duration = Duration::from_secs(300);
+
+/// How often the supervisor re-reads the engine's active set to add/stop per-symbol loops.
+const ACTIVATION_TICK: Duration = Duration::from_secs(5);
 
 /// Owns the loops and the state store for one analyzer instance.
 pub struct Supervisor {
@@ -90,8 +96,14 @@ impl Supervisor {
     }
 
     /// Run until `shutdown` resolves or every symbol loop has stopped. Loops stop on shutdown and
-    /// their state files are retained.
-    pub async fn run(self, shutdown: impl Future<Output = ()> + Send) -> Result<(), LiveError> {
+    /// their state files are retained. `signal_tx`, when present, receives every emitted entry
+    /// signal for delivery to the engine (the sink is absent in log-only Phase 1 runs).
+    pub async fn run(
+        self,
+        shutdown: impl Future<Output = ()> + Send,
+        signal_tx: Option<mpsc::Sender<Signal>>,
+        active_symbols: Arc<SymbolState>,
+    ) -> Result<(), LiveError> {
         let Supervisor {
             cfg,
             market,
@@ -101,12 +113,6 @@ impl Supervisor {
             store,
             strategy_cfg,
         } = self;
-
-        // Phase 1 has no `Analyze` call: prune state for symbols no longer in the explicit list.
-        let removed = store.prune(&cfg.symbols)?;
-        if !removed.is_empty() {
-            log::info!("pruned inactive symbol state: {removed:?}");
-        }
 
         // Measure the exchange offset once, then refresh on a heartbeat.
         sync_clock(market.clone(), clock.clone(), limiter.clone(), retry).await;
@@ -120,39 +126,32 @@ impl Supervisor {
             cfg.poll_interval(),
             shutdown_rx.clone(),
         );
-        let heartbeat = {
-            let market = market.clone();
-            let clock = clock.clone();
-            let limiter = limiter.clone();
-            let mut sd = shutdown_rx.clone();
-            tokio::spawn(async move {
-                let mut t = tokio::time::interval(CLOCK_REFRESH);
-                t.tick().await; // consume the immediate first tick
-                loop {
-                    tokio::select! {
-                        r = sd.changed() => { if r.is_err() || *sd.borrow() { break; } }
-                        _ = t.tick() => sync_clock(market.clone(), clock.clone(), limiter.clone(), retry).await,
-                    }
-                }
-            })
-        };
+        let heartbeat = spawn_heartbeat(
+            market.clone(),
+            clock.clone(),
+            limiter.clone(),
+            retry,
+            shutdown_rx,
+        );
 
+        // Shared inputs for starting loops on demand, plus the live worker set.
+        let make = LoopFactory {
+            strategy_cfg,
+            live_cfg: cfg.clone(),
+            store: store.clone(),
+            market,
+            clock,
+            limiter,
+            retry,
+            ticker_tx,
+            signal_tx,
+        };
+        let fallback: BTreeSet<String> = cfg.symbols.iter().map(|s| to_kucoin(s)).collect();
         let mut set: JoinSet<()> = JoinSet::new();
-        for symbol in cfg.symbols.iter().cloned() {
-            let deps = SymbolDeps {
-                symbol,
-                strategy_cfg: strategy_cfg.clone(),
-                live_cfg: cfg.clone(),
-                store: store.clone(),
-                market: market.clone(),
-                clock: clock.clone(),
-                limiter: limiter.clone(),
-                retry,
-                rx: ticker_tx.subscribe(),
-                shutdown: shutdown_rx.clone(),
-            };
-            set.spawn(run_symbol(deps));
-        }
+        let mut stops: BTreeMap<String, watch::Sender<bool>> = BTreeMap::new(); // symbol -> stop
+        let mut sym_of: BTreeMap<Id, String> = BTreeMap::new(); // task id -> symbol
+                                                                // The interval's first tick fires immediately, seeding the loops on entry.
+        let mut activation = tokio::time::interval(ACTIVATION_TICK);
 
         tokio::pin!(shutdown);
         loop {
@@ -161,22 +160,160 @@ impl Supervisor {
                     log::info!("shutdown signal received; stopping loops");
                     break;
                 }
-                joined = set.join_next() => match joined {
-                    Some(Ok(())) => {}
-                    Some(Err(e)) => log::warn!("symbol task ended abnormally (not respawned): {e}"),
-                    None => break,
-                },
+                _ = activation.tick() => {
+                    let snap: BTreeSet<String> = active_symbols.snapshot().into_iter().collect();
+                    let desired = if snap.is_empty() { fallback.clone() } else { snap };
+                    reconcile(&desired, &make, &mut set, &mut stops, &mut sym_of);
+                    let removed = store.prune(&desired.into_iter().collect::<Vec<_>>())?;
+                    if !removed.is_empty() {
+                        log::info!("pruned inactive symbol state: {removed:?}");
+                    }
+                }
+                joined = set.join_next_with_id() => reap(joined, &mut stops, &mut sym_of),
             }
         }
 
-        // Stop the pollers and any remaining loops; state is already persisted.
+        // Stop the pollers and remaining loops, letting them persist before force-aborting.
         let _ = shutdown_tx.send(true);
+        for stop in stops.values() {
+            let _ = stop.send(true);
+        }
+        shutdown_workers(&mut set).await;
         heartbeat.abort();
         ticker_handle.abort();
-        set.abort_all();
-        while set.join_next().await.is_some() {}
         Ok(())
     }
+}
+
+/// Shared inputs for starting a per-symbol loop (everything re-cloned per spawn).
+struct LoopFactory {
+    strategy_cfg: Config,
+    live_cfg: LiveConfig,
+    store: Arc<StateStore>,
+    market: Arc<dyn MarketData>,
+    clock: Arc<dyn Clock>,
+    limiter: Arc<RateLimiter>,
+    retry: RetryPolicy,
+    ticker_tx: broadcast::Sender<TickerSnapshot>,
+    signal_tx: Option<mpsc::Sender<Signal>>,
+}
+
+impl LoopFactory {
+    /// Spawn one loop with its own stop channel; returns the task id and the stop handle.
+    fn spawn(&self, symbol: String, set: &mut JoinSet<()>) -> (Id, watch::Sender<bool>) {
+        let (stop_tx, stop_rx) = watch::channel(false);
+        let deps = SymbolDeps {
+            symbol,
+            strategy_cfg: self.strategy_cfg.clone(),
+            live_cfg: self.live_cfg.clone(),
+            store: self.store.clone(),
+            market: self.market.clone(),
+            clock: self.clock.clone(),
+            limiter: self.limiter.clone(),
+            retry: self.retry,
+            rx: self.ticker_tx.subscribe(),
+            shutdown: stop_rx,
+            signal_tx: self.signal_tx.clone(),
+        };
+        let id = set.spawn(run_symbol(deps)).id();
+        (id, stop_tx)
+    }
+}
+
+/// Add loops for newcomers and gracefully stop loops whose symbols are no longer desired.
+fn reconcile(
+    desired: &BTreeSet<String>,
+    make: &LoopFactory,
+    set: &mut JoinSet<()>,
+    stops: &mut BTreeMap<String, watch::Sender<bool>>,
+    sym_of: &mut BTreeMap<Id, String>,
+) {
+    let newcomers: Vec<String> = desired
+        .iter()
+        .filter(|s| !stops.contains_key(*s))
+        .cloned()
+        .collect();
+    for symbol in newcomers {
+        let (id, stop) = make.spawn(symbol.clone(), set);
+
+        sym_of.insert(id, symbol.clone());
+        stops.insert(symbol.clone(), stop);
+        log::info!("symbol={symbol} watch activated");
+    }
+
+    let gone: Vec<String> = stops
+        .keys()
+        .filter(|s| !desired.contains(*s))
+        .cloned()
+        .collect();
+    for symbol in gone {
+        if let Some(stop) = stops.remove(&symbol) {
+            let _ = stop.send(true);
+            sym_of.retain(|_, s| s.as_str() != symbol.as_str());
+            log::info!("symbol={symbol} deactivated");
+        }
+    }
+}
+
+/// Forget a finished or panicked loop so activation can respawn it later.
+///
+/// - `joined`: the result of `JoinSet::join_next_with_id` — the `Id` of the task that ended and
+///   whether it finished normally (`Ok`) or panicked (`Err`).
+/// - `stops`: per-symbol stop senders; the reaped symbol's entry is removed.
+/// - `sym_of`: task-id → symbol map, used to recover the symbol for `joined`'s `Id`.
+fn reap(
+    joined: Option<Result<(Id, ()), JoinError>>,
+    stops: &mut BTreeMap<String, watch::Sender<bool>>,
+    sym_of: &mut BTreeMap<Id, String>,
+) {
+    match joined {
+        Some(Ok((id, ()))) => {
+            if let Some(sym) = sym_of.remove(&id) {
+                stops.remove(&sym);
+            }
+        }
+        Some(Err(e)) => {
+            let id = e.id();
+            match sym_of.remove(&id) {
+                Some(sym) => log::warn!("symbol={sym} task ended abnormally (not respawned): {e}"),
+                None => log::warn!("symbol task ended abnormally (not respawned): {e}"),
+            }
+        }
+        None => {}
+    }
+}
+
+/// Drain the loop set, giving loops a moment to persist before force-aborting stragglers.
+async fn shutdown_workers(set: &mut JoinSet<()>) {
+    let drained = tokio::time::timeout(Duration::from_secs(5), async {
+        while set.join_next().await.is_some() {}
+    })
+    .await;
+    if drained.is_err() {
+        set.abort_all();
+        while set.join_next().await.is_some() {}
+    }
+}
+
+/// Spawn the exchange-clock heartbeat (re-syncs the offset every `CLOCK_REFRESH`).
+fn spawn_heartbeat(
+    market: Arc<dyn MarketData>,
+    clock: Arc<dyn Clock>,
+    limiter: Arc<RateLimiter>,
+    retry: RetryPolicy,
+    shutdown: watch::Receiver<bool>,
+) -> tokio::task::JoinHandle<()> {
+    let mut sd = shutdown;
+    tokio::spawn(async move {
+        let mut t = tokio::time::interval(CLOCK_REFRESH);
+        t.tick().await; // consume the immediate first tick
+        loop {
+            tokio::select! {
+                r = sd.changed() => { if r.is_err() || *sd.borrow() { break; } }
+                _ = t.tick() => sync_clock(market.clone(), clock.clone(), limiter.clone(), retry).await,
+            }
+        }
+    })
 }
 
 /// Everything one symbol task needs, grouped to keep the spawn site readable.
@@ -191,6 +328,8 @@ struct SymbolDeps {
     retry: RetryPolicy,
     rx: broadcast::Receiver<TickerSnapshot>,
     shutdown: watch::Receiver<bool>,
+    /// Sink for emitted entry signals (None = log-only; no delivery).
+    signal_tx: Option<mpsc::Sender<Signal>>,
 }
 
 async fn run_symbol(deps: SymbolDeps) {
@@ -205,6 +344,7 @@ async fn run_symbol(deps: SymbolDeps) {
         retry,
         mut rx,
         mut shutdown,
+        signal_tx,
     } = deps;
 
     let stream_dir = live_cfg.stream_dir_path();
@@ -257,10 +397,13 @@ async fn run_symbol(deps: SymbolDeps) {
                     if let Some(price) = snap.prices.get(&symbol).copied() {
                         let now = clock.exchange_now_ms();
                         match lp.process(LiveInput::Price { price, at_ms: snap.at_ms }, now) {
-                            Ok(events) => if stop_requested(&events) {
-                                log::warn!("symbol={symbol} stopping (quarantined)");
-                                break;
-                            },
+                            Ok(events) => {
+                                forward_signals(&events, &signal_tx);
+                                if stop_requested(&events) {
+                                    log::warn!("symbol={symbol} stopping (quarantined)");
+                                    break;
+                                }
+                            }
                             Err(e) => log::warn!("symbol={symbol} price processing failed: {e}"),
                         }
                     }
@@ -273,7 +416,7 @@ async fn run_symbol(deps: SymbolDeps) {
             _ = check.tick() => {
                 let now = clock.exchange_now_ms();
                 if now >= next_open + interval_ms + live_cfg.candle_settle_ms {
-                    if poll_candles(&symbol, &market, &limiter, retry, &poller, &mut lp, now).await {
+                    if poll_candles(&symbol, &market, &limiter, retry, &poller, &mut lp, now, &signal_tx).await {
                         log::warn!("symbol={symbol} stopping (quarantined)");
                         break;
                     }
@@ -322,6 +465,7 @@ async fn warm_from_history(
 }
 
 /// Poll and feed the symbol's closed candles. Returns `true` if the loop should stop (quarantined).
+#[allow(clippy::too_many_arguments)]
 async fn poll_candles(
     symbol: &str,
     market: &Arc<dyn MarketData>,
@@ -330,6 +474,7 @@ async fn poll_candles(
     poller: &CandlePoller,
     lp: &mut SymbolLoop,
     now_ms: i64,
+    signal_tx: &Option<mpsc::Sender<Signal>>,
 ) -> bool {
     let cursor = lp.candle_cursor();
     limiter.acquire().await;
@@ -357,6 +502,7 @@ async fn poll_candles(
     for c in candles {
         match lp.process(LiveInput::Candle(c), now_ms) {
             Ok(events) => {
+                forward_signals(&events, signal_tx);
                 if stop_requested(&events) {
                     return true;
                 }
@@ -374,6 +520,21 @@ fn stop_requested(events: &[LiveEvent]) -> bool {
     events
         .iter()
         .any(|e| matches!(e, LiveEvent::Quarantine { .. }))
+}
+
+/// Forward any emitted entry signals into the (optional) sink for engine delivery.
+fn forward_signals(events: &[LiveEvent], tx: &Option<mpsc::Sender<Signal>>) {
+    let Some(tx) = tx else { return };
+    for ev in events {
+        if let LiveEvent::Signal(sig) = ev {
+            if tx.try_send(sig.clone()).is_err() {
+                log::warn!(
+                    "signal sink full or closed; dropping signal for {}",
+                    sig.symbol
+                );
+            }
+        }
+    }
 }
 
 async fn sync_clock(

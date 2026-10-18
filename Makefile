@@ -123,17 +123,17 @@ status:
 	@docker compose ps 2>/dev/null
 
 restart:
-	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine)
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine strategy-analyzer)
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine frontend
+		docker compose up api_gateway deposit-worker trade-engine strategy-analyzer frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod strategy-analyzer-prod
 
 prod:
-	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer redis postgres
+	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod strategy-analyzer-prod redis postgres
 
 logs:
 	docker compose logs -f
