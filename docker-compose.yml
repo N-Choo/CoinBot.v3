@@ -225,7 +225,7 @@ services:
     environment:
       - RUST_LOG=info
       - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - LIVE_CANDLE_INTERVAL=${LIVE_CANDLE_INTERVAL:-15min}
+      - LIVE_CANDLE_INTERVAL=${LIVE_CANDLE_INTERVAL:-4hour}
       - LIVE_STATE_DIR=/app/data/live/state
       - LIVE_STREAM_DIR=/app/data/live/stream
       - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine-prod:50051
