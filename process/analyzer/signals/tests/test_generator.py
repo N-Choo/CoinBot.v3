@@ -84,6 +84,33 @@ def test_generate_signals_returns_list_of_signals():
         assert 0.0 <= s.confidence <= 1.0
 
 
+def test_generate_signals_exposes_divergence_index(monkeypatch):
+    import analyzer.signals.generator as gen
+
+    n = 50
+    close = [100.0] * n
+    df = _make_df(close)
+    result = pd.DataFrame(
+        {
+            "High": df["High"],
+            "Low": df["Low"],
+            "Close": df["Close"],
+            "RSI": [50.0] * n,
+            "Reg_Bullish_Div": [0] * n,
+            "Reg_Bearish_Div": [0] * n,
+            "Hid_Bullish_Div": [0] * n,
+            "Hid_Bearish_Div": [0] * n,
+        }
+    )
+    result.loc[42, "Reg_Bullish_Div"] = 1
+    monkeypatch.setattr(gen, "detect_rsi_divergences", lambda *a, **k: result)
+
+    signals = gen.generate_signals(df, ticker="TEST-USDT")
+
+    assert len(signals) == 1
+    assert signals[0].divergence_idx == 42
+
+
 def test_sma_filter_disabled_keeps_signals():
     np.random.seed(10)
     n = 200

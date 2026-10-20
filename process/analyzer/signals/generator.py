@@ -141,5 +141,6 @@ def generate_signals(
             reason=best[2],
             sl_price=sl_price,
             tp_price=tp_price,
+            divergence_idx=best[0],
         )
     ]

@@ -11,6 +11,7 @@ class Signal:
     reason: str = ""
     sl_price: float = 0.0
     tp_price: float = 0.0
+    divergence_idx: int | None = None
 
     def to_dict(self) -> dict:
         return {

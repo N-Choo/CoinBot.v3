@@ -49,6 +49,18 @@ def test_signal_to_dict():
     }
 
 
+def test_signal_divergence_idx_defaults_to_none_and_is_not_published():
+    s = Signal(
+        ticker="BTC-USDT",
+        action="buy",
+        confidence=0.6,
+        entry_price=100.0,
+        reason="regular_bullish_divergence",
+    )
+    assert s.divergence_idx is None
+    assert "divergence_idx" not in s.to_dict()
+
+
 def test_ohlcv_parses_float_fields():
     o = OHLCV(
         timestamp=datetime(2026, 1, 1),
