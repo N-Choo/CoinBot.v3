@@ -10,6 +10,8 @@ from typing import Any
 import pandas as pd
 
 from analyzer.benchmark.engine import ClosedTrade, SimEngine
+from analyzer.indicators.rsi import calculate_rsi
+from analyzer.indicators.sma import calculate_sma
 from analyzer.models.types import Signal
 
 
@@ -156,9 +158,29 @@ def build_ticker_replay(
     config: dict[str, Any],
     warmup: int,
 ) -> dict[str, Any]:
-    """Assemble one ticker's replay payload from a completed run."""
-    from analyzer.indicators.rsi import calculate_rsi
-    from analyzer.indicators.sma import calculate_sma
+    """Assemble one ticker's replay payload from a completed run.
+
+    ``start`` must equal ``recorder.start``: the payload drops the warm-up
+    candles before that position. Every emitted ``i`` field is an absolute
+    DataFrame position, which the viewer maps through ``start_index``.
+    ``config`` must be the exact config used for the run, so the values
+    embedded in the report match the recorded indicators and decisions.
+    """
+    if recorder.start is None:
+        raise ValueError("recorder has no start index")
+    if start != recorder.start:
+        raise ValueError(
+            f"start {start} does not match recorder start {recorder.start}"
+        )
+    if len(recorder.events) != len(df) - start:
+        raise ValueError(
+            f"recorder has {len(recorder.events)} events, expected "
+            f"{len(df) - start}"
+        )
+    if recorder.events and recorder.events[0].i != start:
+        raise ValueError(
+            f"first event is {recorder.events[0].i}, expected {start}"
+        )
 
     window = df.iloc[start:]
     n = len(window)
