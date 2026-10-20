@@ -39,7 +39,7 @@ def _parse_kline_response(raw: dict) -> pd.DataFrame:
 
 def fetch_klines(
     symbol: str,
-    timeframe: str = "1day",
+    timeframe: str = "4hour",
     base_url: str = BASE_URL,
 ) -> pd.DataFrame:
     """Fetch OHLCV klines from KuCoin REST API.

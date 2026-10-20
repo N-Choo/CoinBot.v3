@@ -1,178 +1,181 @@
+import logging
+
 import numpy as np
-from typing import Any
-
-import pytest
-from analyzer.benchmark.main import _score_signal
-
-
-def test_score_buy_hit():
-    hit, pct = _score_signal("buy", entry=100.0, forward=110.0)
-    assert hit is True
-    assert pct == pytest.approx(10.0)
-
-
-def test_score_buy_miss():
-    hit, pct = _score_signal("buy", entry=100.0, forward=95.0)
-    assert hit is False
-    assert pct == pytest.approx(-5.0)
-
-
-def test_score_sell_hit():
-    hit, pct = _score_signal("sell", entry=100.0, forward=90.0)
-    assert hit is True
-    assert pct == pytest.approx(10.0)
-
-
-def test_score_sell_miss():
-    hit, pct = _score_signal("sell", entry=100.0, forward=105.0)
-    assert hit is False
-    assert pct == pytest.approx(-5.0)
-
-
-def test_score_na_when_no_forward():
-    hit, pct = _score_signal("buy", entry=100.0, forward=None)
-    assert hit is None
-    assert pct is None
-
-
-from analyzer.benchmark.main import _make_divergence_label
-
-
-def test_divergence_label_regular_bullish():
-    row_data = {"Reg_Bullish_Div": 1, "Reg_Bearish_Div": 0,
-                "Hid_Bullish_Div": 0, "Hid_Bearish_Div": 0}
-    assert _make_divergence_label(row_data) == "regular_bullish"
-
-
-def test_divergence_label_regular_bearish():
-    row_data = {"Reg_Bullish_Div": 0, "Reg_Bearish_Div": 1,
-                "Hid_Bullish_Div": 0, "Hid_Bearish_Div": 0}
-    assert _make_divergence_label(row_data) == "regular_bearish"
-
-
-def test_divergence_label_hidden_bullish():
-    row_data = {"Reg_Bullish_Div": 0, "Reg_Bearish_Div": 0,
-                "Hid_Bullish_Div": 1, "Hid_Bearish_Div": 0}
-    assert _make_divergence_label(row_data) == "hidden_bullish"
-
-
-def test_divergence_label_hidden_bearish():
-    row_data = {"Reg_Bullish_Div": 0, "Reg_Bearish_Div": 0,
-                "Hid_Bullish_Div": 0, "Hid_Bearish_Div": 1}
-    assert _make_divergence_label(row_data) == "hidden_bearish"
-
-
-def test_divergence_label_no_match_returns_unknown():
-    row_data = {"Reg_Bullish_Div": 0, "Reg_Bearish_Div": 0,
-                "Hid_Bullish_Div": 0, "Hid_Bearish_Div": 0}
-    assert _make_divergence_label(row_data) == "unknown"
-
-
 import pandas as pd
-from analyzer.benchmark.main import _apply_sma_filter
+import pytest
+
+from analyzer.benchmark.main import _fmt_price, print_ledger, run_benchmark
+from analyzer.models.types import Signal
 
 
-def test_sma_filter_allows_buy_above_sma():
-    close = pd.Series([100.0] * 20 + [110.0])
-    assert _apply_sma_filter(close, idx=20, action="buy", sma_period=5) is True
-
-
-def test_sma_filter_blocks_buy_below_sma():
-    close = pd.Series([100.0] * 20 + [90.0])
-    assert _apply_sma_filter(close, idx=20, action="buy", sma_period=5) is False
-
-
-def test_sma_filter_allows_sell_below_sma():
-    close = pd.Series([100.0] * 20 + [90.0])
-    assert _apply_sma_filter(close, idx=20, action="sell", sma_period=5) is True
-
-
-def test_sma_filter_blocks_sell_above_sma():
-    close = pd.Series([100.0] * 20 + [110.0])
-    assert _apply_sma_filter(close, idx=20, action="sell", sma_period=5) is False
-
-
-def test_sma_filter_short_window_returns_true():
-    close = pd.Series([100.0] * 3)
-    assert _apply_sma_filter(close, idx=2, action="buy", sma_period=5) is True
-
-
-from analyzer.benchmark.main import run_benchmark
-
-
-def test_run_benchmark_on_synthetic_data():
-    """End-to-end: rolling simulation produces valid signal structures."""
+def test_run_benchmark_returns_trades_and_summary():
+    """End-to-end: the replay produces valid trade and summary structures."""
     np.random.seed(99)
-    n = 120
+    n = 200
     close = np.linspace(100, 80, n) + np.random.randn(n) * 0.3
     high = close + np.random.rand(n) * 2
     low = close - np.random.rand(n) * 2
-
     df = pd.DataFrame({"High": high, "Low": low, "Close": close})
 
-    signals, summary = run_benchmark(
+    trades, open_positions, summary = run_benchmark(
         df,
         ticker="TEST-USDT",
         rsi_period=14,
         rsi_order=10,
-        forward_days=7,
         sma_enabled=False,
         sma_period=20,
+        benchmark_days=90,
+        init_fund=1000.0,
+        fee_rate=0.001,
     )
 
-    assert isinstance(signals, list)
-    assert "ticker" in summary
-    assert "buy_total" in summary
-    assert "sell_total" in summary
+    assert isinstance(trades, list)
+    assert isinstance(open_positions, list)
+    for key in (
+        "ticker",
+        "trades",
+        "wins",
+        "win_rate",
+        "realized_pnl",
+        "unrealized_pnl",
+        "open_count",
+        "init_fund",
+        "available_fund",
+        "equity",
+    ):
+        assert key in summary
+    assert summary["ticker"] == "TEST-USDT"
+    assert summary["equity"] == pytest.approx(
+        summary["init_fund"]
+        + summary["realized_pnl"]
+        + summary["unrealized_pnl"]
+    )
+    for t in trades:
+        assert t["side"] in ("buy", "sell")
+        assert t["reason"] in ("TP", "SL")
 
-    for s in signals:
-        assert "action" in s
-        assert s["action"] in ("buy", "sell")
-        assert "divergence" in s
-        assert "entry_price" in s
-        assert "pct" in s
-        assert "hit" in s
-        assert s["hit"] in (True, False, None)
+
+def test_run_benchmark_simulates_trades_end_to_end(monkeypatch):
+    """Drive the replay with a fixed signal and verify TP exits are booked."""
+    import analyzer.benchmark.main as bm
+
+    n = 60
+    close = np.full(n, 100.0)
+    close[40:] = 120.0
+    df = pd.DataFrame(
+        {"High": close + 1, "Low": close - 1, "Close": close}
+    )
+
+    def fake_signals(df_slice, **kwargs):
+        entry = float(df_slice["Close"].iloc[-1])
+        return [
+            Signal(
+                ticker="TEST-USDT",
+                action="buy",
+                confidence=0.6,
+                entry_price=entry,
+                reason="regular_bullish_divergence",
+                sl_price=entry * 0.9,
+                tp_price=entry * 1.1,
+            )
+        ]
+
+    monkeypatch.setattr(bm, "generate_signals", fake_signals)
+
+    trades, open_positions, summary = run_benchmark(
+        df, ticker="TEST-USDT", benchmark_days=50,
+        init_fund=1000.0, fee_rate=0.0,
+    )
+
+    assert summary["trades"] >= 1
+    assert all(t["reason"] == "TP" for t in trades)
+    assert all(t["pnl"] > 0 for t in trades)
 
 
-from analyzer.benchmark.main import print_ledger
-
-
-def test_print_ledger_no_signals(capsys):
-    signals: list[dict[str, Any]] = []
-    summary = {
-        "ticker": "BTC-USDT", "buy_hits": 0, "buy_total": 0,
-        "sell_hits": 0, "sell_total": 0,
+def _summary(**overrides):
+    base = {
+        "ticker": "BTC-USDT",
+        "trades": 0,
+        "wins": 0,
+        "win_rate": 0.0,
+        "realized_pnl": 0.0,
+        "unrealized_pnl": 0.0,
+        "open_count": 0,
+        "init_fund": 1000.0,
+        "available_fund": 1000.0,
+        "equity": 1000.0,
     }
-    print_ledger(signals, summary, forward_days=7)
-    captured = capsys.readouterr().out
-    assert "(no signals)" in captured
+    base.update(overrides)
+    return base
 
 
-def test_print_ledger_with_signals(capsys):
-    signals = [
+def test_print_ledger_no_trades(capsys):
+    print_ledger("BTC-USDT", [], [], _summary())
+    out = capsys.readouterr().out
+    assert "BTC-USDT" in out
+    assert "(no trades)" in out
+
+
+def test_print_ledger_with_trades(capsys):
+    trades = [
         {
-            "ticker": "BTC-USDT", "date": "2026-05-12",
-            "action": "buy", "divergence": "regular_bullish",
-            "entry_price": 91200.0, "forward_price": 94500.0,
-            "pct": 3.62, "hit": True, "sl_price": 0, "tp_price": 0,
-            "exit": "expiry",
+            "side": "buy", "entry_price": 91200.0, "exit_price": 96000.0,
+            "E": 500.0, "pnl": 50.0, "pnl_pct": 5.0, "reason": "TP",
+            "entry_date": "2026-05-12", "exit_date": "2026-05-19",
         },
         {
-            "ticker": "BTC-USDT", "date": "2026-05-25",
-            "action": "buy", "divergence": "hidden_bullish",
-            "entry_price": 93400.0, "forward_price": 92100.0,
-            "pct": -1.39, "hit": False, "sl_price": 0, "tp_price": 0,
-            "exit": "expiry",
+            "side": "buy", "entry_price": 88000.0, "exit_price": 85000.0,
+            "E": 500.0, "pnl": -50.0, "pnl_pct": -10.0, "reason": "SL",
+            "entry_date": "2026-05-28", "exit_date": "2026-06-02",
         },
     ]
-    summary = {
-        "ticker": "BTC-USDT", "buy_hits": 1, "buy_total": 2,
-        "sell_hits": 0, "sell_total": 0,
-    }
-    print_ledger(signals, summary, forward_days=7)
-    captured = capsys.readouterr().out
-    assert "BTC-USDT" in captured
-    assert "\u2713" in captured
-    assert "\u2717" in captured
-    assert "50%" in captured
+    summary = _summary(trades=2, wins=1, win_rate=50.0, realized_pnl=0.0)
+    print_ledger("BTC-USDT", trades, [], summary)
+    out = capsys.readouterr().out
+    assert "TP" in out
+    assert "SL" in out
+    assert "50%" in out
+    assert "$91,200" in out
+    assert "+50.00" in out
+    assert "realized" in out
+    assert "equity" in out
+    assert "open: 0" in out
+
+
+def test_fmt_price_buckets():
+    assert _fmt_price(None) == "-"
+    assert _fmt_price(91200.0) == "$91,200"
+    assert _fmt_price(912.5) == "$912.50"
+    assert _fmt_price(0.5) == "$0.5000"
+    assert _fmt_price(0.001) == "$0.001000"
+
+
+def test_print_ledger_open_positions_without_trades(capsys):
+    open_positions = [
+        {
+            "side": "buy", "entry_price": 91200.0, "exit_price": 0.0,
+            "E": 500.0, "pnl": 0.0, "pnl_pct": 0.0, "reason": "open",
+            "entry_date": "2026-06-01", "exit_date": "",
+            "entry_idx": 9, "exit_idx": 0,
+        }
+    ]
+    print_ledger("BTC-USDT", [], open_positions, _summary(open_count=1))
+    out = capsys.readouterr().out
+    assert "2026-06-01" in out
+    assert "open" in out
+    assert "(no trades)" not in out
+
+
+def test_main_skips_ticker_on_transport_error(monkeypatch, caplog):
+    import analyzer.benchmark.main as bm
+
+    monkeypatch.setenv("BENCHMARK_TICKERS", "BTC-USDT")
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(bm, "fetch_klines", boom)
+    with caplog.at_level(logging.ERROR):
+        bm.main()  # must not raise
+
+    assert "skip BTC-USDT" in caplog.text
