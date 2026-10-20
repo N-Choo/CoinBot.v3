@@ -5,13 +5,16 @@ from __future__ import annotations
 import logging
 import os
 from dataclasses import asdict
-from datetime import datetime
 from typing import Any
 
 import pandas as pd
-from pandas import Timestamp
 
 from analyzer.benchmark.engine import SimEngine
+from analyzer.benchmark.replay import (
+    ReplayRecorder,
+    account_state,
+    date_str as _date_str,
+)
 from analyzer.config import Config
 from analyzer.fetchers.kucoin import KuCoinFetchError, fetch_klines
 from analyzer.signals.generator import generate_signals
@@ -35,14 +38,6 @@ def _load_dotenv(path: str = ".env") -> None:
                     os.environ[key] = val
     except FileNotFoundError:
         pass
-
-
-def _date_str(df: pd.DataFrame, i: int) -> str:
-    ts = df["Timestamp"].iloc[i] if "Timestamp" in df.columns else df.index[i]
-
-    if isinstance(ts, (datetime, Timestamp)):
-        return ts.strftime("%Y-%m-%d")
-    return str(ts)
 
 
 def _warmup(
@@ -72,6 +67,7 @@ def run_benchmark(
     init_fund: float = 1000.0,
     fee_rate: float = 0.001,
     benchmark_days: int = 90,
+    recorder: ReplayRecorder | None = None,
 ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], dict[str, Any]]:
     """Replay ``df`` candle-by-candle through a trade-engine simulation.
 
@@ -85,11 +81,20 @@ def run_benchmark(
 
     engine = SimEngine(init_fund=init_fund, fee_rate=fee_rate)
 
+    if recorder is not None:
+        recorder.begin(start, df)
+
     for i in range(start, len(df)):
         row = df.iloc[i]
+        before_closed = len(engine.closed)
         engine.on_candle(
             i, float(row["High"]), float(row["Low"]), _date_str(df, i)
         )
+        exits = engine.closed[before_closed:]
+
+        signal = None
+        opened = False
+        rejected = None
 
         signals = generate_signals(
             df.iloc[: i + 1],
@@ -106,28 +111,41 @@ def run_benchmark(
             atr_high_adjust=atr_high_adjust,
             atr_sl_max_pct=atr_sl_max_pct,
         )
-        if not signals:
-            continue
+        if signals:
+            sig = signals[0]
+            signal = sig
+            if sig.tp_price <= 0 or sig.sl_price <= 0:
+                rejected = "invalid_tp_sl"
+                logger.warning(
+                    "skip %s signal on %s - non-positive tp/sl (%.4f/%.4f)",
+                    ticker,
+                    _date_str(df, i),
+                    sig.tp_price,
+                    sig.sl_price,
+                )
+            else:
+                opened = engine.on_signal(
+                    sig.action,
+                    sig.entry_price,
+                    sig.tp_price,
+                    sig.sl_price,
+                    i,
+                    _date_str(df, i),
+                )
 
-        sig = signals[0]
-        if sig.tp_price <= 0 or sig.sl_price <= 0:
-            logger.warning(
-                "skip %s signal on %s - non-positive tp/sl (%.4f/%.4f)",
-                ticker,
-                _date_str(df, i),
-                sig.tp_price,
-                sig.sl_price,
+        if recorder is not None:
+            recorder.record(
+                i,
+                float(row["Close"]),
+                signal,
+                opened,
+                rejected,
+                exits,
+                engine,
             )
-            continue
 
-        engine.on_signal(
-            sig.action,
-            sig.entry_price,
-            sig.tp_price,
-            sig.sl_price,
-            i,
-            _date_str(df, i),
-        )
+    if recorder is not None:
+        recorder.finish(engine)
 
     trades = [asdict(t) for t in engine.closed]
     open_positions = [asdict(p) for p in engine.positions]
@@ -138,15 +156,7 @@ def _summarize(
     ticker: str, engine: SimEngine, df: pd.DataFrame
 ) -> dict[str, Any]:
     last_close = float(df["Close"].iloc[-1])
-    unrealized = 0.0
-    for pos in engine.positions:
-        ret = (last_close - pos.entry_price) / pos.entry_price
-        if pos.side == "sell":
-            ret = -ret
-        unrealized += pos.E * ret
-
-    reserved = sum(p.E for p in engine.positions)
-    realized = sum(t.pnl for t in engine.closed)
+    state = account_state(engine, last_close)
     total = len(engine.closed)
     wins = sum(1 for t in engine.closed if t.pnl > 0)
 
@@ -155,12 +165,8 @@ def _summarize(
         "trades": total,
         "wins": wins,
         "win_rate": (wins / total * 100) if total else 0.0,
-        "realized_pnl": realized,
-        "unrealized_pnl": unrealized,
-        "open_count": len(engine.positions),
         "init_fund": engine.init_fund,
-        "available_fund": engine.available_fund,
-        "equity": engine.available_fund + reserved + unrealized,
+        **state,
     }
 
 

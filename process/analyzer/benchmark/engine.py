@@ -123,6 +123,8 @@ class ClosedTrade:
     entry_date: str
     exit_idx: int
     exit_date: str
+    tp: float = 0.0
+    sl: float = 0.0
 
 
 class SimEngine:
@@ -210,5 +212,7 @@ class SimEngine:
                 entry_date=pos.entry_date,
                 exit_idx=idx,
                 exit_date=date,
+                tp=pos.tp,
+                sl=pos.sl,
             )
         )

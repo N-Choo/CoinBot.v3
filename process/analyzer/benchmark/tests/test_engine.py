@@ -189,3 +189,12 @@ def test_non_finite_prices_are_rejected():
     assert e.on_signal("buy", float("nan"), 110.0, 90.0, 0, "d0") is False
     assert e.on_signal("buy", 100.0, float("inf"), 90.0, 0, "d0") is False
     assert e.positions == []
+
+
+def test_closed_trade_keeps_tp_and_sl():
+    e = SimEngine(init_fund=1000.0, fee_rate=0.0)
+    e.on_signal("buy", 100.0, 110.0, 90.0, 0, "d0")
+    e.on_candle(1, high=111.0, low=99.0, date="d1")
+    t = e.closed[0]
+    assert t.tp == pytest.approx(110.0)
+    assert t.sl == pytest.approx(90.0)
