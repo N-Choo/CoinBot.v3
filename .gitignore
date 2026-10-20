@@ -8,3 +8,4 @@ target/
 graphify-out/
 __pycache__/
 .venv/
+.worktrees/
