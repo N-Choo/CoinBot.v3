@@ -18,7 +18,8 @@ button:disabled{opacity:.45;cursor:default}
 .tab{background:transparent;border-color:transparent;color:var(--muted);padding:4px 10px}
 .tab.active{color:var(--text);border-color:var(--line);background:var(--panel2)}
 .meta{margin-left:auto;color:var(--dim);font-size:11px}
-.failures{margin:0;padding:6px 16px;background:#2a1212;border-bottom:1px solid #5a2020;color:#fca5a5;font-size:12px}
+.failures{margin:0;padding:6px 16px;padding-right:40px;background:#2a1212;border-bottom:1px solid #5a2020;color:#fca5a5;font-size:12px;position:relative}
+.failures-close{position:absolute;right:8px;top:4px;width:18px;height:18px;border:0;background:transparent;color:inherit;font-size:18px;line-height:1;padding:0;cursor:pointer}
 main{display:flex;flex-direction:column;flex:1;min-height:0}
 .chart-box{position:relative;background:var(--panel);border-bottom:1px solid var(--line)}
 #price-svg{display:block;width:100%;height:auto}
@@ -54,7 +55,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 .track::before{content:"";position:absolute;left:0;right:0;top:8px;height:4px;border-radius:2px;background:var(--line)}
 .progress{position:absolute;left:0;top:8px;height:4px;border-radius:2px;background:var(--accent);pointer-events:none}
 .dots{position:absolute;inset:0;pointer-events:none}
-.dot{position:absolute;top:5px;width:8px;height:8px;margin-left:-4px;border-radius:50%;border:1px solid var(--bg)}
+.dot{position:absolute;top:5px;width:8px;height:8px;margin-left:-4px;border-radius:50%;border:1px solid var(--bg);pointer-events:auto;cursor:pointer}
 .dot.entry{background:var(--up)} .dot.exit{background:var(--down)}
 .counters{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;margin-top:2px}
 .tools{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
@@ -72,7 +73,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 <div id="failures" class="failures" hidden></div>
 <main>
   <section class="chart-box" id="price-box">
-    <svg id="price-svg" viewBox="0 0 1000 420" role="img" aria-label="Price candles"></svg>
+    <svg id="price-svg" viewBox="0 0 1000 420" role="img" aria-label="Price candles" tabindex="0"></svg>
     <div id="tooltip" class="tooltip" hidden></div>
     <div id="hud" class="hud"></div>
     <button id="ledger-btn" class="ledger-btn" type="button">Ledger</button>
@@ -183,7 +184,9 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     const el = $("failures");
     if (!failures.length) { el.hidden = true; el.textContent = ""; return; }
     el.hidden = false;
-    el.innerHTML = "<b>Some tickers failed:</b> " + failures.map((f) => `${esc(f.symbol)} \u2014 ${esc(f.error)}`).join(" \u00b7 ");
+    el.innerHTML = `<button id="failures-close" class="failures-close" type="button" aria-label="Dismiss failures">\u00d7</button><b>Some tickers failed:</b> ` + failures.map((f) => `${esc(f.symbol)} \u2014 ${esc(f.error)}`).join(" \u00b7 ");
+    const close = el.querySelector("#failures-close");
+    if (close) close.addEventListener("click", () => { el.hidden = true; });
   }
 
   function renderPrice() {
@@ -260,16 +263,16 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       if (eRel < 0 || eRel > upTo) continue;
       const x = xFor(eRel, PRICE), y = yFor(tr.entry, d, PRICE);
       s += tr.side === "buy"
-        ? `<polygon points="${x},${y - 10} ${x - 5},${y - 2} ${x + 5},${y - 2}" fill="#1dcd9f"/>`
-        : `<polygon points="${x},${y + 10} ${x - 5},${y + 2} ${x + 5},${y + 2}" fill="#ff4d4d"/>`;
+        ? `<polygon points="${x},${y + 2} ${x - 5},${y + 10} ${x + 5},${y + 10}" fill="#1dcd9f"/>`
+        : `<polygon points="${x},${y - 2} ${x - 5},${y - 10} ${x + 5},${y - 10}" fill="#ff4d4d"/>`;
     }
     for (const p of t.open_positions) {
       const eRel = rel(p.entry_i);
       if (eRel < 0 || eRel > upTo) continue;
       const x = xFor(eRel, PRICE), y = yFor(p.entry, d, PRICE);
       s += p.side === "buy"
-        ? `<polygon points="${x},${y - 10} ${x - 5},${y - 2} ${x + 5},${y - 2}" fill="#1dcd9f"/>`
-        : `<polygon points="${x},${y + 10} ${x - 5},${y + 2} ${x + 5},${y + 2}" fill="#ff4d4d"/>`;
+        ? `<polygon points="${x},${y + 2} ${x - 5},${y + 10} ${x + 5},${y + 10}" fill="#1dcd9f"/>`
+        : `<polygon points="${x},${y - 2} ${x - 5},${y - 10} ${x + 5},${y - 10}" fill="#ff4d4d"/>`;
     }
 
     const cx = xFor(upTo, PRICE);
@@ -372,10 +375,10 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 
     const rows = closed.map((tr) => {
       const cls = tr.pnl >= 0 ? "pos" : "neg";
-      return `<tr><td>${esc(tr.entry_date)}</td><td>${esc(tr.side.toUpperCase())}</td><td>${fmtPrice(tr.entry)}</td><td>${esc(tr.exit_date)}</td><td>${fmtPrice(tr.exit)}</td><td>${esc(tr.reason)}</td><td class="${cls}">${fmtPct(tr.pnl_pct)}</td><td class="${cls}">${fmtSignedUsd(tr.pnl)}</td></tr>`;
+      return `<tr><td>${esc(tr.entry_date)}</td><td>${esc(tr.side.toUpperCase())}</td><td>${fmtPrice(tr.entry)}</td><td>${esc(tr.exit_date)}</td><td>${fmtPrice(tr.exit)}</td><td>${fmtPrice(tr.tp)}</td><td>${fmtPrice(tr.sl)}</td><td>${esc(tr.reason)}</td><td class="${cls}">${fmtPct(tr.pnl_pct)}</td><td class="${cls}">${fmtSignedUsd(tr.pnl)}</td></tr>`;
     }).join("");
     const openRows = stillOpen.map((p) =>
-      `<tr><td>${esc(p.entry_date)}</td><td>${esc(p.side.toUpperCase())}</td><td>${fmtPrice(p.entry)}</td><td colspan="2">open</td><td>\u2013</td><td>TP ${fmtPrice(p.tp)} \u00b7 SL ${fmtPrice(p.sl)}</td><td></td></tr>`
+      `<tr><td>${esc(p.entry_date)}</td><td>${esc(p.side.toUpperCase())}</td><td>${fmtPrice(p.entry)}</td><td colspan="2">open${p.E !== undefined ? ` \u00b7 ${fmtPrice(p.E)} committed` : ""}</td><td>${fmtPrice(p.tp)}</td><td>${fmtPrice(p.sl)}</td><td>\u2013</td><td>\u2013</td><td>\u2013</td></tr>`
     ).join("");
 
     const wins = closed.filter((tr) => tr.pnl > 0).length;
@@ -387,7 +390,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 
     el.innerHTML = `
       <h3>Ledger \u00b7 ${esc(t.ticker)}</h3>
-      <table><thead><tr><th>entry</th><th>dir</th><th>entry$</th><th>exit</th><th>exit$</th><th>why</th><th>pnl%</th><th>pnl$</th></tr></thead><tbody>${rows || `<tr><td colspan="8">No closed trades yet.</td></tr>`}</tbody></table>
+      <table><thead><tr><th>entry</th><th>dir</th><th>entry$</th><th>exit</th><th>exit$</th><th>tp$</th><th>sl$</th><th>why</th><th>pnl%</th><th>pnl$</th></tr></thead><tbody>${rows || `<tr><td colspan="10">No closed trades yet.</td></tr>`}</tbody></table>
       ${stillOpen.length ? `<div class="open">Open positions</div><table><tbody>${openRows}</tbody></table>` : ""}
       <div class="summary">${summary}</div>
     `;
@@ -397,7 +400,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     const t = cur(), n = count();
     const pct = n <= 1 ? 0 : (state.step / (n - 1)) * 100;
     $("progress").style.width = pct + "%";
-    $("counter").textContent = n ? `${state.step + 1} / ${n}` : "0 / 0";
+    $("counter").textContent = n ? `candle ${state.step + 1} / ${n}` : "candle 0 / 0";
     $("date-label").textContent = t && n ? t.candles[state.step].t : "";
 
     const dots = [];
@@ -406,7 +409,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       const add = (r, cls) => {
         if (r < 0 || r >= n || seen.has(cls + r)) return;
         seen.add(cls + r);
-        dots.push(`<span class="dot ${cls}" style="left:${n <= 1 ? 0 : (r / (n - 1)) * 100}%"></span>`);
+        dots.push(`<span class="dot ${cls}" data-rel="${r}" style="left:${n <= 1 ? 0 : (r / (n - 1)) * 100}%"></span>`);
       };
       for (const tr of t.trades) { add(rel(tr.entry_i), "entry"); add(rel(tr.exit_i), "exit"); }
       for (const p of t.open_positions) add(rel(p.entry_i), "entry");
@@ -500,6 +503,13 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       if (btn) setTicker(Number(btn.dataset.tab));
     });
 
+    $("dots").addEventListener("click", (e) => {
+      const dot = e.target.closest(".dot");
+      if (!dot) return;
+      const r = Number(dot.dataset.rel);
+      if (Number.isFinite(r)) { stop(); setStep(r); }
+    });
+
     document.querySelector(".controls").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-act]");
       if (!btn) return;
@@ -572,6 +582,24 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       }
     });
     svg.addEventListener("mouseleave", () => {
+      tip.hidden = true;
+      state.hover = null;
+      renderPrice();
+    });
+    svg.addEventListener("focus", () => {
+      const t = cur();
+      if (!t || !count()) return;
+      state.hover = Math.min(state.step, count() - 1);
+      const rect = svg.getBoundingClientRect();
+      const c = t.candles[state.hover];
+      const x = xFor(state.hover, PRICE) / PRICE.w * rect.width;
+      tip.hidden = false;
+      tip.innerHTML = `<b>${esc(c.t)}</b><br>O ${fmtPrice(c.o)} \u00b7 H ${fmtPrice(c.h)}<br>L ${fmtPrice(c.l)} \u00b7 C ${fmtPrice(c.c)}`;
+      tip.style.left = `${x + 12}px`;
+      tip.style.top = "52px";
+      renderPrice();
+    });
+    svg.addEventListener("blur", () => {
       tip.hidden = true;
       state.hover = null;
       renderPrice();
