@@ -317,6 +317,7 @@ def test_closed_trade_mapping(monkeypatch):
     assert trade["tp"] == pytest.approx(110)
     assert trade["sl"] == pytest.approx(90)
     assert trade["reason"] == "TP"
+    assert trade["E"] == pytest.approx(500.0)
 
     exit_events = [e for e in replay["events"] if e["exits"]]
     assert len(exit_events) == 1

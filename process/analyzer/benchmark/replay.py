@@ -294,6 +294,7 @@ def build_ticker_replay(
             "sl": t["sl"],
             "pnl": t["pnl"],
             "pnl_pct": t["pnl_pct"],
+            "E": t["E"],
             "reason": t["reason"],
         }
         for t in trades

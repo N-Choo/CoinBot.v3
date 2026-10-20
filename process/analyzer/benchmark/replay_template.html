@@ -140,6 +140,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     hidden_bullish_divergence: "hidden bull",
     hidden_bearish_divergence: "hidden bear"
   };
+  const DIV_LABEL = { regular_bull: "reg bull", regular_bear: "reg bear", hidden_bull: "hid bull", hidden_bear: "hid bear" };
 
   const cur = () => TICKERS[state.ti];
   const count = () => (cur() ? cur().candles.length : 0);
@@ -314,7 +315,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       const x = xFor(pivot, RSI), yy = y(value);
       const color = dv.side === "buy" ? "#1dcd9f" : "#ff4d4d";
       s += `<circle cx="${x}" cy="${yy}" r="3.5" fill="${color}"/>`;
-      s += `<text x="${x + 6}" y="${yy - 4}" fill="${color}" font-size="9">${esc(dv.kind)}</text>`;
+      s += `<text x="${x + 6}" y="${yy - 4}" fill="${color}" font-size="9">${esc(DIV_LABEL[dv.kind] || dv.kind)}</text>`;
     }
 
     let last = null;
@@ -368,7 +369,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       .sort((a, b) => b.exit_i - a.exit_i);
     const stillOpen = t.trades
       .filter((tr) => rel(tr.entry_i) <= i && rel(tr.exit_i) > i)
-      .map((tr) => ({ side: tr.side, entry_date: tr.entry_date, entry: tr.entry, tp: tr.tp, sl: tr.sl }));
+      .map((tr) => ({ side: tr.side, entry_date: tr.entry_date, entry: tr.entry, tp: tr.tp, sl: tr.sl, E: tr.E }));
     for (const p of t.open_positions) {
       if (rel(p.entry_i) <= i) stillOpen.push(p);
     }
@@ -417,12 +418,26 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     $("dots").innerHTML = dots.join("");
   }
 
+  function updateFocusTooltip() {
+    const svg = $("price-svg"), tip = $("tooltip");
+    if (document.activeElement !== svg || !cur() || !count()) return;
+    const rect = svg.getBoundingClientRect();
+    const c = cur().candles[state.step];
+    const x = xFor(state.step, PRICE) / PRICE.w * rect.width;
+    tip.hidden = false;
+    tip.innerHTML = `<b>${esc(c.t)}</b><br>O ${fmtPrice(c.o)} \u00b7 H ${fmtPrice(c.h)}<br>L ${fmtPrice(c.l)} \u00b7 C ${fmtPrice(c.c)}`;
+    tip.style.left = `${x + 12}px`;
+    tip.style.top = "52px";
+  }
+
   function renderAll() {
+    if (document.activeElement === $("price-svg") && cur() && count()) state.hover = state.step;
     renderPrice();
     renderRsi();
     renderHud();
     renderLedger();
     renderControls();
+    updateFocusTooltip();
   }
 
   function stop() {
@@ -503,13 +518,6 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       if (btn) setTicker(Number(btn.dataset.tab));
     });
 
-    $("dots").addEventListener("click", (e) => {
-      const dot = e.target.closest(".dot");
-      if (!dot) return;
-      const r = Number(dot.dataset.rel);
-      if (Number.isFinite(r)) { stop(); setStep(r); }
-    });
-
     document.querySelector(".controls").addEventListener("click", (e) => {
       const btn = e.target.closest("button[data-act]");
       if (!btn) return;
@@ -541,6 +549,12 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       setStep(Math.round(p * Math.max(0, count() - 1)));
     };
     track.addEventListener("pointerdown", (e) => {
+      const dot = e.target.closest(".dot");
+      if (dot) {
+        const r = Number(dot.dataset.rel);
+        if (Number.isFinite(r)) { stop(); setStep(r); }
+        return;
+      }
       dragging = true;
       track.setPointerCapture(e.pointerId);
       scrub(e.clientX);
@@ -586,19 +600,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       state.hover = null;
       renderPrice();
     });
-    svg.addEventListener("focus", () => {
-      const t = cur();
-      if (!t || !count()) return;
-      state.hover = Math.min(state.step, count() - 1);
-      const rect = svg.getBoundingClientRect();
-      const c = t.candles[state.hover];
-      const x = xFor(state.hover, PRICE) / PRICE.w * rect.width;
-      tip.hidden = false;
-      tip.innerHTML = `<b>${esc(c.t)}</b><br>O ${fmtPrice(c.o)} \u00b7 H ${fmtPrice(c.h)}<br>L ${fmtPrice(c.l)} \u00b7 C ${fmtPrice(c.c)}`;
-      tip.style.left = `${x + 12}px`;
-      tip.style.top = "52px";
-      renderPrice();
-    });
+    svg.addEventListener("focus", () => { renderAll(); });
     svg.addEventListener("blur", () => {
       tip.hidden = true;
       state.hover = null;
