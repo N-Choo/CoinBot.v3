@@ -184,3 +184,124 @@ def test_recorder_begin_resets_state():
     assert recorder.start == 10
     assert recorder.events == []
     assert recorder.finished is False
+
+
+from types import SimpleNamespace
+
+from analyzer.benchmark.replay import (
+    _json_safe,
+    build_ticker_replay,
+    config_dict,
+)
+
+
+CONFIG = {
+    "timeframe": "1day",
+    "rsi_period": 1,
+    "rsi_order": 2,
+    "price_diff_threshold": 0.05,
+    "sma_enabled": False,
+    "sma_period": 20,
+    "atr_period": 1,
+    "sl_mult": 2.0,
+    "tp_mult": 3.0,
+    "atr_pct_high": 5.0,
+    "atr_high_adjust": 1.5,
+    "atr_sl_max_pct": 0.0,
+    "init_fund": 1000.0,
+    "fee_rate": 0.0,
+    "benchmark_days": 200,
+}
+
+
+def _payload(df, monkeypatch, signal_at=None, divergence_idx=None):
+    recorder, trades, open_positions, summary = _run(
+        df, monkeypatch, signal_at=signal_at, divergence_idx=divergence_idx
+    )
+    return build_ticker_replay(
+        df,
+        "TEST-USDT",
+        start=recorder.start,
+        recorder=recorder,
+        trades=trades,
+        open_positions=open_positions,
+        summary=summary,
+        config=CONFIG,
+        warmup=0,
+    )
+
+
+def test_payload_contract_and_alignment(monkeypatch):
+    df = _df(80)
+    replay = _payload(df, monkeypatch, signal_at=40)
+    recorder_start = replay["start_index"]
+
+    for key in (
+        "ticker",
+        "config",
+        "warmup",
+        "start_index",
+        "candles",
+        "rsi",
+        "sma",
+        "divergences",
+        "signals",
+        "events",
+        "trades",
+        "open_positions",
+        "summary",
+    ):
+        assert key in replay
+
+    n = len(replay["candles"])
+    assert n == len(df) - recorder_start
+    assert len(replay["rsi"]) == n
+    assert len(replay["sma"]) == n
+    assert len(replay["events"]) == n
+    assert replay["candles"][0]["t"] == str(recorder_start)
+    assert replay["events"][0]["i"] == recorder_start
+
+
+def test_divergence_marker_uses_pivot_index(monkeypatch):
+    df = _df(80)
+    replay = _payload(df, monkeypatch, signal_at=40, divergence_idx=5)
+    assert replay["divergences"] == [
+        {"i": 5, "detected_at": 40, "kind": "regular_bull", "side": "buy"}
+    ]
+
+
+def test_signal_without_divergence_idx_has_no_marker(monkeypatch):
+    df = _df(80)
+    replay = _payload(df, monkeypatch, signal_at=40)
+    assert replay["divergences"] == []
+
+
+def test_json_safe_converts_non_finite_floats():
+    cleaned = _json_safe({"a": float("nan"), "b": [float("inf"), 1.0]})
+    assert cleaned == {"a": None, "b": [None, 1.0]}
+
+
+def test_config_dict_maps_config_fields():
+    cfg = SimpleNamespace(
+        kucoin_timeframe="1day",
+        rsi_period=14,
+        rsi_divergence_order=5,
+        price_diff_threshold=0.05,
+        sma_enabled=True,
+        sma_period=200,
+        atr_period=14,
+        atr_sl_multiplier=2.8,
+        atr_tp_multiplier=3.5,
+        atr_pct_high=5.0,
+        atr_high_adjust=1.5,
+        atr_sl_max_pct=0.1,
+        benchmark_init_fund=1000.0,
+        benchmark_fee_rate=0.001,
+        benchmark_days=90,
+    )
+    mapped = config_dict(cfg)
+    assert mapped["timeframe"] == "1day"
+    assert mapped["sma_enabled"] is True
+    assert mapped["sl_mult"] == 2.8
+    assert mapped["tp_mult"] == 3.5
+    assert mapped["benchmark_days"] == 90
