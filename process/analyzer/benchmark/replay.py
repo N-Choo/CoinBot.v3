@@ -62,6 +62,8 @@ class ReplayRecorder:
 
     def begin(self, start: int, df: pd.DataFrame) -> None:
         self.start = start
+        self.events = []
+        self.finished = False
 
     def record(
         self,

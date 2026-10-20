@@ -3,7 +3,7 @@ import pandas as pd
 import pytest
 
 from analyzer.benchmark.main import run_benchmark
-from analyzer.benchmark.replay import ReplayRecorder
+from analyzer.benchmark.replay import CandleEvent, ReplayRecorder
 from analyzer.models.types import Signal
 
 
@@ -90,6 +90,16 @@ def test_final_snapshot_matches_summary(monkeypatch):
     assert final["equity"] == pytest.approx(summary["equity"])
     assert final["realized_pnl"] == pytest.approx(summary["realized_pnl"])
     assert final["unrealized_pnl"] == pytest.approx(summary["unrealized_pnl"])
+    assert final["open_count"] == summary["open_count"]
+    assert final["available_fund"] == pytest.approx(summary["available_fund"])
+    for key in (
+        "realized_pnl",
+        "unrealized_pnl",
+        "open_count",
+        "available_fund",
+        "equity",
+    ):
+        assert key in summary
 
 
 def test_opened_signals_match_trades_and_open_positions(monkeypatch):
@@ -97,3 +107,80 @@ def test_opened_signals_match_trades_and_open_positions(monkeypatch):
     recorder, trades, open_positions, _ = _run(df, monkeypatch)
     opened = sum(1 for e in recorder.events if e.opened)
     assert opened == len(trades) + len(open_positions)
+    assert opened == 2
+    assert opened > 0
+
+
+def test_invalid_tp_sl_is_recorded_as_rejection(monkeypatch):
+    import analyzer.benchmark.main as bm
+
+    df = _df(80)
+
+    def fake_signals(df_slice, **kwargs):
+        entry = float(df_slice["Close"].iloc[-1])
+        return [
+            Signal(
+                ticker="TEST-USDT",
+                action="buy",
+                confidence=0.6,
+                entry_price=entry,
+                reason="regular_bullish_divergence",
+                sl_price=entry * 0.9,
+                tp_price=0.0,
+            )
+        ]
+
+    monkeypatch.setattr(bm, "generate_signals", fake_signals)
+    recorder = ReplayRecorder()
+    trades, open_positions, _ = run_benchmark(
+        df,
+        ticker="TEST-USDT",
+        rsi_period=1,
+        atr_period=1,
+        sma_enabled=False,
+        benchmark_days=len(df),
+        init_fund=1000.0,
+        fee_rate=0.0,
+        recorder=recorder,
+    )
+
+    final = recorder.events[-1]
+    assert final.signal is not None
+    assert final.opened is False
+    assert final.rejected == "invalid_tp_sl"
+    assert trades == []
+    assert open_positions == []
+
+
+def test_insufficient_funds_is_not_a_rejection(monkeypatch):
+    df = _df(80)
+    recorder, _, open_positions, _ = _run(df, monkeypatch)
+
+    blocked = [
+        e for e in recorder.events if e.signal is not None and not e.opened
+    ]
+    assert any(e.rejected is None for e in blocked)
+    assert sum(1 for e in recorder.events if e.opened) == 2
+    assert len(open_positions) == 2
+
+
+def test_recorder_begin_resets_state():
+    recorder = ReplayRecorder()
+    recorder.begin(5, _df())
+    recorder.events.append(
+        CandleEvent(
+            i=5,
+            signal=None,
+            opened=False,
+            rejected=None,
+            exits=[],
+            snapshot={},
+        )
+    )
+    recorder.finished = True
+
+    recorder.begin(10, _df())
+
+    assert recorder.start == 10
+    assert recorder.events == []
+    assert recorder.finished is False
