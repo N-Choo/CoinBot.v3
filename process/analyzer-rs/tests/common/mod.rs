@@ -126,6 +126,17 @@ pub fn load_fixture(name: &str) -> Fixture {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
+pub fn fixture_names() -> Vec<String> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/parity/manifest.txt");
+    std::fs::read_to_string(path)
+        .expect("read manifest")
+        .lines()
+        .map(str::trim)
+        .filter(|line| !line.is_empty() && !line.starts_with('#'))
+        .map(str::to_string)
+        .collect()
+}
+
 /// Compare decimals with an exact-match fast path, then a relative tolerance:
 /// `|a - b| <= max(|a|, |b|, 1) * tolerance`.
 pub fn close_enough(actual: Decimal, expected: Decimal, tolerance: f64) -> bool {

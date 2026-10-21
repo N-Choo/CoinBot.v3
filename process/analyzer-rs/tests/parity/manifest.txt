@@ -1,0 +1,7 @@
+synthetic_1day
+btc_usdt_1day
+eth_usdt_4hour
+sol_usdt_15min
+xrp_usdt_1day
+btc_usdt_1day_sma
+btc_usdt_1day_tuned

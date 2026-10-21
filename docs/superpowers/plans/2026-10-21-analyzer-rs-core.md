@@ -1963,8 +1963,17 @@ import argparse
 import hashlib
 import json
 import math
+import os
 import sys
 from pathlib import Path
+
+# scipy's find_peaks distance tie order comes from numpy's argsort. The SIMD argsort path is
+# CPU-dependent and not portable; pin the scalar path so tie behavior is reproducible and
+# matches the Rust port of NumPy's scalar argsort ordering.
+os.environ.setdefault(
+    "NPY_DISABLE_CPU_FEATURES",
+    "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX2 FMA3 F16C",
+)
 
 import pandas as pd
 
@@ -2518,6 +2527,11 @@ git commit -m "test(analyzer-rs): add per-window signal parity gate"
 - Create (generated): `process/analyzer-rs/tests/fixtures/<symbol>_<tf>.csv`
 - Create (generated): `process/analyzer-rs/tests/parity/<symbol>_<tf>.json`
 - Modify: `tests/indicator_parity.rs` and `tests/signal_parity.rs` to iterate a fixture list
+
+> The oracle pins NumPy's scalar argsort path via `NPY_DISABLE_CPU_FEATURES` so SciPy's
+> `find_peaks` distance tie order is reproducible across CPUs. The Rust `find_peaks` port
+> mirrors NumPy's scalar quicksort/heapsort argsort order, so equal-height peak ties match
+> the pinned oracle.
 
 - [ ] **Step 1: Fetch the fixtures**
 
