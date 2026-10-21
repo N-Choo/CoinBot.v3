@@ -50,6 +50,10 @@ jobs:
         run: pip install -r process/analyzer/requirements.txt pytest
       - name: Run Tests
         run: make test
+      - name: Analyzer-rs core + parity
+        run: make analyzer-rs-check
+      - name: Analyzer-rs no-default-features build
+        run: cargo build -p analyzer-rs --no-default-features
 
   # --- Frontend Checks ---
   frontend-test:

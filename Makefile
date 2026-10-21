@@ -1,4 +1,4 @@
-PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
+PACKAGES = api-gateway share deposit trade-engine strategy-analyzer analyzer-rs
 
 .PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset analyzer-rs-check analyzer-rs-test
 
@@ -13,6 +13,8 @@ help:
 	@echo "  make analyzer-test  Python analyzer unit tests only"
 	@echo "  make benchmark-test  Benchmark unit tests only"
 	@echo "  make frontend-test  Frontend tests only"
+	@echo "  make analyzer-rs-check  Rust analyzer core: fmt + clippy + tests"
+	@echo "  make analyzer-rs-test   Rust analyzer tests only"
 	@echo ""
 	@echo "Trading"
 	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
