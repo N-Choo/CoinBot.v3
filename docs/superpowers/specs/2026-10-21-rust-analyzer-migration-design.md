@@ -55,12 +55,12 @@ gRPC live path. Python remains the behavioral oracle until parity is proven.
 
 ### 0.2 Prerequisites to verify before implementation (not yet verified)
 
-| # | Prerequisite | If false |
+| # | Prerequisite | Status / if false |
 |---|---|---|
-| P1 | The trade engine's `Publish` handler dedups by `signal_id` and returns an ack for duplicates | Add dedup to the engine before cutover, or downgrade the delivery guarantee in §7.4 to at-most-once with a persisted key |
-| P2 | The engine honors `expires_at_ms` and rejects expired signals | The analyzer enforces expiry locally only; document the difference |
-| P3 | A price-scale source exists per symbol (KuCoin `priceIncrement` from `/api/v2/symbols`, or an engine-side value) | Fall back to a per-symbol config table; fail-fast at startup if a symbol has no scale |
-| P4 | KuCoin kline interval alignment (especially `1day`, `1week`, `1month`) is captured by the boundary fixture in §8 | Boundary function is corrected before live is enabled |
+| P1 | The trade engine's `Publish` handler dedups by `signal_id` durably and returns an unambiguous ack for duplicates | **FALSE today.** `process/trade-engine/src/grpc_handler.rs` keeps `seen` in an in-process `HashSet` (`Arc<Mutex<HashSet<String>>>`); it is lost on restart and has no cross-process guarantee. Implement a durable dedup table before enabling live publishing, or downgrade delivery to at-most-once with a persisted key. |
+| P2 | The engine honors `expires_at_ms` and rejects expired signals | **TRUE today.** `reject_reason` rejects when `expires_at_ms != 0 && expires_at_ms < chrono::Utc::now()...` (strict `<`, local wall clock). The analyzer still enforces expiry locally; document the shared boundary and the engine's clock source. |
+| P3 | A price-scale source exists per symbol (KuCoin `priceIncrement` from `/api/v2/symbols`, or an engine-side value) | Fall back to a per-symbol config table; fail-fast at startup if a symbol has no scale. |
+| P4 | KuCoin kline interval alignment (especially `1day`, `1week`, `1month`) is captured by the boundary fixture in §8 | Boundary function is corrected before live is enabled. |
 
 ---
 
@@ -181,6 +181,8 @@ process/analyzer-rs/
     ├── driver_seeding.rs  repaint.rs  intervals.rs
     ├── sim.rs  ledger_snapshot.rs  report_snapshot.rs
     ├── live_loop.rs  delivery.rs  purity.rs
+    ├── state_recovery.rs  outbox.rs  rounding.rs
+    ├── config_validation.rs  clock.rs  pagination.rs
 ```
 
 Binaries are named `analyzer-backtest` and `analyzer-serve` to avoid colliding with the existing
@@ -193,7 +195,7 @@ Binaries are named `analyzer-backtest` and `analyzer-serve` to avoid colliding w
 default = []
 exchange = ["dep:ureq", "dep:serde_json"]
 harness  = ["exchange", "dep:clap", "dep:csv", "dep:sha2", "dep:chrono"]
-live     = ["exchange", "dep:tokio", "dep:chrono", "dep:tracing"]
+live     = ["exchange", "dep:tokio", "dep:chrono", "dep:tracing", "dep:sha2"]
 grpc     = ["live", "dep:tonic", "dep:prost"]
 ```
 
@@ -359,6 +361,13 @@ pub enum DriverEvent {
 
 impl CandleDriver {
     pub fn push_closed(&mut self, candle: Candle) -> Result<Vec<DriverEvent>, Error>;
+    /// Warm restart: rebuild the window and restore persisted dedup state without re-seeding.
+    pub fn restore(
+        &mut self,
+        window: Vec<Candle>,
+        emitted: BTreeSet<DivergenceKey>,
+        watermark_ms: Option<i64>,
+    ) -> Result<(), Error>;
 }
 ```
 
@@ -392,6 +401,22 @@ Pending entries are a simulator concern (§6.3); the driver only emits signals.
 6. Keys include `kind`, so a regular and a hidden divergence on the same candle are distinct keys (the
    generator still returns only the best one per call, and the `<=` watermark prevents a same-candle
    flip from emitting twice).
+
+### 5.2 Suppression cases (intentional policy)
+
+The watermark is a strategy decision, not just a de-dup detail. The four cases must be fixtures with a
+recorded expected outcome:
+
+| Case | Example | Outcome |
+|---|---|---|
+| Duplicate | Same key appears on the next candle | Suppressed `Duplicate` |
+| Repainted interpretation | Peak pairing changes the same candle's kind/flags | Suppressed `BelowWatermark` when the divergence time is not newer |
+| Genuinely new setup | A later candle produces a divergence with a newer timestamp | Emitted |
+| Late-best candidate | A newer candidate temporarily replaces an older one, then disappears (A→B→A) | A is suppressed after B; it is never re-emitted |
+
+The fixtures explicitly assert that the older setup is discarded in the A→B→A case. If the strategy
+later wants "a previously seen setup may re-emit after a repaint", that is a spec change, not a bug
+fix.
 
 ---
 
@@ -459,6 +484,10 @@ Port Python's funding and PnL math (Appendix B), with these fill changes:
   Short is the mirror.
 - **Loss cap:** realized PnL is capped at `-E` (the committed budget); on close, credit `E + pnl` to
   `available_fund`.
+- **Open accounting:** `realized_pnl = sum(closed pnl)`, `reserved = sum(E)`,
+  `available_fund + reserved == init_fund + realized_pnl` at every close. Unrealized PnL is
+  mark-to-market at the last close minus the accrued entry fee; `equity = available_fund + reserved +
+  unrealized_pnl`. Closed trades match Appendix B exactly.
 - **No slippage in v1.** Slippage can be added later without changing the driver.
 - `pnl_pct = pnl / E * 100`; entry/exit/reason fields match the Python `ClosedTrade` shape.
 
@@ -531,7 +560,7 @@ One tokio task per symbol. It is schedule-driven, not tick-driven.
 exchange clock offset (refreshed at startup and at each wake-up). The forming candle is always
 excluded.
 
-**Startup / warm-up (cold or invalid state):**
+**Cold start (no valid state):**
 
 1. Fetch the most recent `W + 2` candles (paginated if `W` is large), drop every candle that fails the
    closed-candle rule, and take the last `W` closed candles in ascending order. If fewer than `W`
@@ -540,6 +569,34 @@ excluded.
 2. Feed exactly those `W` candles to the driver. It seeds its keys (§5.1) and emits `Warmed`. Nothing
    is published.
 3. Persist the cursor (open time of the last fed candle).
+
+### 7.2.1 Warm restart (valid persisted state)
+
+Warm restart must resume from the persisted cursor and must never skip the candles between that cursor
+and the newest closed candle.
+
+Persisted per symbol: `schema_version`, `config_version`, `cursor_open_time_ms`, emitted keys,
+watermark, outbox entries, `quarantined_until`, and the last error classification.
+
+1. Load and validate the state file. If the schema version, `config_version`, or file contents are
+   incompatible, **do not silently cold start**: fail-stop that symbol with `state_incompatible` and
+   alert. If the file is readable but the schema/config differs, pending outbox entries are still
+   loaded and delivered if unexpired, because they belong to the old config. If the file is corrupt or
+   truncated, the outbox cannot be recovered from it; fail-stop and alert with operator guidance. An
+   operator must run the explicit `--reset-state SYMBOL` recovery (which clears the window, emitted
+   keys, and watermark, then cold-starts) or repair the file.
+2. Fetch the `W` closed candles ending at `cursor_open_time_ms` (inclusive), paginating as needed. If
+   the exchange can no longer serve history back to the cursor, fail-stop the symbol with
+   `history_unavailable` rather than inventing a state.
+3. Rebuild the window with `driver.restore(window, emitted, watermark)`. This requires exactly `W`
+   candles, sets `warmed = true`, and restores the persisted dedup state. It does **not** re-seed,
+   re-emit, or apply warm-up suppression to historical candles.
+4. Process every closed candle after the cursor in chronological order through `driver.push_closed`.
+   The catch-up policy (§ below) applies only to signals generated from these candles.
+5. Resume outbox delivery immediately and independently of candle processing.
+
+A cold start is allowed only when no state file exists. A corrupt or truncated state file is treated
+as `state_incompatible` (fail-stop plus alert), not as a licence to reset.
 
 **Main loop:**
 
@@ -560,10 +617,22 @@ loop {
   shutdown instant even when it is asleep for 24 hours.
 - **Jitter:** `symbol_jitter` is a stable per-symbol offset in `[0, ANALYZER_BOUNDARY_JITTER_MS)`
   (hash of the symbol), so N symbols do not hit REST in the same instant.
+- **Clock failure and jumps:** the exchange offset is refreshed every
+  `ANALYZER_CLOCK_REFRESH_MS` (default 300000). If no successful sync has ever occurred, the service
+  runs log-only (no publishing) and reports `clock_unsynced`. If the last successful sync is older
+  than `ANALYZER_CLOCK_MAX_AGE_MS` (default 900000), publishing pauses and readiness drops. A clock
+  jump larger than `interval / 2` forces an immediate recompute of `next_check` and a fetch from the
+  cursor; it never skips candles. A jump backwards never moves the cursor backwards.
+- **Pagination merge:** pages are merged by `open_time_ms`, sorted ascending, and overlapping rows
+  must agree byte-for-byte on OHLCV. A conflicting duplicate is a symbol-specific error after one
+  re-request (`pagination_conflict`), never a silent "last page wins". Missing pages are re-requested
+  once before a gap is accepted.
 - **Miss-retry:** if the fetch returns no new closed candle, retry on the short schedule
   `ANALYZER_MISS_RETRY_SCHEDULE_MS` (default `2000,5000,10000`). If still missing, wait for the next
   boundary; the following fetch catches up from the cursor with no special case. A missing candle is
-  not a failure and never causes quarantine: KuCoin omits candles for intervals with zero trades.
+  not a failure and never causes quarantine: KuCoin omits candles for intervals with zero trades. The
+  analyzer cannot distinguish "zero trades" from "delayed data" from a single fetch; it retries, then
+  accepts the gap, counts it, and processes the candle if it appears later.
 - **Holes:** if the returned candles skip an expected open time, re-request that range once. If the
   exchange still has no candle and a later one exists, accept the gap and do not synthesize a candle
   (Python does not either). Log and count gaps.
@@ -583,16 +652,42 @@ loop {
 A single publisher task owns the gRPC client behind a `Publisher` trait (`GrpcPublisher` under
 `grpc`, `LogOnlyPublisher` otherwise).
 
-**Pipeline**
+**Signal identity (`signal_id`)**
+
+- Canonical encoding, versioned: `b"analyzer-signal-v1\0"` followed by length-prefixed UTF-8
+  `symbol`, one action byte (`B`/`S`), one kind byte (regular/hidden × bullish/bearish), the divergence
+  candle's `open_time_ms` as a big-endian `i64`, and the length-prefixed `config_version` hex.
+- `signal_id = "v1:" + hex(SHA-256(canonical_bytes))`.
+- `config_version` is `hex(SHA-256(canonical_json))` over a sorted map of every strategy parameter
+  (periods, order, thresholds, multipliers, SMA flag/period, `W`), with `Decimal` values encoded as
+  fixed-scale strings. No floats and no environment-derived values.
+- Identical inputs produce identical IDs across restarts and builds. A change to any strategy
+  parameter or `W` produces a new `config_version` and therefore new IDs.
+- A SHA-256 collision is treated as terminal: if a `signal_id` already maps to a different canonical
+  payload (stored payload hash), log `signal_id_collision`, reject locally, and alert. Version changes
+  bump the `v1` prefix.
+- On a `config_version` change, pending unexpired outbox entries from the old config are delivered
+  (they are already-valid signals, logged as `legacy_config`); the candle window, emitted keys, and
+  watermark are then reset by the explicit recovery path (§7.2.1), never reused under the new config.
+
+**Pipeline and ordering**
 
 - Symbol tasks send `PublishRequest { signal, deadline }` over a bounded `mpsc` with an awaited send
   (backpressure, no silent drop).
-- The publisher assigns a monotonic `seq`, computes the stable
-  `signal_id = hash(symbol, action, kind, divergence_open_time_ms, config_version)`
-  (`config_version` includes `W`), and runs up to `ANALYZER_PUBLISH_CONCURRENCY` (default 4) publishes
-  concurrently in a `JoinSet`. One stuck `Publish` retry therefore cannot stall other symbols.
-- **Rounding:** the publisher rounds entry/SL/TP half-up to the symbol's price scale (P3) just before
-  building the wire message. The core values are never rounded.
+- The publisher assigns a monotonic `seq` per publish attempt (in-memory, not part of identity) and
+  runs up to `ANALYZER_PUBLISH_CONCURRENCY` (default 4) publishes concurrently in a `JoinSet`.
+- **Per-symbol ordering:** at most one publish is in flight for a given symbol at a time; a per-symbol
+  FIFO queue prevents a newer candle's signal overtaking an older one. Different symbols publish
+  concurrently. One stuck retry therefore cannot stall other symbols.
+- **Rounding:** the publisher snaps entry/SL/TP to the symbol's price increment (P3) just before
+  building the wire message, reusing the `strategy-analyzer` `snap_to_increment` Floor/Ceil/Nearest
+  semantics. The core values are never rounded. Direction is safety-first:
+  - long: `SL = floor_to_tick(SL)`, `TP = floor_to_tick(TP)` (stop further away, target closer);
+  - short: `SL = ceil_to_tick(SL)`, `TP = ceil_to_tick(TP)`;
+  - entry: nearest/half-up to tick (reference only; the engine executes at market).
+  After rounding, validate `0 < SL < entry < TP` for longs and `0 < TP < entry < SL` for shorts, and
+  reject (`invalid_rounded_levels`) when a level collapses onto entry or becomes non-positive. Tests
+  cover values immediately above/below ticks and low-priced assets.
 - **Mapping to `analyzer.Signal`:** `ticker` in slash form, `action` `BUY`/`SELL`, `entry_price`,
   `sl_price`, `tp_price`, `trigger_time_ms` = **close of the signal candle**
   (`signal_candle_open_time_ms + interval`), `reason` = the Python reason string exactly (divergence
@@ -600,28 +695,57 @@ A single publisher task owns the gRPC client behind a `Publisher` trait (`GrpcPu
   divergence candle is not the trigger time: Python can fire on an old divergence at a current close,
   and the engine would reject an old trigger as stale.
 
+**Outbox state machine**
+
+The outbox is per symbol and persists only `Pending` entries; `InFlight`, `Acked`, `Expired`, and
+`Rejected` are runtime states. Entry key is `signal_id`; the entry stores the wire payload, payload
+hash, `enqueued_at_ms`, `expires_at_ms`, and attempt count.
+
+| From | Event | To | Persistence |
+|---|---|---|---|
+| — | symbol task commits a new signal with the cursor | `Pending` | same atomic state write |
+| `Pending` | publisher picks it up | `InFlight` | memory only |
+| `InFlight` | ack for the same `signal_id` | `Acked` | remove in the ack commit |
+| `InFlight` | deadline reached / local expiry | `Expired` | remove, count `signals_expired_total` |
+| `InFlight` | engine returns `accepted=false` | `Rejected` | remove, count, log reason |
+| `InFlight` | transport error | `Pending` after backoff | no write needed |
+| any | restart | non-expired `Pending` entries resend | loaded from state |
+
+- **Ack correlation is by `signal_id` only.** A late ack after a timeout removes the entry if it is
+  still present; a duplicate ack for an already-removed entry is ignored. An ack for a different
+  payload with the same `signal_id` is the collision case above.
+- **Writer failure:** a failed state commit is retried with backoff; the symbol task does not advance
+  its cursor and does not clear the entry. If commits keep failing past
+  `ANALYZER_WRITER_FAILURE_LIMIT` (default 5), the symbol fail-stops and the supervisor alerts. A
+  post-ack commit failure is safe: the entry remains `Pending` and is resent with the same
+  `signal_id`; the engine dedups (P1).
+- **Capacity:** `ANALYZER_MAX_OUTBOX_PER_SYMBOL` (default 100) and `ANALYZER_MAX_OUTBOX_TOTAL`
+  (default 1000). When a symbol reaches its per-symbol limit it pauses candle fetching (awaited
+  backpressure) until entries drain or expire; when the global limit is reached the breaker pauses all
+  fetches. Pending entries are never dropped by capacity, only by expiry or terminal rejection.
+
 **Deadline and TTL**
 
 - `expires_at_ms = enqueue_time + ANALYZER_SIGNAL_TTL_MS`. The default scales with the timeframe:
   `clamp(interval / 10, 60s, 1h)`, i.e. 1h for `1day` and 90s for `15min`. A flat 60s was unsuitable
   for daily candles.
-- Each publish retries with backoff until ack, deadline, or shutdown. On deadline the signal is logged
-  and counted (`signals_expired_total`) and the outbox entry is closed as expired. Transport errors
-  retry; an engine rejection is a terminal outcome: log, count, close the outbox entry.
+- Each publish retries with backoff until ack, deadline, or shutdown. Expiry is checked in the
+  publisher and again by the engine (P2, strict `<` on the engine's wall clock).
 
 **Crash-safe ordering (at-least-once)**
 
 1. The state commit that advances the cursor and records the emitted key also writes the signal into a
-   durable outbox in the same atomic file write (write temp, fsync, rename).
+   durable `Pending` outbox entry in the same atomic file write (write temp, fsync, rename).
 2. The signal is then sent to the publisher. The symbol task does not block on the ack.
 3. On ack, expiry, or terminal rejection, a second commit removes the outbox entry.
-4. On restart, non-expired outbox entries are re-sent with the same `signal_id`; expired ones are
+4. On restart, non-expired `Pending` entries are re-sent with the same `signal_id`; expired ones are
    dropped and counted.
 
-Crash after commit but before ack: the outbox resends and the engine dedups (P1). Crash before commit:
-the candle is reprocessed, the deterministic generator reproduces the same signal and the same
-`signal_id`, and the engine dedups. No ordering of crash and ack can lose a signal, and none can create
-a distinct duplicate.
+Crash after commit but before ack: the outbox resends and the engine dedups (P1, once durable).
+Crash before commit: the candle is reprocessed, the deterministic generator reproduces the same
+signal and the same `signal_id`, and the engine dedups. No ordering of crash and ack can lose a
+signal, and none can create a distinct duplicate. Until P1 is fixed, live publishing is blocked.
+
 
 ### 7.4 Live semantics versus Python
 
@@ -634,8 +758,9 @@ a distinct duplicate.
   divergence exactly once.
 - **Warm-up:** signals present in the warm-up window are seeded as already seen, not published, so a
   restart does not replay historical setups.
-- **Transport:** gRPC replaces Redis. The trade engine is unchanged; the analyzer becomes an
-  `EngineService` client like `strategy-analyzer`.
+- **Transport:** gRPC replaces Redis. The analyzer becomes an `EngineService` client like
+  `strategy-analyzer`. The engine's transport is reused, but its in-process dedup is **not** sufficient
+  for at-least-once delivery; durable `signal_id` dedup (P1) must land before live publishing.
 
 ---
 
@@ -655,6 +780,9 @@ values fail at startup.
   asserts that successive candle opens equal `next_open(previous)` and records the observed alignment
   (UTC midnight for `1day`; the weekday for `1week`; the first of the month for `1month`). The fixture
   is regenerated from a live fetch before enabling a new timeframe; a mismatch blocks live.
+- **Boundary tests** cover: year transitions, leap days, month lengths (28/29/30/31), duplicate rows
+  across page boundaries, missing zero-trade intervals, and server-time failure/jump cases. All
+  boundary arithmetic is UTC; no DST assumptions.
 - `BENCHMARK_DAYS` is converted to a candle count per interval
   (`ceil(days * 86_400_000 / length)`; months use `ceil(days / 30)`), and `fetch-data` adds `W` on top.
 - Coarse timeframes (`1week`, `1month`) with `W=100` need years of history; `fetch-data` warns when the
@@ -696,12 +824,18 @@ invalid value or inconsistent combination (§4.5, §11).
 | `ANALYZER_MAX_CATCHUP_CANDLES` | `2` | Publish only signals this recent after downtime |
 | `ANALYZER_SIGNAL_TTL_MS` | derived | `clamp(interval/10, 60s, 1h)` |
 | `ANALYZER_PUBLISH_CONCURRENCY` | `4` | In-flight publishes |
+| `ANALYZER_MAX_OUTBOX_PER_SYMBOL` | `100` | Per-symbol outbox cap (backpressure, no drops) |
+| `ANALYZER_MAX_OUTBOX_TOTAL` | `1000` | Global outbox cap |
+| `ANALYZER_WRITER_FAILURE_LIMIT` | `5` | Consecutive state-write failures before fail-stop |
+| `ANALYZER_CLOCK_REFRESH_MS` | `300000` | Exchange clock re-sync interval |
+| `ANALYZER_CLOCK_MAX_AGE_MS` | `900000` | Pause publishing when the last sync is older |
 | `ANALYZER_QUARANTINE_COOLDOWN_MS` | derived | `clamp(3*interval, 1h, 24h)`; symbol-specific failures only |
 | `ANALYZER_BREAKER_FAILURES` / `ANALYZER_BREAKER_PROBE_MS` | `5` / `30000` | Global circuit breaker |
 | `ANALYZER_SHUTDOWN_TIMEOUT_MS` | `10000` | Graceful shutdown before abort |
 | `ANALYZER_STATE_DIR` | `data/analyzer/state` | Per-symbol state and outbox |
 | `ANALYZER_STREAM_DIR` | `data/analyzer/stream` | Recorded JSONL input streams |
 | `ANALYZER_HEARTBEAT_PATH` | `data/analyzer/heartbeat` | Touched by the supervisor for the healthcheck |
+| `ANALYZER_HEARTBEAT_INTERVAL_MS` | `10000` | Heartbeat write interval |
 | `ANALYZER_SHADOW_MODE` | `false` | Use `LogOnlyPublisher` |
 | `KUCOIN_BASE_URL` | `https://api.kucoin.com` | Exchange REST base |
 | `ANALYZER_MAX_RETRIES` | `3` | Retry count for retryable HTTP |
@@ -714,6 +848,31 @@ leftover from the supply-and-demand analyzer's live-ticker design and has no rol
 Feature flags: `harness` enables the backtest CLI/report; `live` enables the runtime (log-only publisher
 included); `grpc` enables the gRPC publisher and activation client. The core builds with
 `--no-default-features`.
+
+### 9.1 Validation rules
+
+Startup fails fast with a named error for every invalid value or combination. Table-driven tests cover
+each rule.
+
+| Group | Rule |
+|---|---|
+| Indicator periods | `RSI_PERIOD >= 1`, `SMA_PERIOD >= 1`, `ATR_PERIOD >= 1`, `RSI_DIVERGENCE_ORDER >= 1` |
+| Thresholds | `PRICE_DIFF_THRESHOLD >= 0`; `ATR_PCT_HIGH >= 0`; `ATR_HIGH_ADJUST > 0`; `0 <= ATR_SL_MAX_PCT < 1` |
+| ATR multipliers | `ATR_SL_MULTIPLIER > 0`, `ATR_TP_MULTIPLIER > 0` |
+| Window | `W >= max(enabled periods) + order + 2` and `W >= 8`; `W` fits the pagination budget; `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` if set is `>= 0` |
+| Benchmark | `BENCHMARK_DAYS > 0`; `BENCHMARK_INIT_FUND > 0`; `0 <= BENCHMARK_FEE_RATE < 1`; tickers non-empty and valid |
+| Symbols | `^[A-Z0-9]+-[A-Z0-9]+$` for KuCoin symbols; `symbols + W` history is fetchable |
+| Timeframe | one of the 14 supported KuCoin intervals; reject anything else |
+| Timing | `ANALYZER_CANDLE_SETTLE_MS >= 0`; `ANALYZER_BOUNDARY_JITTER_MS >= 0` and `< interval`; `ANALYZER_SIGNAL_TTL_MS > 0`; `ANALYZER_MAX_CATCHUP_CANDLES >= 0` |
+| Delivery | `ANALYZER_PUBLISH_CONCURRENCY` in `1..=64`; `ANALYZER_MAX_RETRIES >= 0`; `0 < base <= max`; `ANALYZER_RATE_LIMIT_MIN_INTERVAL_MS > 0` |
+| Resilience | `ANALYZER_BREAKER_FAILURES > 0`; `ANALYZER_BREAKER_PROBE_MS > 0`; `ANALYZER_SHUTDOWN_TIMEOUT_MS > 0`; `ANALYZER_WRITER_FAILURE_LIMIT > 0` |
+| Outbox | `1 <= ANALYZER_MAX_OUTBOX_PER_SYMBOL <= ANALYZER_MAX_OUTBOX_TOTAL` |
+| Clock | `ANALYZER_CLOCK_REFRESH_MS > 0`; `ANALYZER_CLOCK_MAX_AGE_MS >= ANALYZER_CLOCK_REFRESH_MS` |
+| Paths | state/stream/heartbeat directories are writable at startup; fail-fast otherwise |
+| Compatibility | `config_version` and state `schema_version` are computed, logged, and compared on load |
+
+Invalid combinations (for example `SMA_ENABLED=true` with `W < SMA_PERIOD`) are rejected rather than
+silently clamped.
 
 ---
 
@@ -745,15 +904,56 @@ config (including `W`) used to produce them.
 
 | Gate | Rule |
 |---|---|
-| Indicators | `1e-9` relative tolerance for every value |
+| Indicators | `1e-9` relative tolerance for every value, using the comparison rules below |
 | Divergence flags / peak indices | exact |
 | Signals | timestamp, action, reason, kind, divergence index exact; prices `1e-9` relative |
 | Driver | same input stream produces identical events |
 | Replay equivalence | recorded live JSONL replayed through the driver reproduces the same signals |
-| Simulator | unit tests for next-open, SL-first, gap fills/skips, fees, loss cap, concurrency |
-| HTML | payload snapshot + self-contained smoke test |
-| Live | fake market + fake gRPC; activation add/remove, circuit breaker, quarantine cooldown, retry/expiry, backpressure, outbox restart |
+| Simulator | next-open, SL-first, gap fills/skips, fees, loss cap, concurrency, and the accounting invariants |
+| HTML | payload snapshot **and** a full report rendered from representative data with every event type |
+| Live | fake market + fake gRPC; activation add/remove, circuit breaker, quarantine cooldown, retry/expiry, backpressure, outbox restart, writer failure |
 | Purity | `strategy/` has no float tokens, no bare `Decimal` arithmetic, no hash-map iteration |
+
+**Numeric comparison rules**
+
+- `None vs None` → equal; `Some vs None` → not equal.
+- Both zero → equal. One zero → `|a - b| <= 1e-9 * max(1, |a|, |b|)`.
+- Both nonzero → `|a - b| / max(|a|, |b|) <= 1e-9`.
+- Prices use the same rule; `Decimal` scale differences do not matter because values are compared
+  numerically, not by string.
+- The oracle pins and records `pandas`, `numpy`, `scipy`, and Python versions. `scipy` must be the exact
+  version used to generate fixtures (`requirements.txt` is a range; the oracle lockfile pins it).
+
+**Data integrity**
+
+- Reject malformed CSV rows, non-positive prices, `high < max(open, close, low)`, `low > min(open,
+  close, high)`, duplicate `open_time_ms`, and non-increasing timestamps.
+- A provenance sidecar schema version, symbol, interval, row count, and sha256 must match the CSV; a
+  mismatch is a hard failure, not a warning.
+- Unsupported provenance schema versions fail with a clear message.
+
+**Replay accounting and invariants**
+
+- Closed PnL matches Appendix B: fees on both sides, loss capped at `-E`.
+- `realized_pnl = sum(closed pnl)`; `reserved = sum(E)`; `available_fund` is the simulator's cash.
+- Invariant after every close: `available_fund + reserved == init_fund + realized_pnl`.
+- Unrealized PnL is mark-to-market at the last close **minus the accrued entry fee**
+  (`fee_rate * E`), so open equity does not overstate. This is a reporting improvement over Python's
+  open-equity display; closed trades still match Appendix B.
+- `equity = available_fund + reserved + unrealized_pnl`.
+- At end of data, positions are **not** force-closed. The report includes `unfilled_at_end`, open
+  positions marked at the last close, and the counts for `skipped_funds` / `skipped_gap`.
+- Hand-computed long and short fixtures verify the short convention (`pnl = E - proceeds - fees`),
+  not just the symmetric formula.
+
+**Report coverage**
+
+- Render a real report from representative historical data containing entries, TP exits, SL exits,
+  open positions, skipped entries, and unfilled signals; open the result in the browser checks and
+  assert every tab/event renders.
+- The ledger and report print a banner: **signal parity is exact; trade performance is behavioral and
+  is not comparable to the Python benchmark** (next-open fills and SL-first exits differ by design).
+
 
 ### 10.3 Dual-oracle triage for float/Decimal mismatches
 
@@ -790,13 +990,16 @@ make benchmark-web-rs       # analyzer-backtest web
 
 | Risk | Mitigation |
 |---|---|
-| scipy `find_peaks` semantics differ (plateaus, distance ties) | Port the algorithm (Appendix A.1) and test exact peak indices against Python on adversarial fixtures. |
+| scipy `find_peaks` semantics differ (plateaus, distance ties) | Port the algorithm (Appendix A.1); pin the oracle's `scipy`/`pandas`/`numpy` versions; test exact peak indices on adversarial fixtures. |
+| Engine dedup is in-process only (P1 false today) | Durable `signal_id` dedup in the engine, with restart and concurrent-duplicate tests, before live publishing. |
+| Warm restart skips candles or re-emits old ones | §7.2.1 restores the cursor/window/dedup state and processes every intervening candle; tests cover restart-and-catch-up. |
+| Corrupt/incompatible state silently resets | Fail-stop with alert; explicit `--reset-state` only; tests for truncated/checksum-mismatched files. |
 | Decimal vs pandas `f64` differences flip a strict comparison | Dual-oracle triage (§10.3); operation-order matching; `1e-9` gate. |
 | `W` changes signal behavior | `W` is part of `config_version` and `signal_id`; baseline 100; the oracle regenerates for any configured `W`. |
 | Dynamic `W > 1500` exceeds KuCoin's per-request limit | Paginate warm-up and `fetch-data`; multi-page tests. |
 | More positions than a real account would take | Replay mirrors the trade engine's `init_fund/2` funding rule; flagged in the report. |
 | Repeated signals for one divergence or repaint | Emitted set plus `<=` watermark; stable `signal_id`; engine dedup (P1). |
-| Outbox growth during a long engine outage | Entries expire by TTL and are dropped on restart; add a bounded outbox/backpressure threshold (open item). |
+| Outbox growth during a long engine outage | Per-symbol and global caps pause fetching (backpressure); entries expire by TTL; no pending entry is dropped by capacity. |
 | Blocking fsync/write on tokio workers | Dedicated writer task with a bounded queue. |
 | Quarantine respawn loop | Persist `quarantined_until`; reconcile honors it. |
 | Exchange outage quarantines every symbol | Failure classification plus global circuit breaker (decision 22). |
@@ -804,14 +1007,15 @@ make benchmark-web-rs       # analyzer-backtest web
 | Python local-time date formatting | UTC by default; `--tz local` opt-in (decision 18). |
 | Missing/duplicate KuCoin candles | Reject duplicates/out-of-order, backfill holes, accept zero-trade gaps, quarantine only persistent symbol-specific errors. |
 
-Open questions (not blockers):
+Resolved decisions (formerly open questions):
 
-- **OQ-1:** Should the outbox have a hard cap that pauses symbol tasks when the engine is unreachable?
-- **OQ-2:** Should `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` be enabled by default in production?
-- **OQ-3:** Should a gap at the entry open fill-and-exit at the open instead of `skipped_gap`?
-- **OQ-4:** Should the replay model a single shared multi-symbol account instead of one account per
-  symbol?
-- **OQ-5:** Should slippage be added to the simulator in v1?
+| # | Decision |
+|---|---|
+| OQ-1 | Outbox is capped per symbol (100) and globally (1000); hitting a cap pauses fetching (backpressure) and never drops pending entries. |
+| OQ-2 | `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` stays unset during migration (parity); enabling it in production is an operator decision documented in the runbook. |
+| OQ-3 | Entry gap is `skipped_gap` (conservative). A fill-and-exit-at-open alternative is not implemented in v1. |
+| OQ-4 | v1 replays one account per symbol, matching the Python benchmark. A shared portfolio account is deferred until portfolio-level estimates are needed. |
+| OQ-5 | No slippage in v1. Replay results are behavioural parity evidence, not a profitability forecast. |
 
 ---
 
@@ -822,13 +1026,15 @@ Open questions (not blockers):
    backtests side by side and diff **signals** per candle.
 3. **Shadow live** — run `analyzer-serve` with `ANALYZER_SHADOW_MODE=true` (`LogOnlyPublisher`) next to
    Python; compare emitted signals on the same active symbols until zero signal drift.
-4. **Cut over live** — switch the trade engine's analyzer to `analyzer-serve` over gRPC; keep Python
+4. **Engine idempotency gate** — implement and verify durable `signal_id` dedup in the trade engine
+   (P1), including restart and simultaneous-duplicate tests, before any Rust publishing.
+5. **Cut over live** — switch the trade engine's analyzer to `analyzer-serve` over gRPC; keep Python
    stopped but deployed for one release.
-5. **Remove Python** — delete `process/analyzer`, its Dockerfile/requirements, Python test targets, and
+6. **Remove Python** — delete `process/analyzer`, its Dockerfile/requirements, Python test targets, and
    `.env` entries that only Python used. Tag the last Python commit for reference.
-6. **Docs** — update `process/analyzer-rs/README.md`, the root README, Makefile help, and CI.
+7. **Docs** — update `process/analyzer-rs/README.md`, the root README, Makefile help, and CI.
 
-### 12.1 Shadow comparison
+### 12.1 Shadow comparison and cutover evidence
 
 Raw Python live output is not directly comparable because Python includes the forming candle. The
 shadow harness instead:
@@ -838,9 +1044,19 @@ shadow harness instead:
 3. Compares action, reason, entry, SL/TP, confidence, kind, and divergence index per candle.
 4. Applies the same dedup/warm-up rules to both before comparing the emitted sequence.
 
-Cutover requires zero signal drift over a pre-agreed window (for example 7 days across the configured
-symbols), replay-equivalence passing, gRPC acks observed, and no unexpected quarantines. No period runs
-both analyzers publishing signals; Python is either log-only or stopped during shadowing.
+**Zero drift** means: no difference in signal count, action, reason, kind, divergence timestamp, or
+signal-candle timestamp; prices within `1e-9`. The evidence package must include:
+
+- every configured symbol and every enabled timeframe, over at least **14 consecutive days** or
+  **200 compared candles per symbol**, whichever is longer;
+- at least one analyzer restart, one exchange outage/backoff, one engine-unavailable period, and one
+  missed-candle/gap case;
+- the observed outbox, expiry, quarantine, and breaker metrics for the same period;
+- replay-equivalence passing on a recorded live stream;
+- a dry-run of the rollback procedure.
+
+A short or inactive period with zero signals is not sufficient evidence. No period runs both
+analyzers publishing signals; Python is either log-only or stopped during shadowing.
 
 ---
 
@@ -856,11 +1072,79 @@ both analyzers publishing signals; Python is either log-only or stopped during s
   `analyzer-backtest web` writes a single-file report that opens and replays.
 - Replay equivalence passes: a recorded live stream replayed through the driver produces identical
   signals.
+- Warm restart resumes from the cursor, rebuilds the window, processes every intervening candle, and
+  delivers pending outbox entries; corrupt/incompatible state fail-stops rather than silently
+  resetting.
+- `signal_id` is stable across restarts and builds for identical inputs, changes when `config_version`
+  or `W` changes, and the canonical encoding has golden-vector tests.
+- Clock failure/jump, pagination overlap/conflict, year/leap/month boundaries, and duplicate rows are
+  covered by tests.
+- The outbox state machine, per-symbol ordering, writer-failure retry, duplicate/late acks, and
+  capacity backpressure are covered by tests.
+- Rounded levels are directionally safe and invalid rounded levels are rejected.
+- The replay accounting invariants hold, including the short-PnL convention and end-of-data marks.
+- Config validation rejects every invalid value/combination in §9.1.
 - `analyzer-serve` reconciles active symbols, emits each divergence once, delivers at-least-once over
   gRPC, survives fetch failures, honors quarantine cooldowns, and does not publish stale catch-up
   signals.
-- Python `process/analyzer` is removed only after the shadow run shows zero signal drift and the
+- P1 is resolved durably in the engine before live publishing is enabled.
+- Python `process/analyzer` is removed only after the shadow evidence in §12.1 passes and the
   README/Makefile/CI reference the Rust crate.
+
+---
+
+## 14. Operational contract
+
+### 14.1 Health, readiness, and metrics
+
+- **Liveness:** the supervisor loop is running and the heartbeat file is touched every
+  `ANALYZER_HEARTBEAT_INTERVAL_MS` (default 10s).
+- **Readiness:** exchange clock synced within `ANALYZER_CLOCK_MAX_AGE_MS`; state/stream directories
+  writable; publisher connected (or `ANALYZER_SHADOW_MODE=true`); at least one successful exchange
+  fetch since startup; writer task healthy.
+- **Metrics:** `symbols_active`, `symbols_quarantined`, `candles_processed_total`, `signals_emitted_total`,
+  `signals_published_total`, `signals_duplicate_total`, `signals_expired_total`,
+  `signals_rejected_total`, `signals_stale_catchup_total`, `outbox_depth` (per symbol and total),
+  `breaker_open`, `clock_offset_ms`, `clock_unsynced`, `fetch_failures_total`,
+  `state_write_failures_total`, `grpc_publish_latency_ms`, `cursor_lag_candles`.
+- **Alerts:** cursor lag above 2 candles for more than one interval; breaker open longer than
+  `ANALYZER_BREAKER_PROBE_MS * 3`; outbox depth above 80% of a cap; any `state_write_failures_total`;
+  any `signal_id_collision`; readiness false for more than 2 minutes.
+
+### 14.2 Persistent state integrity
+
+- State files carry `schema_version`, `config_version`, and a payload checksum. Atomic write is
+  temp → fsync(file) → rename → fsync(dir).
+- Corrupt, truncated, checksum-mismatched, or incompatible state is **fail-stop with alert**
+  (`state_incompatible`); it is not silently reset. Recovery is an explicit `--reset-state SYMBOL`,
+  which clears the window/dedup state and cold-starts; pending outbox entries are still delivered
+  when readable.
+- Disk-full, permission, and fsync failures stop the symbol's cursor advance and surface
+  `state_write_failures_total`; persistent failure fail-stops the symbol. The state directory must be
+  writable at startup.
+- One state writer per analyzer instance; the existing single-writer lock is kept. State directories
+  are never shared between Python and Rust or between two Rust instances.
+
+### 14.3 gRPC transport security
+
+- Development default is plaintext loopback (`http://127.0.0.1:50051`).
+- Production must use TLS (tonic) with certificate validation, or mTLS. The endpoint is validated at
+  startup; connection and request timeouts are configured; no credentials are logged.
+- Authentication/authorization metadata is a deployment concern; the analyzer refuses to start in
+  production mode if TLS is required but not configured.
+
+### 14.4 Deployment and rollback
+
+- Package `analyzer-rs` as a separate service image, with its own state/stream volumes. Configuration
+  is migrated by adding the new variables with defaults; the Python `.env` names are reused.
+- Mutual exclusion: only one publisher. Python is stopped or `ANALYZER_SHADOW_MODE=true` (log-only)
+  before Rust publishes. State directories are distinct.
+- Rollback: stop Rust, restart Python with its existing `.env`. Rust state/outbox is left intact for a
+  later retry; already-delivered signals remain governed by the engine's dedup. Document that rollback
+  after a Rust publish may mean a signal was acted on and Python will not resend it.
+- The runbook covers: cold start, warm restart, explicit state reset, outbox saturation, breaker open,
+  quarantine, clock unsync, and rollback.
+
 
 ---
 
