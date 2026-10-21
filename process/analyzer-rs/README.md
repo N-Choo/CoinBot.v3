@@ -22,3 +22,32 @@ exact environment pinned by `process/analyzer/requirements-oracle.txt`. Run from
 
 The core has no I/O, no clock, and no floats. See
 `docs/superpowers/specs/2026-10-21-rust-analyzer-migration-design.md`.
+
+## Live gRPC client
+
+Like `process/strategy-analyzer`, the trade engine is the gRPC server and the analyzer is the
+client. The analyzer polls `GetActiveSymbols` for activation, runs one task per active symbol,
+warms a rolling window, recomputes `signals()` on every newly closed candle, and publishes each
+new signal once via `Publish`. Each signal gets exactly one publish attempt; nothing is resent
+after a restart.
+
+```bash
+GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
+LIVE_SYMBOLS=BTC-USDT,ETH-USDT \
+KUCOIN_TIMEFRAME=15min \
+ANALYZER_WINDOW_CANDLES=100 \
+cargo run -p analyzer-rs --features grpc --bin analyzer-serve
+```
+
+`LIVE_SYMBOLS` is only a fallback: it is used when the engine returns an empty active-symbol set.
+`ANALYZER_ACTIVATION_POLL_MS` controls how often activation is refreshed (default 30000).
+
+`ANALYZER_ONCE=1` runs one closed-candle scan per symbol using the engine's active symbols (or
+`LIVE_SYMBOLS` as the fallback), logs the signals, and exits:
+
+```bash
+ANALYZER_ONCE=1 \
+GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
+LIVE_SYMBOLS=BTC-USDT KUCOIN_TIMEFRAME=15min \
+cargo run -p analyzer-rs --features grpc --bin analyzer-serve
+```

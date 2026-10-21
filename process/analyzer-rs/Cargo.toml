@@ -7,6 +7,7 @@ edition = "2021"
 default = []
 exchange = ["dep:ureq", "dep:serde_json", "dep:chrono"]
 live = ["exchange", "dep:tokio", "dep:chrono", "dep:log", "dep:env_logger"]
+grpc = ["live", "dep:tonic", "dep:prost", "dep:sha2"]
 
 [dependencies]
 rust_decimal = { version = "1", features = ["serde-with-str"] }
@@ -18,6 +19,17 @@ tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sy
 chrono = { workspace = true, optional = true }
 log = { workspace = true, optional = true }
 env_logger = { workspace = true, optional = true }
+tonic = { version = "0.12", optional = true }
+prost = { version = "0.13", optional = true }
+sha2 = { version = "0.10", optional = true }
+
+[build-dependencies]
+tonic-build = "0.12"
+
+[[bin]]
+name = "analyzer-serve"
+path = "src/bin/analyzer-serve.rs"
+required-features = ["live", "grpc"]
 
 [dev-dependencies]
 serde_json = "1"
