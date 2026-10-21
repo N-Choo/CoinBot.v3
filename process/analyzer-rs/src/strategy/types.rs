@@ -66,3 +66,44 @@ pub struct Signal {
     pub divergence_age_candles: usize,
     pub signal_candle_open_time_ms: i64,
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn kind_maps_to_action_reason_and_str() {
+        let cases = [
+            (
+                DivergenceKind::RegularBullish,
+                Direction::Long,
+                "regular_bullish_divergence",
+                "regular_bullish",
+            ),
+            (
+                DivergenceKind::RegularBearish,
+                Direction::Short,
+                "regular_bearish_divergence",
+                "regular_bearish",
+            ),
+            (
+                DivergenceKind::HiddenBullish,
+                Direction::Long,
+                "hidden_bullish_divergence",
+                "hidden_bullish",
+            ),
+            (
+                DivergenceKind::HiddenBearish,
+                Direction::Short,
+                "hidden_bearish_divergence",
+                "hidden_bearish",
+            ),
+        ];
+
+        for (kind, action, reason, as_str) in cases {
+            assert_eq!(kind.action(), action);
+            assert_eq!(kind.reason(), reason);
+            assert_eq!(kind.as_str(), as_str);
+        }
+    }
+}
