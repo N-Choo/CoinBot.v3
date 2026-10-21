@@ -93,4 +93,3 @@ Options:
 The remaining strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `PRICE_DIFF_THRESHOLD`,
 `ANALYZER_WINDOW_CANDLES`) and `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` come from the same `.env`
 as the live client; see `.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint.
-
