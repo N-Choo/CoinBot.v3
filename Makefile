@@ -82,10 +82,13 @@ analyzer-test:
 analyzer-rs-check:
 	cargo fmt -p analyzer-rs -- --check
 	cargo clippy -p analyzer-rs --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer-rs --features grpc --all-targets --no-deps -- -D warnings
 	cargo test -p analyzer-rs
+	cargo test -p analyzer-rs --features grpc
 
 analyzer-rs-test:
 	cargo test -p analyzer-rs
+	cargo test -p analyzer-rs --features grpc
 
 benchmark-test:
 	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
