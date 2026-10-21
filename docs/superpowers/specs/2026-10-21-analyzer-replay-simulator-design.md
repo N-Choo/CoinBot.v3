@@ -125,7 +125,11 @@ Every dataset (fetched or CSV) is validated before replay:
   `high >= low`. Violations are a hard failure for that symbol.
 - Ordering: timestamps strictly increasing; duplicates rejected.
 - Spacing: consecutive open times must be a positive multiple of the configured timeframe. A
-  non-multiple is a failure (`timeframe mismatch`); gaps are allowed and counted as `gaps`.
+  non-multiple is a failure (`timeframe mismatch`).
+- **Missing candles are permitted, never fabricated.** A gap (spacing greater than one interval) is
+  counted as `gaps` and the available candles are replayed in order, exactly as the live analyzer
+  would see the exchange rows. `--max-gap-candles N` (default `0` = no limit) fails the symbol with
+  `gap too large` when a single gap exceeds `N` intervals.
 - **Closed candles only:** a candle is closed iff
   `as_of_ms - settle_ms >= open_time_ms + interval`. `--as-of` defaults to now and can be set for
   deterministic historical runs. Trailing unclosed candles are dropped; if fewer than `W + 2`
@@ -133,6 +137,18 @@ Every dataset (fetched or CSV) is validated before replay:
 - CSV and exchange data use the same validation; CSV rows carry the same schema.
 
 A symbol that fails validation is recorded in `failures` and does not produce a tab.
+
+### 5.1 Provenance
+
+Each symbol records provenance so a changed dataset can be told apart from a changed strategy:
+
+- `source`: `"kucoin"` or `"csv:<path>"`;
+- `requested`: `{limit, timeframe, as_of_ms}`;
+- `effective_range`: `{first_open_time_ms, last_open_time_ms, candles}` after validation;
+- `content_sha256`: SHA-256 over the normalized candle rows (open time + OHLCV as canonical
+  strings), so two runs with the same data hash identically;
+- `fetched_at_ms` for network sources;
+- `gaps`: number of missing intervals.
 
 ---
 
@@ -169,8 +185,15 @@ One account per symbol.
   unchanged.
 - The simulated **fill price** is the next candle’s open.
 - PnL and risk/reward use the fill price and the absolute SL/TP levels.
-- `risk_reward = (tp - fill) / (fill - sl)` for a long (mirror for short); `null` when the
-  denominator is not positive.
+- Direction-aware geometry (validated on the **signal** levels before opening):
+  - long: `sl < entry` and `tp > entry`;
+  - short: `sl > entry` and `tp < entry`.
+  A violation is recorded as `invalid_levels`; the signal is kept in the event stream but no
+  position is opened and no misleading risk/reward is produced.
+- Risk/reward from the fill:
+  - long: `(tp - fill) / (fill - sl)`, valid only when `fill > sl` and `tp > fill`;
+  - short: `(fill - tp) / (sl - fill)`, valid only when `fill < sl` and `tp < fill`;
+  - otherwise `null` (for example when a gap already put the fill beyond a level).
 
 ### 7.2 Sizing and funds
 
@@ -187,7 +210,8 @@ For candle `i` (from `W` to `len - 1`):
 
 1. **Fill** the pending entry from the signal at `i - 1` at `open[i]` (funds check, §7.2).
 2. **Exit evaluation** for all open positions, including one just filled, using candle `i`:
-   - gap: if the fill/open is already beyond SL or TP, exit at the open (`gap_sl` / `gap_tp`);
+   - gap, direction-aware: long exits at the open when `open <= sl` (`gap_sl`) or `open >= tp`
+     (`gap_tp`); short exits at the open when `open >= sl` (`gap_sl`) or `open <= tp` (`gap_tp`);
    - otherwise if both SL and TP are inside the range, exit at **SL**;
    - otherwise exit at SL or TP.
 3. **Driver push**: feed candle `i` to the `CandleDriver`; a new signal becomes pending for
@@ -230,19 +254,24 @@ The report labels results **gross simulated performance, excluding trading costs
 ### 7.6 Summary statistics
 
 - `realized_pnl` = `gross_realized_pnl` = sum of closed-trade PnL (no fees).
-- `wins`: closed trades with `pnl > 0`; `losses`: `pnl < 0`; zero-PnL trades count in `trades`
-  but in neither wins nor losses.
-- `win_rate = wins / trades * 100` (`0` when no trades).
-- `avg_win` / `avg_loss`: mean PnL over wins / losses (`0` when none).
-- `profit_factor = gross_profit / gross_loss`; `null` when there are no losses and no profit,
-  `"inf"` when there is profit and no loss, otherwise the ratio as a string.
-- `max_drawdown`: from the closed-trade equity curve (`available_fund + reserved` after each
-  close), the largest peak-to-trough drop, as an absolute amount and a percentage of the peak.
-  Unrealized PnL is excluded.
-- `exposure_candles`: sum of holding durations (`exit_index - entry_index` for closed trades, plus
-  `last_index - entry_index` for open positions); `time_in_market_pct` is that over the number of
-  replayed candles.
-- `skipped_funds`, `unfilled_at_end`, and `gaps` are counts.
+- `wins`: closed trades with `pnl > 0`; `losses`: `pnl < 0`; `breakeven`: `pnl == 0`. All three
+  count in `trades`.
+- `win_rate = wins / trades * 100` (`0` when no trades); breakeven trades stay in the denominator.
+- `avg_win` / `avg_loss`: mean **realized** trade PnL over wins / losses (`0` when none);
+  breakeven trades are excluded from both.
+- `profit_factor = gross_profit / abs(gross_loss)`, using realized PnL:
+  - no losing trades and `gross_profit > 0` → `"inf"`;
+  - no losing trades and `gross_profit == 0` → `null`;
+  - otherwise the ratio as a string.
+- `max_drawdown`: mark-to-market policy is **realized-only**. Build the equity curve from
+  `available_fund + reserved` after each closed trade, starting at `init_fund`; report the largest
+  peak-to-trough drop as an absolute amount and a percentage of the peak. Unrealized PnL is not
+  part of this curve.
+- `exposure_candles`: **sum of individual position durations**, i.e. `exit_index - entry_index` for
+  each closed trade plus `last_index - entry_index` for each open position.
+  `time_in_market_pct = exposure_candles / replayed_candles * 100` (can exceed 100 when positions
+  overlap; this is intentional and documented).
+- `skipped_funds`, `unfilled_at_end`, `invalid_levels`, and `gaps` are counts.
 
 ---
 
@@ -295,15 +324,23 @@ The report labels results **gross simulated performance, excluding trading costs
       "open_positions": [{"entry_index": 190, "side": "SELL", "signal_entry": "91240",
                           "fill": "91300", "E": "500", "tp": "88420", "sl": "92590",
                           "unrealized": "-4.10"}],
+      "provenance": {
+        "source": "csv:tests/fixtures/btc_usdt_1day.csv",
+        "requested": {"limit": 500, "timeframe": "1day", "as_of_ms": 1760000000000},
+        "effective_range": {"first_open_time_ms": 1758067200000, "last_open_time_ms": 1790000000000, "candles": 500},
+        "content_sha256": "b2f1c9e4a7d3f6b8c1e5a9d2f4b7c0e3a6d9f2b5c8e1a4d7f0b3c6e9a2d5f8b1",
+        "gaps": 0
+      },
       "summary": {
         "init_fund": "1000", "available_fund": "516.90", "reserved": "500",
         "realized_pnl": "16.90", "unrealized_pnl": "-4.10", "equity": "1012.80",
         "gross_realized_pnl": "16.90", "profit_factor": "2.10",
         "max_drawdown": "-8.40", "max_drawdown_pct": "-0.84",
-        "trades": 3, "wins": 2, "losses": 1, "win_rate": "66.7",
+        "trades": 3, "wins": 2, "losses": 1, "breakeven": 0, "win_rate": "66.7",
         "avg_win": "12.10", "avg_loss": "-7.30",
         "exposure_candles": 41, "time_in_market_pct": "8.2",
-        "open_count": 1, "skipped_funds": 0, "unfilled_at_end": 0, "gaps": 0,
+        "open_count": 1, "skipped_funds": 0, "unfilled_at_end": 0,
+        "invalid_levels": 0, "gaps": 0,
         "returns_label": "gross simulated, excluding fees and slippage"
       }
     }
@@ -364,6 +401,8 @@ analyzer-replay \
 - `--out` default `process/analyzer-rs/out/replay.html` (gitignored).
 - `--data SYMBOL=path.csv` repeatable; when present for a symbol, no network is used for it.
 - `--as-of` fixes the closed-candle cutoff for deterministic runs.
+- `--max-gap-candles N` fails a symbol whose largest missing-candle gap exceeds `N` intervals
+  (default `0` = no limit).
 - `--generated-at` fixes the report timestamp for byte-identical output.
 - Strategy settings come from the shared `.env`/`strategy_from_env`, identical to live.
 - Per-symbol failures are recorded; other symbols still render.
@@ -402,7 +441,10 @@ analyzer-replay:
 ### 11.3 Dataset and report
 
 - Validation: OHLC sanity, ordering, duplicates, spacing/timeframe mismatch, unclosed candles,
-  short history, `--as-of`.
+  short history, `--as-of`, missing-candle gaps (`gaps`, `--max-gap-candles`), provenance hash
+  stability.
+- Direction-aware execution: long and short valid geometry, `invalid_levels`, gap-at-entry exit at
+  the open in both directions, risk/reward from the fill.
 - Payload: keys, lengths, decimal strings, `failures`, `signal_entry` vs `fill`.
 - Report: one tab per symbol; failures as disabled tabs; embedded JSON escaped; self-contained.
 - CLI: offline two-symbol same-timeframe run writes one HTML; a mismatched-timeframe CSV goes to
@@ -427,6 +469,9 @@ Acceptance:
 | Engine mirror mistaken for live execution | Copied-vs-approximated table and a banner label. |
 | Results mistaken for profitability | “Gross simulated, excluding fees and slippage” label; Layer 1/Layer 2 separation. |
 | Forming candle consumed | Closed-candle filter is a dataset invariant. |
+| Missing candles fabricated or ignored | Gaps are permitted, counted, and never synthesized; `--max-gap-candles` can fail a symbol. |
+| Changed dataset mistaken for a strategy change | Per-symbol provenance with an effective range and a content hash. |
+| Metric definitions drift between implementations | Explicit definitions for drawdown policy, profit factor, exposure, and averages. |
 | Same-candle ordering ambiguity | Fixed candle processing order and funds policy; boundary tests. |
 | Timeframe mismatch | Per-dataset spacing validation; mismatches fail that symbol. |
 | Large embedded JSON | Default 3 symbols / 500 candles; compact JSON. |
