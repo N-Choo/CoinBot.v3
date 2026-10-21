@@ -179,3 +179,31 @@ def test_main_skips_ticker_on_transport_error(monkeypatch, caplog):
         bm.main()  # must not raise
 
     assert "skip BTC-USDT" in caplog.text
+
+
+def test_main_web_writes_report(monkeypatch, tmp_path):
+    import analyzer.benchmark.main as bm
+
+    monkeypatch.setenv("BENCHMARK_TICKERS", "TEST-USDT")
+    monkeypatch.setenv("SMA_ENABLED", "false")
+    monkeypatch.setenv("RSI_PERIOD", "1")
+    monkeypatch.setenv("ATR_PERIOD", "1")
+    monkeypatch.setenv("BENCHMARK_DAYS", "50")
+
+    n = 80
+    close = np.full(n, 100.0)
+    frame = pd.DataFrame(
+        {"Open": close, "High": close + 2, "Low": close - 2, "Close": close}
+    )
+
+    monkeypatch.setattr(bm, "fetch_klines", lambda symbol, **kwargs: frame)
+    monkeypatch.setattr(bm, "generate_signals", lambda *a, **k: [])
+
+    out = tmp_path / "replay.html"
+    bm.main(web=True, out=out)
+
+    assert out.exists()
+    html = out.read_text(encoding="utf-8")
+    assert html.startswith("<!DOCTYPE html>")
+    assert "TEST-USDT" in html
+    assert "replay-data" in html

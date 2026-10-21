@@ -9,3 +9,4 @@ graphify-out/
 __pycache__/
 .venv/
 .worktrees/
+process/analyzer/benchmark/out/

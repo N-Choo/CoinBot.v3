@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset benchmark-web
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -17,6 +17,7 @@ help:
 	@echo "Trading"
 	@echo "  make trade        Run trade-engine + Python analyzer live (needs DB + Redis)"
 	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
+	@echo "  make benchmark-web  Backtest and write a self-contained HTML replay report"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -80,6 +81,9 @@ benchmark-test:
 
 benchmark:
 	@cd process && python3 -m analyzer.benchmark.main
+
+benchmark-web:
+	@cd process && python3 -m analyzer.benchmark.main --web
 
 frontend-install:
 	cd react && npm ci

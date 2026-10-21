@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 from dataclasses import asdict
+from datetime import datetime
+from pathlib import Path
 from typing import Any
 
 import pandas as pd
@@ -13,8 +16,11 @@ from analyzer.benchmark.engine import SimEngine
 from analyzer.benchmark.replay import (
     ReplayRecorder,
     account_state,
+    build_ticker_replay,
+    config_dict,
     date_str as _date_str,
 )
+from analyzer.benchmark.report import write_report
 from analyzer.config import Config
 from analyzer.fetchers.kucoin import KuCoinFetchError, fetch_klines
 from analyzer.signals.generator import generate_signals
@@ -231,7 +237,25 @@ def print_ledger(
     print()
 
 
-def main() -> None:
+def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(
+        description="Replay analyzer benchmark candles."
+    )
+    parser.add_argument(
+        "--web",
+        action="store_true",
+        help="write a self-contained HTML replay report instead of the text ledger",
+    )
+    parser.add_argument(
+        "--out",
+        type=Path,
+        default=None,
+        help="output path for --web (default: benchmark/out/benchmark.html)",
+    )
+    return parser.parse_args(argv)
+
+
+def main(web: bool = False, out: Path | None = None) -> None:
     _load_dotenv()
     cfg = Config()
 
@@ -260,6 +284,9 @@ def main() -> None:
         cfg.atr_high_adjust,
     )
 
+    replay_tickers: list[dict[str, Any]] = []
+    failures: list[dict[str, str]] = []
+
     # Warm-up floor plus a small margin so at least two candles are replayed.
     min_len = (
         _warmup(
@@ -279,9 +306,15 @@ def main() -> None:
             )
         except KuCoinFetchError as e:
             logger.error("  skip %s - fetch error: %s", symbol, e)
+            if web:
+                failures.append({"symbol": symbol, "error": str(e)})
             continue
         except Exception as e:
             logger.exception("  skip %s - unexpected fetch error: %s", symbol, e)
+            if web:
+                failures.append(
+                    {"symbol": symbol, "error": f"{type(e).__name__}: {e}"}
+                )
             continue
 
         if len(df) < min_len:
@@ -291,8 +324,16 @@ def main() -> None:
                 len(df),
                 min_len,
             )
+            if web:
+                failures.append(
+                    {
+                        "symbol": symbol,
+                        "error": f"only {len(df)} candles (need >= {min_len})",
+                    }
+                )
             continue
 
+        recorder = ReplayRecorder() if web else None
         trades, open_positions, summary = run_benchmark(
             df,
             ticker=ticker,
@@ -310,12 +351,47 @@ def main() -> None:
             init_fund=cfg.benchmark_init_fund,
             fee_rate=cfg.benchmark_fee_rate,
             benchmark_days=cfg.benchmark_days,
+            recorder=recorder,
         )
 
-        print_ledger(ticker, trades, open_positions, summary)
+        if web:
+            assert recorder is not None and recorder.start is not None
+            replay_tickers.append(
+                build_ticker_replay(
+                    df,
+                    ticker=ticker,
+                    start=recorder.start,
+                    recorder=recorder,
+                    trades=trades,
+                    open_positions=open_positions,
+                    summary=summary,
+                    config=config_dict(cfg),
+                    warmup=_warmup(
+                        cfg.rsi_period,
+                        cfg.atr_period,
+                        cfg.sma_period,
+                        cfg.sma_enabled,
+                    ),
+                )
+            )
+        else:
+            print_ledger(ticker, trades, open_positions, summary)
+
+    if web:
+        path = out or Path(__file__).resolve().parent / "out" / "benchmark.html"
+        write_report(
+            {
+                "generated_at": datetime.now().isoformat(timespec="seconds"),
+                "tickers": replay_tickers,
+                "failures": failures,
+            },
+            path,
+        )
+        logger.info("report written to %s", path.resolve())
 
     logger.info("done")
 
 
 if __name__ == "__main__":
-    main()
+    args = _parse_args()
+    main(web=args.web, out=args.out)

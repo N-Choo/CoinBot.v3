@@ -89,6 +89,9 @@ analyzer/
 # Run backtest
 make benchmark
 
+# Write a self-contained HTML candle-by-candle replay
+make benchmark-web
+
 # Run unit tests
 make benchmark-test   # benchmark only
 make analyzer-test    # everything
@@ -117,6 +120,25 @@ footer for positions still open and an account summary:
 `why` is `TP` or `SL` on closed rows, and `open` on rows that are still open at
 the end of data (they are never force-closed and are counted in the `open:`
 footer); the summary reports win rate, realized PnL, and equity.
+
+## Web replay
+
+`make benchmark-web` runs the same backtest and writes
+`benchmark/out/benchmark.html` (gitignored). Open it in a browser — no server or
+build step. It contains one tab per ticker and replays the benchmark candles one
+at a time:
+
+- candlesticks plus the SMA trend filter;
+- RSI with divergence markers at the pivot candle;
+- green/red entry and exit markers, with TP/SL lines;
+- a floating HUD with OHLC, the signal that fired, account state, and the last
+  closed trade;
+- a timeline with play/pause, step, speed, trade jumps, and click-to-scrub;
+- a ledger drawer listing closed trades and positions still open at the current
+  candle.
+
+Keyboard: `Space` play/pause, `←`/`→` step, `Shift+←`/`→` jump trades,
+`Home`/`End` jump to the ends.
 
 ## Core rules
 
