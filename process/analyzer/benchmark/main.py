@@ -22,15 +22,31 @@ from analyzer.benchmark.replay import (
 )
 from analyzer.benchmark.report import write_report
 from analyzer.config import Config
-from analyzer.fetchers.kucoin import KuCoinFetchError, fetch_klines
+from analyzer.fetchers.kucoin import MAX_KLINES, KuCoinFetchError, fetch_klines
 from analyzer.signals.generator import generate_signals
 
 logger = logging.getLogger(__name__)
 
 
-def _load_dotenv(path: str = ".env") -> None:
+def _find_dotenv(start: Path | None = None) -> Path | None:
+    """Find the nearest ``.env``, walking up from ``start`` to the repo root."""
+    current = (start or Path.cwd()).resolve()
+    for directory in (current, *current.parents):
+        candidate = directory / ".env"
+        if candidate.is_file():
+            return candidate
+        if (directory / ".git").exists():
+            break
+    return None
+
+
+def _load_dotenv(path: str | Path | None = None) -> None:
+    """Load the nearest ``.env``; exported environment variables win."""
+    env_path = Path(path) if path is not None else _find_dotenv()
+    if env_path is None:
+        return
     try:
-        with open(path) as f:
+        with env_path.open() as f:
             for line in f:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -269,7 +285,8 @@ def main(web: bool = False, out: Path | None = None) -> None:
     )
 
     logger.info(
-        "benchmark started  days=%d  init_fund=%.0f  fee=%.4f  tickers=%s",
+        "benchmark started  timeframe=%s  days=%d  init_fund=%.0f  fee=%.4f  tickers=%s",
+        cfg.kucoin_timeframe,
         cfg.benchmark_days,
         cfg.benchmark_init_fund,
         cfg.benchmark_fee_rate,
@@ -296,14 +313,25 @@ def main(web: bool = False, out: Path | None = None) -> None:
     )
     min_len = warmup + 2
 
+    # Ask for the warm-up plus the full replay window, with a small buffer.
+    fetch_limit = warmup + cfg.benchmark_days + 10
+    if fetch_limit > MAX_KLINES:
+        logger.warning(
+            "requested %d candles; KuCoin returns at most %d",
+            fetch_limit,
+            MAX_KLINES,
+        )
+        fetch_limit = MAX_KLINES
+
     for ticker in cfg.benchmark_tickers:
         symbol = ticker.replace("/", "-")
-        logger.info("fetching %s klines...", symbol)
+        logger.info("fetching %s klines (%d candles)...", symbol, fetch_limit)
         try:
             df = fetch_klines(
                 symbol,
                 timeframe=cfg.kucoin_timeframe,
                 base_url=cfg.kuCoin_base_url,
+                limit=fetch_limit,
             )
         except KuCoinFetchError as e:
             logger.error("  skip %s - fetch error: %s", symbol, e)

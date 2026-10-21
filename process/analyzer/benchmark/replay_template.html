@@ -152,14 +152,20 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     return dim.l + (clamped / (n - 1)) * (dim.w - dim.l - dim.r);
   }
 
-  function priceDomain(t) {
+  function priceDomain(t, upTo) {
     let lo = Infinity, hi = -Infinity;
     for (const c of t.candles) { lo = Math.min(lo, c.l); hi = Math.max(hi, c.h); }
     for (const tr of t.trades) {
-      lo = Math.min(lo, tr.entry, tr.exit, tr.tp, tr.sl);
-      hi = Math.max(hi, tr.entry, tr.exit, tr.tp, tr.sl);
+      if (rel(tr.entry_i) > upTo) continue;
+      lo = Math.min(lo, tr.entry, tr.tp, tr.sl);
+      hi = Math.max(hi, tr.entry, tr.tp, tr.sl);
+      if (rel(tr.exit_i) <= upTo) {
+        lo = Math.min(lo, tr.exit);
+        hi = Math.max(hi, tr.exit);
+      }
     }
     for (const p of t.open_positions) {
+      if (rel(p.entry_i) > upTo) continue;
       lo = Math.min(lo, p.entry, p.tp, p.sl);
       hi = Math.max(hi, p.entry, p.tp, p.sl);
     }
@@ -195,7 +201,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       svg.innerHTML = `<text x="500" y="210" text-anchor="middle" fill="#64748b" font-size="16">No tickers were replayed.</text>`;
       return;
     }
-    const n = count(), d = priceDomain(t), upTo = state.step;
+    const n = count(), upTo = state.step, d = priceDomain(t, upTo);
     const cw = Math.max(2, Math.min(9, ((PRICE.w - PRICE.l - PRICE.r) / Math.max(1, n)) * 0.6));
     let s = "";
 
@@ -230,8 +236,8 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       if (eRel < 0 || eRel > upTo) continue;
       for (const [level, color, label] of [[p.tp, "#1dcd9f", "TP"], [p.sl, "#ff4d4d", "SL"]]) {
         const y = yFor(level, d, PRICE);
-        s += `<line x1="${xFor(eRel, PRICE)}" y1="${y}" x2="${PRICE.w - PRICE.r}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="4 4" opacity="0.7"/>`;
-        s += `<text x="${PRICE.w - PRICE.r + 4}" y="${y + 4}" fill="${color}" font-size="9">${label}</text>`;
+        s += `<line x1="${xFor(eRel, PRICE)}" y1="${y}" x2="${xFor(upTo, PRICE)}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="4 4" opacity="0.7"/>`;
+        s += `<text x="${xFor(upTo, PRICE) + 4}" y="${y + 4}" fill="${color}" font-size="9">${label}</text>`;
       }
     }
 

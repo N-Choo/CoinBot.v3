@@ -1,4 +1,5 @@
 import logging
+import os
 
 import numpy as np
 import pandas as pd
@@ -196,7 +197,13 @@ def test_main_web_writes_report(monkeypatch, tmp_path):
         {"Open": close, "High": close + 2, "Low": close - 2, "Close": close}
     )
 
-    monkeypatch.setattr(bm, "fetch_klines", lambda symbol, **kwargs: frame)
+    captured = {}
+
+    def fetch(symbol, **kwargs):
+        captured.update(kwargs)
+        return frame
+
+    monkeypatch.setattr(bm, "fetch_klines", fetch)
     monkeypatch.setattr(bm, "generate_signals", lambda *a, **k: [])
 
     out = tmp_path / "replay.html"
@@ -207,6 +214,7 @@ def test_main_web_writes_report(monkeypatch, tmp_path):
     assert html.startswith("<!DOCTYPE html>")
     assert "TEST-USDT" in html
     assert "replay-data" in html
+    assert captured["limit"] == 61
 
 
 def test_main_web_reports_all_failures(monkeypatch, tmp_path):
@@ -269,3 +277,49 @@ def test_parse_args_rejects_out_without_web(capsys):
         _parse_args(["--out", "replay.html"])
 
     assert "--out requires --web" in capsys.readouterr().err
+
+
+def test_load_dotenv_finds_parent_file(tmp_path, monkeypatch):
+    from analyzer.benchmark.main import _load_dotenv
+
+    root = tmp_path
+    child = root / "process"
+    child.mkdir()
+    (root / ".env").write_text("BENCHMARK_DAYS=111\n", encoding="utf-8")
+
+    monkeypatch.delenv("BENCHMARK_DAYS", raising=False)
+    monkeypatch.chdir(child)
+
+    _load_dotenv()
+
+    assert os.environ["BENCHMARK_DAYS"] == "111"
+
+
+def test_load_dotenv_prefers_nearest_file(tmp_path, monkeypatch):
+    from analyzer.benchmark.main import _load_dotenv
+
+    root = tmp_path
+    child = root / "process"
+    child.mkdir()
+    (root / ".env").write_text("BENCHMARK_DAYS=111\n", encoding="utf-8")
+    (child / ".env").write_text("BENCHMARK_DAYS=222\n", encoding="utf-8")
+
+    monkeypatch.delenv("BENCHMARK_DAYS", raising=False)
+    monkeypatch.chdir(child)
+
+    _load_dotenv()
+
+    assert os.environ["BENCHMARK_DAYS"] == "222"
+
+
+def test_load_dotenv_keeps_existing_environment(tmp_path, monkeypatch):
+    from analyzer.benchmark.main import _load_dotenv
+
+    (tmp_path / ".env").write_text("BENCHMARK_DAYS=111\n", encoding="utf-8")
+
+    monkeypatch.setenv("BENCHMARK_DAYS", "999")
+    monkeypatch.chdir(tmp_path)
+
+    _load_dotenv()
+
+    assert os.environ["BENCHMARK_DAYS"] == "999"

@@ -212,8 +212,9 @@ muted text `#64748b` / `#94a3b8`.
 - SMA line up to `step`.
 - Entry marker: up triangle below the candle (buy) / above (sell), colored by side.
 - Exit marker: `×` at the exit candle, colored by TP/SL outcome.
-- TP/SL: dashed horizontal lines from entry candle to exit candle (or right edge while
-  open), color-coded; label `TP` / `SL`.
+- TP/SL: dashed horizontal lines from the entry candle to the current replay candle
+  while the position is open; once it closes, they end at the exit candle. They never
+  extend into unrevealed future candles. Color-coded; label `TP` / `SL`.
 - Crosshair + tooltip on hover/focus (date, O/H/L/C).
 - Current candle outlined.
 

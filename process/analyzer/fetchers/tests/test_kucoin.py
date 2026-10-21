@@ -3,6 +3,7 @@ from unittest import mock
 from datetime import datetime
 
 import pandas as pd
+import pytest
 from analyzer.fetchers.kucoin import (
     fetch_klines,
     KuCoinFetchError,
@@ -79,3 +80,49 @@ def test_fetch_klines_raises_on_http_error():
             assert False, "Expected KuCoinFetchError"
         except KuCoinFetchError:
             pass
+
+
+def test_fetch_klines_limit_requests_history_window():
+    response = {
+        "code": "200000",
+        "data": [
+            ["1720000000", "100.0", "102.0", "101.0", "99.0", "105.0", "1500.0"]
+        ],
+    }
+
+    with mock.patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = response
+
+        fetch_klines("BTC-USDT", "1hour", limit=330)
+
+    params = mock_get.call_args.kwargs["params"]
+    assert params["type"] == "1hour"
+    assert params["symbol"] == "BTC-USDT"
+    assert "startAt" in params
+    assert "endAt" in params
+    assert int(params["endAt"]) - int(params["startAt"]) >= 330 * 3600
+
+
+def test_fetch_klines_without_limit_keeps_default_window():
+    response = {
+        "code": "200000",
+        "data": [
+            ["1720000000", "100.0", "102.0", "101.0", "99.0", "105.0", "1500.0"]
+        ],
+    }
+
+    with mock.patch("requests.get") as mock_get:
+        mock_get.return_value.status_code = 200
+        mock_get.return_value.json.return_value = response
+
+        fetch_klines("BTC-USDT", "1hour")
+
+    params = mock_get.call_args.kwargs["params"]
+    assert "startAt" not in params
+    assert "endAt" not in params
+
+
+def test_fetch_klines_unknown_timeframe_with_limit_raises():
+    with pytest.raises(ValueError, match="Unknown timeframe"):
+        fetch_klines("BTC-USDT", "2min", limit=10)
