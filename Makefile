@@ -1,6 +1,6 @@
-PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
+PACKAGES = api-gateway share deposit trade-engine strategy-analyzer analyzer-rs
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset analyzer-rs-check analyzer-rs-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -13,6 +13,8 @@ help:
 	@echo "  make analyzer-test  Python analyzer unit tests only"
 	@echo "  make benchmark-test  Benchmark unit tests only"
 	@echo "  make frontend-test  Frontend tests only"
+	@echo "  make analyzer-rs-check  Rust analyzer core: fmt + clippy + tests"
+	@echo "  make analyzer-rs-test   Rust analyzer tests only"
 	@echo ""
 	@echo "Trading"
 	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
@@ -76,6 +78,17 @@ test:
 
 analyzer-test:
 	@cd process/analyzer && python3 -m pytest . -v
+
+analyzer-rs-check:
+	cargo fmt -p analyzer-rs -- --check
+	cargo clippy -p analyzer-rs --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer-rs --features grpc --all-targets --no-deps -- -D warnings
+	cargo test -p analyzer-rs
+	cargo test -p analyzer-rs --features grpc
+
+analyzer-rs-test:
+	cargo test -p analyzer-rs
+	cargo test -p analyzer-rs --features grpc
 
 benchmark-test:
 	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v

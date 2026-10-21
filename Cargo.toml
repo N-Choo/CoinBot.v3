@@ -5,6 +5,7 @@ members = [
     "lib/share",
     "process/deposit-worker", "process/trade-engine",
     "process/strategy-analyzer",
+    "process/analyzer-rs",
 ]
 # The forked kucoin crate lives here as its own repo/workspace; keep cargo from
 # treating it as a member of this workspace.

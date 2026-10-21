@@ -40,6 +40,7 @@ def _parse_kline_response(raw: dict) -> pd.DataFrame:
     for entry in data:
         rows.append(
             {
+                "open_time_ms": int(entry[0]) * 1000,
                 "Timestamp": datetime.fromtimestamp(int(entry[0])),
                 "Open": float(entry[1]),
                 "Close": float(entry[2]),
@@ -77,7 +78,8 @@ def fetch_klines(
             sent and at most :data:`MAX_KLINES` candles are requested.
 
     Returns:
-        DataFrame with columns: Timestamp, Open, Close, High, Low, Volume
+        DataFrame with columns: open_time_ms, Timestamp, Open, Close, High, Low,
+        Volume
 
     Raises:
         KuCoinFetchError: on HTTP errors or API error responses

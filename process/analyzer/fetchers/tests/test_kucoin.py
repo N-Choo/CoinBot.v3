@@ -24,6 +24,7 @@ def test_parse_kline_response_converts_fields():
     df = _parse_kline_response(raw)
 
     assert len(df) == 2
+    assert df["open_time_ms"].tolist() == [1720000000000, 1720000001000]
     assert df.iloc[0]["Open"] == 100.5
     assert df.iloc[0]["High"] == 101.0
     assert df.iloc[0]["Low"] == 99.0
@@ -51,7 +52,7 @@ def test_fetch_klines_returns_dataframe():
 
     assert len(df) == 2
     assert list(df.columns) == [
-        "Timestamp", "Open", "Close", "High", "Low", "Volume"
+        "open_time_ms", "Timestamp", "Open", "Close", "High", "Low", "Volume"
     ]
 
 
