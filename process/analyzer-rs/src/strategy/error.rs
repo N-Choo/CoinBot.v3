@@ -14,6 +14,8 @@ pub enum Error {
     OutOfOrderCandle { got_ms: i64, last_ms: i64 },
     #[error("window too short: need {need}, got {got}")]
     WindowTooShort { need: usize, got: usize },
+    #[error("window capacity must be at least 1")]
+    InvalidWindowCapacity,
 }
 
 pub type Result<T> = std::result::Result<T, Error>;
