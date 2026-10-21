@@ -24,6 +24,13 @@ pub fn load_dotenv() {
     }
 }
 
+pub fn env_string(key: &'static str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+}
+
 pub fn strategy_from_env() -> Result<Config, ConfigEnvError> {
     let mut cfg = Config::default();
     cfg.rsi_period = parse("RSI_PERIOD", cfg.rsi_period)?;
@@ -70,24 +77,49 @@ pub fn parse_optional_usize_str(
 }
 
 fn parse<T: FromStr>(key: &'static str, default: T) -> Result<T, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => value
+    match env_string(key) {
+        Some(value) => value
             .parse()
             .map_err(|_| ConfigEnvError::Invalid(key, value)),
-        Err(_) => Ok(default),
+        None => Ok(default),
     }
 }
 
 fn parse_decimal(key: &'static str, default: Decimal) -> Result<Decimal, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => parse_decimal_str(key, &value),
-        Err(_) => Ok(default),
+    match env_string(key) {
+        Some(value) => parse_decimal_str(key, &value),
+        None => Ok(default),
     }
 }
 
 fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => parse_bool_str(key, &value),
-        Err(_) => Ok(default),
+    match env_string(key) {
+        Some(value) => parse_bool_str(key, &value),
+        None => Ok(default),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decimal_values_are_trimmed() {
+        assert_eq!(
+            parse_decimal_str("X", " 1.5 ").unwrap(),
+            Decimal::new(15, 1)
+        );
+    }
+
+    #[test]
+    fn booleans_are_case_and_space_insensitive() {
+        assert!(parse_bool_str("X", " ON ").unwrap());
+        assert!(!parse_bool_str("X", " Off ").unwrap());
+    }
+
+    #[test]
+    fn empty_optional_is_none() {
+        assert_eq!(parse_optional_usize_str("X", "  ").unwrap(), None);
+        assert_eq!(parse_optional_usize_str("X", " 7 ").unwrap(), Some(7));
     }
 }
