@@ -2,6 +2,8 @@ pub mod config_env;
 pub mod driver;
 #[cfg(feature = "exchange")]
 pub mod exchange;
+#[cfg(feature = "harness")]
+pub mod harness;
 pub mod identity;
 #[cfg(feature = "live")]
 pub mod live;
