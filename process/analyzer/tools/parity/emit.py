@@ -72,11 +72,13 @@ def main() -> None:
 
     raw = Path(args.data).read_bytes()
     frame = pd.read_csv(args.data)
-    if "Timestamp" in frame.columns:
+    if "open_time_ms" in frame.columns:
+        open_ms = [int(value) for value in frame["open_time_ms"]]
+    elif "Timestamp" in frame.columns:
         frame["Timestamp"] = pd.to_datetime(frame["Timestamp"])
         open_ms = [int(value.timestamp() * 1000) for value in frame["Timestamp"]]
     else:
-        open_ms = [int(value) for value in frame["open_time_ms"]]
+        raise KeyError("CSV needs open_time_ms or Timestamp")
 
     frame = frame.rename(
         columns={
