@@ -1,9 +1,8 @@
-use analyzer_rs::live::config::LiveConfig;
+use analyzer_rs::live::config::{strategy_from_env, LiveConfig};
 use analyzer_rs::live::grpc::{config_version, run_publisher, signal_ttl_ms, EngineClient};
 use analyzer_rs::live::sink::Sink;
 use analyzer_rs::live::supervisor::run_supervisor;
 use analyzer_rs::live::symbol_task::run_symbol_once;
-use analyzer_rs::strategy::config::Config;
 use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
@@ -28,11 +27,9 @@ async fn shutdown_signal() -> std::io::Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    analyzer_rs::live::config::load_dotenv();
     let cfg = LiveConfig::from_env()?;
-    let strategy = Config {
-        window: cfg.window,
-        ..Config::default()
-    };
+    let strategy = strategy_from_env()?;
     cfg.validate_strategy(&strategy)?;
     strategy.validate()?;
     let mut client = EngineClient::connect(&cfg.endpoint)?;

@@ -31,16 +31,20 @@ warms a rolling window, recomputes `signals()` on every newly closed candle, and
 new signal once via `Publish`. Each signal gets exactly one publish attempt; nothing is resent
 after a restart.
 
+The same crate-local `.env` holds both strategy and live settings. It is loaded from the current
+directory first, then from `process/analyzer-rs/.env` for `cargo run`. The file is gitignored, so
+start from the checked-in example:
+
 ```bash
-GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
-LIVE_SYMBOLS=BTC-USDT,ETH-USDT \
-KUCOIN_TIMEFRAME=15min \
-ANALYZER_WINDOW_CANDLES=100 \
+cp process/analyzer-rs/.env.example process/analyzer-rs/.env
+# edit .env
 cargo run -p analyzer-rs --features grpc --bin analyzer-serve
 ```
 
-`LIVE_SYMBOLS` is only a fallback: it is used when the engine returns an empty active-symbol set.
-`ANALYZER_ACTIVATION_POLL_MS` controls how often activation is refreshed (default 30000).
+Existing process environment variables still take precedence over `.env` values. `LIVE_SYMBOLS`
+is only a fallback: it is used when the engine returns an empty active-symbol set (or when the
+engine is unreachable and no symbol tasks are running). `ANALYZER_ACTIVATION_POLL_MS` controls how
+often activation is refreshed (default 30000).
 
 `ANALYZER_ONCE=1` runs one closed-candle scan per symbol using the engine's active symbols (or
 `LIVE_SYMBOLS` as the fallback), logs the signals, and exits:

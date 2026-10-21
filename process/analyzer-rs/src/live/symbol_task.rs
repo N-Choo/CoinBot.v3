@@ -74,7 +74,8 @@ pub async fn warm_driver(
     }
     closed.sort_by_key(|c| c.open_time_ms);
     let cutoff = closed.len() - cfg.window;
-    let mut driver = CandleDriver::new(symbol, strategy.clone());
+    let mut driver =
+        CandleDriver::new(symbol, strategy.clone()).with_max_age(cfg.max_divergence_age_candles);
     let warm_sink = Sink::Collect(Default::default());
     process_batch(&mut driver, &closed[cutoff..], &warm_sink)?;
     let cursor = closed.last().map(|c| c.open_time_ms).unwrap_or(0);
@@ -160,7 +161,8 @@ pub async fn run_symbol_once(
         });
     }
     closed.sort_by_key(|c| c.open_time_ms);
-    let mut driver = CandleDriver::new(symbol, strategy.clone());
+    let mut driver =
+        CandleDriver::new(symbol, strategy.clone()).with_max_age(cfg.max_divergence_age_candles);
     process_batch(
         &mut driver,
         &closed[..cfg.window],
