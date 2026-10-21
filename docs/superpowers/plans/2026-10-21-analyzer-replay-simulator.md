@@ -97,6 +97,16 @@ fn signal_id_is_stable_and_kind_sensitive() {
     other.divergence_kind = DivergenceKind::HiddenBullish;
     assert_ne!(id, signal_id(&other, &version));
 }
+
+#[test]
+fn signal_id_golden() {
+    let signal = sample();
+    let version = config_version(&Config::default());
+    assert_eq!(
+        signal_id(&signal, &version),
+        "v1:fc81233b2919db8993f593457a464db67d026bb46c136ad3876daeee10673be3"
+    );
+}
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -1063,7 +1073,7 @@ fn replay_matches_the_driver_and_uses_live_identity() {
         0,
     )
     .unwrap();
-    let replay = build_replay(&dataset, &cfg).unwrap();
+    let replay = build_replay(&dataset, &cfg, None).unwrap();
 
     // Same warm-up and emitted sequence as a direct driver run.
     let mut driver = CandleDriver::new("SYNTH-USDT", cfg.clone());
@@ -1100,6 +1110,11 @@ fn replay_matches_the_driver_and_uses_live_identity() {
 }
 ```
 
+The implemented test goes further: it compares the full driver event sequence (including
+`(candle_index, kind)` and suppression reasons) and the full signal sequence to the replay,
+asserts the warm-up index is `window - 1`, and adds an age-cap case that expects a
+`too_old` suppression.
+
 - [ ] **Step 2: Run it to verify it fails**
 
 ```bash
@@ -1114,10 +1129,10 @@ Expected: compile error (`replay` missing).
 
 ```rust
 use crate::driver::{CandleDriver, DriverEvent, SuppressReason};
-use crate::harness::dataset::Dataset;
+use crate::harness::dataset::{Dataset, Provenance};
 use crate::identity::{config_version, signal_id};
 use crate::strategy::config::Config;
-use crate::strategy::error::Result as StrategyResult;
+use crate::strategy::error::{Error as StrategyError, Result as StrategyResult};
 use crate::strategy::indicators::rsi::rsi;
 use crate::strategy::indicators::sma::sma;
 use crate::strategy::types::{Candle, Signal};
@@ -1148,7 +1163,7 @@ pub struct Replay {
     pub sma: Vec<Option<Decimal>>,
     pub events: Vec<ReplayEvent>,
     pub signals: Vec<ReplaySignal>,
-    pub provenance: crate::harness::dataset::Provenance,
+    pub provenance: Provenance,
 }
 
 fn suppress_reason(reason: SuppressReason) -> &'static str {
@@ -1159,9 +1174,20 @@ fn suppress_reason(reason: SuppressReason) -> &'static str {
     }
 }
 
-pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
+pub fn build_replay(
+    dataset: &Dataset,
+    cfg: &Config,
+    max_age_candles: Option<usize>,
+) -> StrategyResult<Replay> {
+    cfg.validate()?;
+    if dataset.candles.len() < cfg.window + 2 {
+        return Err(StrategyError::ConfigInvalid(
+            "dataset shorter than window".into(),
+        ));
+    }
+
     let window = cfg.window;
-    let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone());
+    let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone()).with_max_age(max_age_candles);
     let mut events = Vec::new();
     let mut signals = Vec::new();
     let version = config_version(cfg);
@@ -1194,10 +1220,20 @@ pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
     }
 
     let closes: Vec<Option<Decimal>> = dataset.candles.iter().map(|c| Some(c.close)).collect();
-    let rsi_values = rsi(&closes, cfg.rsi_period)?;
+    let rsi_values = (0..closes.len())
+        .map(|index| {
+            if index + 1 < window {
+                return Ok(None);
+            }
+            let window_closes = &closes[index + 1 - window..=index];
+            let values = rsi(window_closes, cfg.rsi_period)?;
+            Ok(values.last().copied().flatten())
+        })
+        .collect::<StrategyResult<Vec<Option<Decimal>>>>()?;
+    // SMA is time-invariant once its period is covered, so the full-series computation
+    // matches what any rolling window would show.
     let sma_values = sma(&closes, cfg.sma_period)?;
 
-    let _ = window;
     Ok(Replay {
         symbol: dataset.symbol.clone(),
         candles: dataset.candles.clone(),
@@ -1784,7 +1820,7 @@ fn payload_has_one_tab_per_symbol_and_is_self_contained() {
 ```
 
 The full test is completed after the implementation, because it needs a real replay and sim. The implementer should extend it to:
-- run `load_csv` + `build_replay` + `simulate` + `summarize` for the synthetic fixture,
+- run `load_csv` + `build_replay(&dataset, &cfg, None)` + `simulate` + `summarize` for the synthetic fixture,
 - call `build_payload`,
 - assert `symbols[0].provenance.content_sha256` is 64 hex chars,
 - assert `symbols[0].summary.returns_label` contains "gross simulated",
@@ -2054,7 +2090,7 @@ required-features = ["harness"]
 `src/bin/analyzer-replay.rs`:
 
 ```rust
-use analyzer_rs::config_env::{load_dotenv, strategy_from_env};
+use analyzer_rs::config_env::{load_dotenv, parse_optional_usize_str, strategy_from_env};
 use analyzer_rs::exchange::timeframes::Timeframe;
 use analyzer_rs::harness::dataset::{fetch_dataset, load_csv, Dataset};
 use analyzer_rs::harness::replay::build_replay;
@@ -2106,6 +2142,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let as_of = cli.as_of.unwrap_or(i64::MAX);
     let base_url = std::env::var("KUCOIN_BASE_URL")
         .unwrap_or_else(|_| "https://api.kucoin.com".into());
+    let max_age_candles = match std::env::var("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
+        Ok(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
+        Err(_) => None,
+    };
 
     let symbols = if cli.symbols.is_empty() {
         std::env::var("BENCHMARK_TICKERS")
@@ -2161,7 +2201,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let replay = build_replay(&dataset, &strategy)?;
+        let replay = build_replay(&dataset, &strategy, max_age_candles)?;
         let sim_signals: Vec<SimSignal> = replay
             .signals
             .iter()

@@ -43,3 +43,13 @@ fn signal_id_is_stable_and_kind_sensitive() {
     other.divergence_kind = DivergenceKind::HiddenBullish;
     assert_ne!(id, signal_id(&other, &version));
 }
+
+#[test]
+fn signal_id_golden() {
+    let signal = sample();
+    let version = config_version(&Config::default());
+    assert_eq!(
+        signal_id(&signal, &version),
+        "v1:fc81233b2919db8993f593457a464db67d026bb46c136ad3876daeee10673be3"
+    );
+}
