@@ -2,6 +2,13 @@ use rust_decimal::Decimal;
 
 /// A `Decimal`/`Option` port of `scipy.signal.find_peaks(values, distance=distance)`.
 /// `None` behaves like NaN: it never forms a peak and never blocks one.
+///
+/// It matches scipy exactly when peak priorities (heights) are distinct. For equal-priority
+/// peaks, scipy processes them in the order produced by numpy's unstable `argsort`, which is an
+/// implementation detail rather than part of scipy's API contract; this port instead uses a
+/// deterministic descending-priority / descending-index tie-break. Real KuCoin data (12
+/// symbol/timeframe datasets checked) produced no equal-priority peak pairs within `distance`, so
+/// fixtures are unaffected by that difference.
 pub fn find_peaks(values: &[Option<Decimal>], distance: usize) -> Vec<usize> {
     let peaks = local_maxima(values);
     if distance <= 1 {
@@ -113,5 +120,17 @@ mod tests {
     fn equal_height_ties_keep_the_later_peak() {
         assert_eq!(find_peaks(&vals(&[0, 3, 0, 0, 3, 0]), 4), vec![4]);
         assert_eq!(find_peaks(&vals(&[0, 3, 0, 0, 0, 3, 0]), 5), vec![5]);
+    }
+
+    #[test]
+    fn equal_priority_tie_break_is_deterministic() {
+        // scipy's unstable `argsort` processes these equal-height peaks in a different order and
+        // returns [3, 11]; this port's descending-index tie-break keeps peak 6 and returns [6, 11].
+        let first = [0, 0, 4, 5, 4, 1, 5, 2, 1, 3, 0, 6, 0, 4, 1];
+        assert_eq!(find_peaks(&vals(&first), 4), vec![6, 11]);
+
+        // Likewise scipy returns [2, 9] here; the deterministic tie-break yields [5, 12].
+        let second = [0, 2, 3, 1, 1, 3, 2, 0, 0, 2, 1, 0, 2, 0];
+        assert_eq!(find_peaks(&vals(&second), 4), vec![5, 12]);
     }
 }
