@@ -335,7 +335,7 @@ The report labels results **gross simulated performance, excluding trading costs
         "init_fund": "1000", "available_fund": "516.90", "reserved": "500",
         "realized_pnl": "16.90", "unrealized_pnl": "-4.10", "equity": "1012.80",
         "gross_realized_pnl": "16.90", "profit_factor": "2.10",
-        "max_drawdown": "-8.40", "max_drawdown_pct": "-0.84",
+        "max_drawdown": "8.40", "max_drawdown_pct": "0.84",
         "trades": 3, "wins": 2, "losses": 1, "breakeven": 0, "win_rate": "66.7",
         "avg_win": "12.10", "avg_loss": "-7.30",
         "exposure_candles": 41, "time_in_market_pct": "8.2",

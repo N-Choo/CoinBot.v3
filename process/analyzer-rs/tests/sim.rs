@@ -267,3 +267,57 @@ fn summary_reports_exact_risk_and_exposure_metrics() {
     assert_eq!(summary.max_drawdown_pct, d(10));
     assert_eq!(summary.exposure_candles, 2);
 }
+
+#[test]
+fn exposure_counts_open_positions_from_last_index() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 111, 99, 110), // first trade hits TP 110
+        candle(3, 100, 101, 99, 100),
+    ];
+    // Signal at 0 enters at 1 and exits at 2 (duration 1); the signal at 1 opens at 2
+    // and is still open at last_index 3 (duration 1).
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 90, 110),
+            signal(1, Direction::Long, 100, 90, 120),
+        ],
+        1000,
+        0,
+    );
+    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(100), 3, 4);
+    // Closed 1->2 = 1 candle, open 2->3 = 1.
+    assert_eq!(summary.exposure_candles, 2);
+}
+
+#[test]
+fn max_drawdown_percentage_uses_the_peak_at_the_worst_drop() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 151, 99, 150), // win +250, peak 1250
+        candle(2, 100, 101, 89, 90),  // loss -50, drop 50 from 1250
+        candle(3, 100, 161, 99, 160), // win +300, later peak 1500
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 90, 150),
+            signal(1, Direction::Long, 100, 90, 160),
+            signal(2, Direction::Long, 100, 90, 160),
+        ],
+        1000,
+        0,
+    );
+    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(160), 3, 4);
+    // The worst drop is 50 from the first peak (1250), so the percentage is 4%; using
+    // the later peak (1500) would incorrectly report 3.33%.
+    assert_eq!(summary.trades, 3);
+    assert_eq!(summary.wins, 2);
+    assert_eq!(summary.losses, 1);
+    assert_eq!(summary.max_drawdown, d(50));
+    assert_eq!(summary.max_drawdown_pct, d(4));
+}

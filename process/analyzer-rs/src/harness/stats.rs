@@ -67,6 +67,7 @@ pub fn summarize(
         gross_loss / Decimal::from(losses.len())
     };
 
+    // max_dd_pct is measured from the peak at the largest absolute drop; ties keep the first peak.
     let mut equity = init_fund;
     let mut peak = init_fund;
     let mut max_dd = Decimal::ZERO;
