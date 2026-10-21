@@ -85,12 +85,16 @@ analyzer-rs-check:
 	cargo fmt -p analyzer-rs -- --check
 	cargo clippy -p analyzer-rs --all-targets --no-deps -- -D warnings
 	cargo clippy -p analyzer-rs --features grpc --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings
 	cargo test -p analyzer-rs
 	cargo test -p analyzer-rs --features grpc
+	cargo test -p analyzer-rs --features harness
 
 analyzer-rs-test:
+	cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings
 	cargo test -p analyzer-rs
 	cargo test -p analyzer-rs --features grpc
+	cargo test -p analyzer-rs --features harness
 
 analyzer-replay:
 	cargo run -p analyzer-rs --features harness --bin analyzer-replay -- $(ARGS)

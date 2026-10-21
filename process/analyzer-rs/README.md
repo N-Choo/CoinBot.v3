@@ -80,10 +80,12 @@ Options:
 - `--symbol SYMBOL` (repeatable) selects symbols explicitly. When omitted, the symbols from the
   `--data` entries are used; if there are none, `BENCHMARK_TICKERS` is used.
 - `--data SYMBOL=path` loads a CSV instead of calling KuCoin. Paths are resolved from the current
-  working directory.
+  working directory; entries are trimmed and deduplicated by symbol.
 - `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `15min`.
-- `--limit` (default 500) is appended to the strategy warmup window when fetching.
-- `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`.
+- `--limit` (default 500) is the fetch request size. Offline `--data` replays every closed row
+  (it is not capped by `--limit`); `provenance.effective_range` reports the actual count.
+- `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`. It must be `> 0`; an invalid
+  `BENCHMARK_INIT_FUND` is an error rather than a silent default.
 - `--as-of` is the reference time in milliseconds. It defaults to now, so only closed candles are
   replayed; pass a fixed timestamp for deterministic runs.
 - `--generated-at` overrides the report timestamp.
