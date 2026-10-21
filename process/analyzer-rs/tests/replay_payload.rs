@@ -6,6 +6,7 @@ use analyzer_rs::harness::dataset::{load_csv, Dataset};
 use analyzer_rs::harness::replay::{build_replay, ReplayEvent};
 use analyzer_rs::identity::{config_version, signal_id};
 use analyzer_rs::strategy::config::Config;
+use analyzer_rs::strategy::indicators::rsi::rsi;
 use analyzer_rs::strategy::types::Signal;
 
 fn fixture(name: &str) -> std::path::PathBuf {
@@ -158,6 +159,24 @@ fn replay_matches_the_driver_and_uses_live_identity() {
 }
 
 #[test]
+fn replay_rsi_matches_the_rolling_window() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let replay = build_replay(&dataset, &cfg, None).unwrap();
+    let closes: Vec<Option<rust_decimal::Decimal>> =
+        dataset.candles.iter().map(|c| Some(c.close)).collect();
+    assert!(replay.rsi[..cfg.window - 1].iter().all(Option::is_none));
+    for i in (cfg.window - 1)..closes.len() {
+        let expected = rsi(&closes[i + 1 - cfg.window..=i], cfg.rsi_period)
+            .unwrap()
+            .last()
+            .copied()
+            .flatten();
+        assert_eq!(replay.rsi[i], expected, "rsi at {i}");
+    }
+}
+
+#[test]
 fn age_cap_suppresses_old_divergences() {
     let cfg = Config::default();
     let dataset = load_synthetic();
@@ -173,7 +192,15 @@ fn age_cap_suppresses_old_divergences() {
         "fixture must emit a divergence older than zero candles"
     );
 
-    let replay = build_replay(&dataset, &cfg, Some(youngest - 1)).unwrap();
+    let cap = youngest - 1;
+    let replay = build_replay(&dataset, &cfg, Some(cap)).unwrap();
+    assert!(
+        replay
+            .signals
+            .iter()
+            .all(|signal| signal.signal.divergence_age_candles <= cap),
+        "every emitted signal must respect the age cap"
+    );
     assert!(
         replay.events.iter().any(|event| matches!(
             event,
@@ -182,4 +209,26 @@ fn age_cap_suppresses_old_divergences() {
         "expected a too_old suppression, got events: {:?}",
         replay.events
     );
+}
+
+#[test]
+fn build_replay_rejects_a_short_dataset() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let short = Dataset {
+        symbol: dataset.symbol.clone(),
+        candles: dataset.candles[..cfg.window + 1].to_vec(),
+        provenance: dataset.provenance.clone(),
+    };
+    assert!(build_replay(&short, &cfg, None).is_err());
+}
+
+#[test]
+fn build_replay_rejects_an_invalid_config() {
+    let dataset = load_synthetic();
+    let cfg = Config {
+        window: 7,
+        ..Config::default()
+    };
+    assert!(build_replay(&dataset, &cfg, None).is_err());
 }

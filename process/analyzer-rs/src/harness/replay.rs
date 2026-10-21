@@ -56,10 +56,13 @@ pub fn build_replay(
     max_age_candles: Option<usize>,
 ) -> StrategyResult<Replay> {
     cfg.validate()?;
-    if dataset.candles.len() < cfg.window + 2 {
-        return Err(StrategyError::ConfigInvalid(
-            "dataset shorter than window".into(),
-        ));
+    let need = cfg.window.saturating_add(2);
+    if dataset.candles.len() < need {
+        return Err(StrategyError::ConfigInvalid(format!(
+            "dataset shorter than window: got {} need {}",
+            dataset.candles.len(),
+            need
+        )));
     }
 
     let window = cfg.window;
