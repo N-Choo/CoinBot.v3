@@ -1,3 +1,4 @@
+// Fixture fields are staged for the Task 13 signal parity test.
 #![allow(dead_code)]
 
 use analyzer_rs::strategy::config::{decimal_from_str, Config};
@@ -125,13 +126,15 @@ pub fn load_fixture(name: &str) -> Fixture {
     serde_json::from_str(&text).unwrap_or_else(|e| panic!("parse {}: {e}", path.display()))
 }
 
+/// Compare decimals with an exact-match fast path, then a relative tolerance:
+/// `|a - b| <= max(|a|, |b|, 1) * tolerance`.
 pub fn close_enough(actual: Decimal, expected: Decimal, tolerance: f64) -> bool {
     if actual == expected {
         return true;
     }
     let diff = (actual - expected).abs();
     let scale = actual.abs().max(expected.abs()).max(Decimal::ONE);
-    let tolerance = decimal_from_str(&format!("{tolerance:.9}")).unwrap();
+    let tolerance = decimal_from_str(&format!("{tolerance:e}")).unwrap();
     diff <= scale * tolerance
 }
 
@@ -143,10 +146,47 @@ pub fn assert_close(actual: Decimal, expected: &str, tolerance: f64) {
     );
 }
 
-pub fn assert_opt_close(actual: Option<Decimal>, expected: Option<&str>, tolerance: f64) {
+pub fn assert_opt_close_at(
+    actual: Option<Decimal>,
+    expected: Option<&str>,
+    tolerance: f64,
+    label: &str,
+) {
     match (actual, expected) {
         (None, None) => {}
-        (Some(a), Some(e)) => assert_close(a, e, tolerance),
-        (a, e) => panic!("got {a:?}, want {e:?}"),
+        (Some(a), Some(e)) => {
+            let expected = decimal_from_str(e).unwrap();
+            assert!(
+                close_enough(a, expected, tolerance),
+                "{label}: got {a}, want {expected}"
+            );
+        }
+        (a, e) => panic!("{label}: got {a:?}, want {e:?}"),
+    }
+}
+
+pub fn assert_opt_close(actual: Option<Decimal>, expected: Option<&str>, tolerance: f64) {
+    assert_opt_close_at(actual, expected, tolerance, "");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn close_enough_uses_exact_then_relative_tolerance() {
+        assert!(close_enough(Decimal::ZERO, Decimal::ZERO, 1e-9));
+        assert!(close_enough(Decimal::new(1, 9), Decimal::ZERO, 1e-9));
+        assert!(close_enough(
+            Decimal::ONE,
+            decimal_from_str("1.000000001").unwrap(),
+            1e-9
+        ));
+        assert_opt_close_at(Some(Decimal::ONE), Some("1"), 1e-9, "x");
+        assert!(close_enough(
+            decimal_from_str("1.0000000001").unwrap(),
+            Decimal::ONE,
+            1e-10
+        ));
     }
 }
