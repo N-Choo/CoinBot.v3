@@ -31,10 +31,12 @@ def test_render_report_embeds_parseable_json():
 
 
 def test_render_report_escapes_script_breakout():
-    bad = "</script><script>alert(1)</script>"
+    bad = "</script><script>alert(1)</script><b>x</b>"
     html = render_report({"x": bad})
     assert "</script><script>alert(1)" not in html
     assert "\\u003c/script>" in html
+    assert "\\u003cb>" in html
+    assert "<b>x</b>" not in html
     assert _embedded(html)["x"] == bad
 
 

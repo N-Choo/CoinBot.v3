@@ -23,6 +23,7 @@ def render_report(report: dict[str, Any]) -> str:
 def write_report(report: dict[str, Any], path: Path) -> Path:
     """Write the report, creating parent directories as needed."""
     path = Path(path)
+    html = render_report(report)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(render_report(report), encoding="utf-8")
+    path.write_text(html, encoding="utf-8")
     return path

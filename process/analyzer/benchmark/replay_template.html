@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Benchmark Replay</title>
 <style>
-:root{--bg:#0a0c0f;--panel:#0b0e11;--panel2:#0e131b;--line:#1e2530;--text:#e2e8f0;--muted:#94a3b8;--dim:#64748b;--up:#1dcd9f;--down:#ff4d4d;--accent:#ff5722;--sma:#f59e0b;--rsi:#a78bfa}
+:root{--bg:#0a0c0f;--panel:#0b0e11;--panel2:#0e131b;--line:#1e2530;--text:#e2e8f0;--muted:#94a3b8;--dim:#64748b;--up:#1dcd9f;--down:#ff4d4d;--accent:#ff5722}
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
 body{background:var(--bg);color:var(--text);font:13px/1.45 ui-sans-serif,system-ui,-apple-system,"Segoe UI",sans-serif;display:flex;flex-direction:column;min-height:100vh}
@@ -60,7 +60,6 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
 .counters{display:flex;justify-content:space-between;color:var(--dim);font-size:11px;margin-top:2px}
 .tools{display:flex;align-items:center;gap:8px;color:var(--muted);font-size:12px}
 .tooltip{position:absolute;z-index:4;pointer-events:none;background:rgba(10,12,15,.97);border:1px solid var(--line);border-radius:6px;padding:6px 8px;font-size:11px;color:var(--muted);white-space:nowrap}
-.empty{padding:60px 20px;text-align:center;color:var(--dim)}
 @media(max-width:700px){.hud{width:calc(100% - 24px)}.meta{display:none}}
 </style>
 </head>
@@ -224,11 +223,6 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
         s += `<line x1="${xFor(eRel, PRICE)}" y1="${y}" x2="${xFor(endRel, PRICE)}" y2="${y}" stroke="${color}" stroke-width="1" stroke-dasharray="4 4" opacity="0.7"/>`;
         s += `<text x="${xFor(endRel, PRICE) + 4}" y="${y + 4}" fill="${color}" font-size="9">${label}</text>`;
       }
-      if (xRel <= upTo) {
-        const y = yFor(tr.exit, d, PRICE);
-        const color = tr.reason === "TP" ? "#1dcd9f" : "#ff4d4d";
-        s += `<text x="${xFor(xRel, PRICE)}" y="${y + 4}" text-anchor="middle" fill="${color}" font-size="14" font-weight="700">\u00d7</text>`;
-      }
     }
 
     for (const p of t.open_positions) {
@@ -266,6 +260,12 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       s += tr.side === "buy"
         ? `<polygon points="${x},${y + 2} ${x - 5},${y + 10} ${x + 5},${y + 10}" fill="#1dcd9f"/>`
         : `<polygon points="${x},${y - 2} ${x - 5},${y - 10} ${x + 5},${y - 10}" fill="#ff4d4d"/>`;
+      const xRel = rel(tr.exit_i);
+      if (xRel <= upTo) {
+        const yExit = yFor(tr.exit, d, PRICE);
+        const color = tr.reason === "TP" ? "#1dcd9f" : "#ff4d4d";
+        s += `<text x="${xFor(xRel, PRICE)}" y="${yExit + 4}" text-anchor="middle" fill="${color}" font-size="14" font-weight="700">\u00d7</text>`;
+      }
     }
     for (const p of t.open_positions) {
       const eRel = rel(p.entry_i);
@@ -444,7 +444,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     state.playing = false;
     if (state.timer !== null) { clearTimeout(state.timer); state.timer = null; }
     const b = $("play-btn");
-    if (b) b.textContent = "\u25b5";
+    if (b) b.textContent = "\u25b7";
   }
 
   function schedule() {
@@ -555,6 +555,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
         if (Number.isFinite(r)) { stop(); setStep(r); }
         return;
       }
+      stop();
       dragging = true;
       track.setPointerCapture(e.pointerId);
       scrub(e.clientX);
@@ -566,7 +567,11 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     document.addEventListener("keydown", (e) => {
       const tag = (e.target && e.target.tagName) || "";
       if (["INPUT", "SELECT", "TEXTAREA"].includes(tag)) return;
-      if (e.code === "Space") { e.preventDefault(); state.playing ? stop() : play(); }
+      if (e.code === "Space") {
+        if (e.target && e.target.closest && e.target.closest("button")) return;
+        e.preventDefault();
+        state.playing ? stop() : play();
+      }
       else if (e.key === "ArrowLeft" && e.shiftKey) { e.preventDefault(); stop(); jumpTrade(-1); }
       else if (e.key === "ArrowRight" && e.shiftKey) { e.preventDefault(); stop(); jumpTrade(1); }
       else if (e.key === "ArrowLeft") { e.preventDefault(); stop(); setStep(state.step - 1); }
@@ -598,7 +603,7 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
     svg.addEventListener("mouseleave", () => {
       tip.hidden = true;
       state.hover = null;
-      renderPrice();
+      if (document.activeElement === svg) renderAll(); else renderPrice();
     });
     svg.addEventListener("focus", () => { renderAll(); });
     svg.addEventListener("blur", () => {
@@ -607,7 +612,6 @@ main{display:flex;flex-direction:column;flex:1;min-height:0}
       renderPrice();
     });
 
-    if (TICKERS.length) state.ti = 0;
     state.step = 0;
     renderAll();
   }
