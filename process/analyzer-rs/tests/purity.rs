@@ -38,7 +38,17 @@ fn scan_tokens(tokens: proc_macro2::TokenStream, hits: &mut Vec<String>) {
                 let s = lit.to_string();
                 // Parse the token as a `syn::Lit` so unsuffixed floats (`1.0`, `1e10`, `1.`) are
                 // caught too: text-suffix matching would miss them because they are still `f64`.
-                if matches!(syn::parse_str::<syn::Lit>(&s), Ok(syn::Lit::Float(_))) {
+                // `syn` lexes suffix-only literals like `1f64` as `Lit::Int` with a float suffix,
+                // so check that suffix separately.
+                let is_float = match syn::parse_str::<syn::Lit>(&s) {
+                    Ok(syn::Lit::Float(_)) => true,
+                    Ok(syn::Lit::Int(i)) => {
+                        i.suffix().eq_ignore_ascii_case("f32")
+                            || i.suffix().eq_ignore_ascii_case("f64")
+                    }
+                    _ => false,
+                };
+                if is_float {
                     hits.push(format!(
                         "float literal `{s}` at line {}",
                         lit.span().start().line
@@ -68,6 +78,7 @@ fn strategy_core_contains_no_float_tokens() {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("src/strategy");
     let mut files = Vec::new();
     rs_files(&root, &mut files);
+    files.sort();
     assert!(
         !files.is_empty(),
         "no strategy source files found under {root:?}"
@@ -125,11 +136,17 @@ fn f() -> u8 { let _x = 1.0f64; 0 }
 
 #[test]
 fn scanner_flags_float_literals_by_type_not_suffix() {
-    // Every float literal is `f64` (or `f32`), even without an explicit suffix.
-    for lit in ["1.0", "1e10", "1.", "1.0f32", "1.0f64", "1.0_f64"] {
+    // Every float literal is `f64` (or `f32`), even without an explicit suffix. `syn` lexes the
+    // suffix-only forms (`1f64`, `1_F32`) as `Lit::Int`, so those exercise the separate suffix path.
+    for lit in [
+        "1.0", "1e10", "1.", "1.0f32", "1.0f64", "1.0_f64", "1f64", "1_f64", "1f32", "1_F32",
+    ] {
         let src = format!("fn f() {{ let _x = {lit}; }}");
         let hits = scan_source(&src).unwrap();
-        assert!(!hits.is_empty(), "`{lit}` must be flagged as a float");
+        assert!(
+            hits.iter().any(|h| h.contains("float literal")),
+            "`{lit}` must be flagged as a float literal: {hits:?}"
+        );
     }
 
     // Integer literals that merely contain the characters `f64`, and non-literal mentions of
