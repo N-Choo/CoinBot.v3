@@ -117,8 +117,12 @@ pub async fn run_symbol(
                     .filter(|c| c.open_time_ms > cursor && cfg.timeframe.is_closed(c.open_time_ms, now_ms, cfg.settle_ms))
                     .collect();
                 new_candles.sort_by_key(|c| c.open_time_ms);
-                for c in &new_candles { cursor = c.open_time_ms; }
                 let emitted = process_batch(&mut driver, &new_candles, &sink)?;
+                // Advance only after the batch commits, so a failed batch is retried from the
+                // same cursor on the next poll.
+                if let Some(last) = new_candles.last() {
+                    cursor = last.open_time_ms;
+                }
                 if emitted > 0 { println!("emitted {emitted} signal(s) symbol={symbol}"); }
             }
         }
@@ -127,14 +131,19 @@ pub async fn run_symbol(
     Ok(())
 }
 
-pub fn run_symbol_once(
+pub async fn run_symbol_once(
     cfg: &LiveConfig,
     strategy: &Config,
     symbol: &str,
     sink: &Sink,
 ) -> Result<(usize, usize), LiveError> {
+    let cfg_owned = cfg.clone();
+    let symbol_owned = symbol.to_string();
     let limit = cfg.window + 3;
-    let candles = fetch_blocking(cfg, symbol, limit)?;
+    let candles =
+        tokio::task::spawn_blocking(move || fetch_blocking(&cfg_owned, &symbol_owned, limit))
+            .await
+            .map_err(|e| LiveError::Join(e.to_string()))??;
     let now_ms = chrono::Utc::now().timestamp_millis();
     let mut closed: Vec<Candle> = candles
         .into_iter()

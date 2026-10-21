@@ -54,14 +54,138 @@ fn maps_signal_to_proto() {
 }
 
 #[test]
+fn short_maps_to_sell() {
+    let mut signal = sample();
+    signal.action = Direction::Short;
+    signal.divergence_kind = DivergenceKind::RegularBearish;
+
+    let proto = to_proto_signal(
+        &signal,
+        1,
+        0,
+        0,
+        &config_version(&Config::default()),
+        Timeframe::M15,
+    )
+    .unwrap();
+
+    assert_eq!(proto.action, "SELL");
+}
+
+#[test]
+fn ttl_and_trigger_use_the_dequeue_time_and_timeframe() {
+    let signal = sample();
+    let proto = to_proto_signal(
+        &signal,
+        1,
+        5_000,
+        60_000,
+        &config_version(&Config::default()),
+        Timeframe::H4,
+    )
+    .unwrap();
+
+    assert_eq!(proto.expires_at_ms, 65_000);
+    assert_eq!(
+        proto.trigger_time_ms,
+        signal.signal_candle_open_time_ms + 14_400_000
+    );
+}
+
+#[test]
 fn signal_id_is_stable_and_depends_on_the_divergence() {
-    let config_version = config_version(&Config::default());
-    let first = to_proto_signal(&sample(), 1, 0, 0, &config_version, Timeframe::M15).unwrap();
-    let second = to_proto_signal(&sample(), 2, 999, 123, &config_version, Timeframe::M15).unwrap();
+    let cv = config_version(&Config::default());
+    let first = to_proto_signal(&sample(), 1, 0, 0, &cv, Timeframe::M15).unwrap();
+    let second = to_proto_signal(&sample(), 2, 999, 123, &cv, Timeframe::M15).unwrap();
     assert_eq!(first.signal_id, second.signal_id);
 
     let mut moved = sample();
     moved.divergence_open_time_ms += 1;
-    let third = to_proto_signal(&moved, 1, 0, 0, &config_version, Timeframe::M15).unwrap();
+    let third = to_proto_signal(&moved, 1, 0, 0, &cv, Timeframe::M15).unwrap();
     assert_ne!(first.signal_id, third.signal_id);
+}
+
+#[test]
+fn signal_id_depends_on_kind_and_config() {
+    let cv = config_version(&Config::default());
+    let base = to_proto_signal(&sample(), 1, 0, 0, &cv, Timeframe::M15).unwrap();
+
+    let mut hidden = sample();
+    hidden.divergence_kind = DivergenceKind::HiddenBullish;
+    let by_kind = to_proto_signal(&hidden, 1, 0, 0, &cv, Timeframe::M15).unwrap();
+    assert_ne!(base.signal_id, by_kind.signal_id);
+
+    let changed_config = Config {
+        rsi_period: 15,
+        ..Config::default()
+    };
+    let by_config = to_proto_signal(
+        &sample(),
+        1,
+        0,
+        0,
+        &config_version(&changed_config),
+        Timeframe::M15,
+    )
+    .unwrap();
+    assert_ne!(base.signal_id, by_config.signal_id);
+}
+
+#[test]
+fn config_version_covers_every_strategy_field() {
+    let base = config_version(&Config::default());
+    let variants = [
+        Config {
+            window: 101,
+            ..Config::default()
+        },
+        Config {
+            rsi_period: 15,
+            ..Config::default()
+        },
+        Config {
+            rsi_order: 6,
+            ..Config::default()
+        },
+        Config {
+            price_diff_threshold: Decimal::new(6, 2),
+            ..Config::default()
+        },
+        Config {
+            sma_enabled: true,
+            ..Config::default()
+        },
+        Config {
+            sma_period: 21,
+            ..Config::default()
+        },
+        Config {
+            atr_period: 15,
+            ..Config::default()
+        },
+        Config {
+            atr_sl_multiplier: Decimal::new(21, 1),
+            ..Config::default()
+        },
+        Config {
+            atr_tp_multiplier: Decimal::new(31, 1),
+            ..Config::default()
+        },
+        Config {
+            atr_pct_high: Decimal::new(51, 1),
+            ..Config::default()
+        },
+        Config {
+            atr_high_adjust: Decimal::new(16, 1),
+            ..Config::default()
+        },
+        Config {
+            atr_sl_max_pct: Decimal::new(1, 1),
+            ..Config::default()
+        },
+    ];
+
+    for variant in variants {
+        assert_ne!(base, config_version(&variant));
+    }
 }

@@ -26,7 +26,10 @@ impl Sink {
                     eprintln!("signal queue full/closed; dropped");
                 }
             }
-            Sink::Collect(buffer) => buffer.lock().unwrap().push(signal),
+            Sink::Collect(buffer) => buffer
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .push(signal),
         }
     }
 }

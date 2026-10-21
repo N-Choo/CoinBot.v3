@@ -5,7 +5,10 @@ use rust_decimal::prelude::ToPrimitive;
 use sha2::{Digest, Sha256};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::sync::mpsc;
-use tonic::transport::Channel;
+use tonic::transport::{Channel, Endpoint};
+
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+const RPC_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[allow(clippy::result_large_err)]
 mod pb {
@@ -22,8 +25,10 @@ pub struct EngineClient {
 
 impl EngineClient {
     pub fn connect(endpoint: &str) -> Result<Self, String> {
-        let channel = Channel::from_shared(endpoint.to_string())
+        let channel = Endpoint::from_shared(endpoint.to_string())
             .map_err(|e| format!("invalid engine endpoint {endpoint:?}: {e}"))?
+            .timeout(RPC_TIMEOUT)
+            .connect_timeout(CONNECT_TIMEOUT)
             .connect_lazy();
         Ok(Self {
             client: EngineServiceClient::new(channel),
@@ -32,17 +37,24 @@ impl EngineClient {
 
     #[allow(clippy::result_large_err)]
     pub async fn active_symbols(&mut self) -> Result<Vec<String>, tonic::Status> {
-        Ok(self
-            .client
-            .get_active_symbols(Empty {})
-            .await?
-            .into_inner()
-            .tickers)
+        let response = tokio::time::timeout(RPC_TIMEOUT, self.client.get_active_symbols(Empty {}))
+            .await
+            .map_err(|_| {
+                tonic::Status::deadline_exceeded(format!(
+                    "GetActiveSymbols timed out after {RPC_TIMEOUT:?}"
+                ))
+            })??;
+        Ok(response.into_inner().tickers)
     }
 
     #[allow(clippy::result_large_err)]
     pub async fn publish(&mut self, signal: ProtoSignal) -> Result<Ack, tonic::Status> {
-        Ok(self.client.publish(signal).await?.into_inner())
+        let response = tokio::time::timeout(RPC_TIMEOUT, self.client.publish(signal))
+            .await
+            .map_err(|_| {
+                tonic::Status::deadline_exceeded(format!("Publish timed out after {RPC_TIMEOUT:?}"))
+            })??;
+        Ok(response.into_inner())
     }
 }
 
@@ -53,13 +65,28 @@ pub fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Delivery-queue TTL for a signal after it is dequeued. This is not signal freshness; the
+/// underlying candle signal may be older.
 pub fn signal_ttl_ms(timeframe: Timeframe) -> i64 {
     (timeframe.millis() / 10).clamp(60_000, 3_600_000)
 }
 
 pub fn config_version(cfg: &Config) -> String {
-    let window = cfg.window;
-    format!("rsi-v1-w{window}")
+    format!(
+        "rsi-v1|w={}|rsi={}:{}|pdt={}|sma={}:{}|atr={}:{}:{}:{}:{}:{}",
+        cfg.window,
+        cfg.rsi_period,
+        cfg.rsi_order,
+        cfg.price_diff_threshold,
+        cfg.sma_enabled,
+        cfg.sma_period,
+        cfg.atr_period,
+        cfg.atr_sl_multiplier,
+        cfg.atr_tp_multiplier,
+        cfg.atr_pct_high,
+        cfg.atr_high_adjust,
+        cfg.atr_sl_max_pct,
+    )
 }
 
 fn price_f64(value: rust_decimal::Decimal) -> Option<f64> {
@@ -67,15 +94,21 @@ fn price_f64(value: rust_decimal::Decimal) -> Option<f64> {
 }
 
 fn signal_id(signal: &Signal, config_version: &str) -> String {
+    const SEP: u8 = 0;
     let mut hasher = Sha256::new();
-    hasher.update(b"analyzer-signal-v1\0");
+    hasher.update(b"analyzer-signal-v1");
+    hasher.update([SEP]);
     hasher.update(signal.ticker.as_bytes());
+    hasher.update([SEP]);
     hasher.update([match signal.action {
         Direction::Long => b'B',
         Direction::Short => b'S',
     }]);
-    hasher.update([signal.divergence_kind.as_str().as_bytes()[0]]);
+    hasher.update([SEP]);
+    hasher.update(signal.divergence_kind.as_str().as_bytes());
+    hasher.update([SEP]);
     hasher.update(signal.divergence_open_time_ms.to_be_bytes());
+    hasher.update([SEP]);
     hasher.update(config_version.as_bytes());
     let digest = hasher.finalize();
     let mut id = String::from("v1:");
@@ -85,6 +118,10 @@ fn signal_id(signal: &Signal, config_version: &str) -> String {
     id
 }
 
+/// Map a core signal to the wire message.
+///
+/// `now_ms` is the dequeue time: `expires_at_ms` is a delivery-queue TTL stamped when the
+/// publisher picks the signal up, not a claim about how fresh the underlying candle signal is.
 pub fn to_proto_signal(
     signal: &Signal,
     seq: u64,
@@ -137,8 +174,4 @@ pub async fn run_publisher(
             Err(error) => eprintln!("publish failed symbol={}: {error} (dropped)", proto.ticker),
         }
     }
-}
-
-pub fn ttl_duration(_ttl_ms: i64) -> Duration {
-    Duration::from_millis(0)
 }
