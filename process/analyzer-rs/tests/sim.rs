@@ -457,6 +457,27 @@ fn account_series_is_consistent_at_every_step() {
 }
 
 #[test]
+fn account_series_with_nonzero_warmup_window() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 106, 99, 105),
+        candle(3, 100, 101, 99, 100),
+    ];
+    let mut s = signal(0, Direction::Long, 100, 90, 120);
+    s.signal_id = "sig-a".into();
+    let outcome = simulate(&candles, &[s], 1000, 1);
+    assert_eq!(outcome.account.len(), candles.len() - 1);
+    assert_eq!(outcome.account[0].index, 1);
+    for step in &outcome.account {
+        assert_eq!(
+            step.equity,
+            step.available_fund + step.reserved + step.unrealized
+        );
+    }
+}
+
+#[test]
 fn exit_classification_and_avg_risk_reward() {
     use analyzer_rs::harness::stats::summarize;
     let candles = vec![
@@ -474,5 +495,5 @@ fn exit_classification_and_avg_risk_reward() {
     assert_eq!(summary.tp_hits, 1);
     assert_eq!(summary.sl_hits, 1);
     assert_eq!(summary.other_exits, 0);
-    assert!(summary.avg_risk_reward.is_some());
+    assert_eq!(summary.avg_risk_reward, Some(d(3)));
 }

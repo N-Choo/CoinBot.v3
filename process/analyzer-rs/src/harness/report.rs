@@ -1,6 +1,6 @@
 use crate::harness::dataset::Provenance;
 use crate::harness::replay::{Replay, ReplayEvent};
-use crate::harness::sim::{Position, SimOutcome};
+use crate::harness::sim::{unrealized_pnl, Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
@@ -122,12 +122,7 @@ fn direction_str(direction: Direction) -> &'static str {
 }
 
 fn position_unrealized(position: &Position, last_close: Decimal) -> Decimal {
-    let ret = (last_close - position.fill) / position.fill;
-    let ret = match position.side {
-        Direction::Long => ret,
-        Direction::Short => -ret,
-    };
-    position.e * ret
+    unrealized_pnl(position.side, position.fill, last_close, position.e)
 }
 
 fn event_json(event: &ReplayEvent) -> Value {

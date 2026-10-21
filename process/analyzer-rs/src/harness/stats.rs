@@ -1,5 +1,6 @@
-use crate::harness::sim::{ClosedTrade, SimOutcome};
-use crate::strategy::types::Direction;
+use crate::harness::sim::{
+    unrealized_pnl, ClosedTrade, SimOutcome, REASON_GAP_SL, REASON_GAP_TP, REASON_SL, REASON_TP,
+};
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Default)]
@@ -73,11 +74,11 @@ pub fn summarize(
 
     let tp_hits = trades
         .iter()
-        .filter(|t| t.reason == "TP" || t.reason == "gap_tp")
+        .filter(|t| t.reason == REASON_TP || t.reason == REASON_GAP_TP)
         .count();
     let sl_hits = trades
         .iter()
-        .filter(|t| t.reason == "SL" || t.reason == "gap_sl")
+        .filter(|t| t.reason == REASON_SL || t.reason == REASON_GAP_SL)
         .count();
     let other_exits = trades.len() - tp_hits - sl_hits;
 
@@ -117,12 +118,7 @@ pub fn summarize(
     }
     for position in &outcome.open_positions {
         reserved += position.e;
-        let ret = (last_close - position.fill) / position.fill;
-        let ret = match position.side {
-            Direction::Long => ret,
-            Direction::Short => -ret,
-        };
-        unrealized += position.e * ret;
+        unrealized += unrealized_pnl(position.side, position.fill, last_close, position.e);
         exposure_candles += last_index.saturating_sub(position.entry_index);
     }
     let time_in_market_pct = if replayed_candles == 0 {

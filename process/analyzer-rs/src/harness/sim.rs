@@ -1,6 +1,11 @@
 use crate::strategy::types::{Candle, Direction, Signal};
 use rust_decimal::Decimal;
 
+pub const REASON_TP: &str = "TP";
+pub const REASON_GAP_TP: &str = "gap_tp";
+pub const REASON_SL: &str = "SL";
+pub const REASON_GAP_SL: &str = "gap_sl";
+
 #[derive(Debug, Clone)]
 pub struct SimSignal {
     pub candle_index: usize,
@@ -64,6 +69,10 @@ pub struct SimOutcome {
 }
 
 /// One account per symbol; engine sizing; no fees.
+///
+/// Callers must supply candles whose `open`, `high`, `low`, and `close` prices are
+/// strictly positive; the simulator divides by these values and assumes nonzero
+/// denominators.
 pub fn simulate(
     candles: &[Candle],
     signals: &[SimSignal],
@@ -164,12 +173,7 @@ pub fn simulate(
         let mut open = Vec::with_capacity(positions.len());
         for position in &positions {
             reserved += position.e;
-            let ret = (close - position.fill) / position.fill;
-            let ret = match position.side {
-                Direction::Long => ret,
-                Direction::Short => -ret,
-            };
-            let value = position.e * ret;
+            let value = unrealized_pnl(position.side, position.fill, close, position.e);
             unrealized += value;
             open.push(OpenStep {
                 signal_id: position.signal_id.clone(),
@@ -207,26 +211,26 @@ fn exit_for(position: &Position, candle: &Candle) -> Option<(String, Decimal)> {
     match position.side {
         Direction::Long => {
             if open <= position.sl {
-                Some(("gap_sl".into(), open))
+                Some((REASON_GAP_SL.into(), open))
             } else if open >= position.tp {
-                Some(("gap_tp".into(), open))
+                Some((REASON_GAP_TP.into(), open))
             } else if candle.low <= position.sl {
-                Some(("SL".into(), position.sl))
+                Some((REASON_SL.into(), position.sl))
             } else if candle.high >= position.tp {
-                Some(("TP".into(), position.tp))
+                Some((REASON_TP.into(), position.tp))
             } else {
                 None
             }
         }
         Direction::Short => {
             if open >= position.sl {
-                Some(("gap_sl".into(), open))
+                Some((REASON_GAP_SL.into(), open))
             } else if open <= position.tp {
-                Some(("gap_tp".into(), open))
+                Some((REASON_GAP_TP.into(), open))
             } else if candle.high >= position.sl {
-                Some(("SL".into(), position.sl))
+                Some((REASON_SL.into(), position.sl))
             } else if candle.low <= position.tp {
-                Some(("TP".into(), position.tp))
+                Some((REASON_TP.into(), position.tp))
             } else {
                 None
             }
@@ -240,4 +244,17 @@ fn risk_reward_for(side: Direction, sl: Decimal, tp: Decimal, fill: Decimal) -> 
         Direction::Short if sl > fill && fill > tp => Some((fill - tp) / (sl - fill)),
         _ => None,
     }
+}
+
+/// Returns the unrealized PnL of an open position marked at `close`.
+///
+/// The caller must ensure `fill` and `close` are positive; this helper divides by
+/// `fill` and assumes a nonzero denominator.
+pub fn unrealized_pnl(side: Direction, fill: Decimal, close: Decimal, e: Decimal) -> Decimal {
+    let ret = (close - fill) / fill;
+    let signed = match side {
+        Direction::Long => ret,
+        Direction::Short => -ret,
+    };
+    e * signed
 }
