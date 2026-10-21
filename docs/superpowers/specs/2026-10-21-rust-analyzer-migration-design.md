@@ -1140,11 +1140,14 @@ The port must reproduce scipy for `Vec<Option<Decimal>>` input.
      the reported index is the plateau's midpoint, matching scipy's `_local_maxima_1d`
      (`left + width / 2`).
 2. **Distance filtering** — port scipy's `_select_by_peak_distance`:
-   - process candidate peaks by descending height, stable by ascending index on ties;
+   - process candidate peaks in NumPy scalar argsort order (descending priority); the oracle pins
+     `NPY_DISABLE_CPU_FEATURES` so tie behavior is reproducible and does not depend on CPU-specific
+     SIMD argsort;
    - keep the current peak and remove every candidate within `distance` indices;
    - the surviving set is re-sorted by ascending index before comparison.
    The exact tie order matters; the parity fixture includes equal-height peaks.
-3. Comparisons with `None` are false, so `None` never forms a peak and never blocks one.
+3. Comparisons with `None` are false, so `None` cannot be a peak, and a `None` adjacent to a
+   candidate suppresses it (scipy does the same for NaN).
 
 Troughs are found by applying the same procedure to `-values` for price (`-Low`) and RSI, exactly as
 Python does.
