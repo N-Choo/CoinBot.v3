@@ -13,27 +13,50 @@ fn signals_match_the_python_oracle_for_every_window() {
     let cfg = f.config();
     assert!(!f.signals.is_empty());
     assert_eq!(f.window, cfg.window);
+    assert!(f.window > 0);
+    assert_eq!(
+        f.signals.len(),
+        candles.len() - f.window + 1,
+        "window count"
+    );
+    let positives = f
+        .signals
+        .iter()
+        .filter(|item| item.signal.is_some())
+        .count();
+    let negatives = f.signals.len() - positives;
+    assert_eq!(positives, 158, "positive signal count");
+    assert_eq!(negatives, 143, "None signal count");
 
-    for expected in &f.signals {
+    for (index, expected) in f.signals.iter().enumerate() {
+        assert_eq!(
+            expected.window_end,
+            f.window - 1 + index,
+            "window_end sequence"
+        );
         let end = expected.window_end;
+        assert!(
+            end + 1 >= f.window,
+            "window_end={end} is before the first full window"
+        );
+        assert!(end < candles.len(), "window_end={end} exceeds candles");
         let start = end + 1 - f.window;
         let window = &candles[start..=end];
-        let actual = signals(window, &f.symbol, &cfg).unwrap();
+        let actual = signals(window, &f.symbol, &cfg)
+            .unwrap_or_else(|e| panic!("window_end={end}: signals failed: {e:?}"));
 
         match (&expected.signal, actual) {
             (None, None) => {}
             (Some(want), Some(got)) => {
                 let label = format!("window_end={end}");
-                assert_eq!(
-                    got.action,
-                    if want.action == "buy" {
-                        Direction::Long
-                    } else {
-                        Direction::Short
-                    },
-                    "{label} action"
-                );
+                let expected_action = match want.action.as_str() {
+                    "buy" => Direction::Long,
+                    "sell" => Direction::Short,
+                    other => panic!("{label} unexpected action {other:?}"),
+                };
+                assert_eq!(got.action, expected_action, "{label} action");
                 assert_eq!(got.reason, want.reason, "{label} reason");
+                assert_eq!(got.ticker, f.symbol, "{label} ticker");
                 assert_eq!(got.divergence_kind.as_str(), want.kind, "{label} kind");
                 assert_opt_close_at(
                     Some(got.confidence),
