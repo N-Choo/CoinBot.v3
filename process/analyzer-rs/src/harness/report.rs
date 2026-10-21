@@ -3,6 +3,7 @@ use crate::harness::replay::{Replay, ReplayEvent};
 use crate::harness::sim::SimOutcome;
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
+use crate::strategy::types::Direction;
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -38,7 +39,7 @@ pub fn build_payload(
                 "signals": input.replay.signals.iter().map(|s| json!({
                     "candle_index": s.candle_index,
                     "signal_id": s.signal_id,
-                    "action": format!("{:?}", s.signal.action),
+                    "action": direction_str(s.signal.action),
                     "reason": s.signal.reason,
                     "signal_entry": s.signal.entry_price.to_string(),
                     "sl": s.signal.sl_price.to_string(),
@@ -50,7 +51,7 @@ pub fn build_payload(
                 "trades": input.sim.trades.iter().map(|t| json!({
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
-                    "side": format!("{:?}", t.side),
+                    "side": direction_str(t.side),
                     "signal_entry": t.signal_entry.to_string(),
                     "fill": t.fill.to_string(),
                     "exit": t.exit.to_string(),
@@ -62,7 +63,7 @@ pub fn build_payload(
                 })).collect::<Vec<_>>(),
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
                     "entry_index": p.entry_index,
-                    "side": format!("{:?}", p.side),
+                    "side": direction_str(p.side),
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
@@ -100,6 +101,13 @@ pub fn build_payload(
         "symbols": symbols,
         "failures": failures,
     })
+}
+
+fn direction_str(direction: Direction) -> &'static str {
+    match direction {
+        Direction::Long => "Long",
+        Direction::Short => "Short",
+    }
 }
 
 fn event_json(event: &ReplayEvent) -> Value {
@@ -159,11 +167,114 @@ fn summary_json(summary: &SimSummary, gaps: usize) -> Value {
 pub fn write_report(payload: &Value, out: &Path) -> std::io::Result<()> {
     let template = include_str!("../../templates/replay.html");
     let json = serde_json::to_string(payload).map_err(std::io::Error::other)?;
-    // Keep the embedded JSON from terminating the surrounding <script> element.
-    let escaped = json.replace("</", "<\\/");
+    // Escape every `<` so the embedded JSON can never open or close an HTML tag,
+    // including tricky forms such as `<!--<script` and case-insensitive `</SCRIPT>`.
+    let escaped = json.replace('<', "\\u003c");
     let html = template.replace("__REPLAY_DATA__", &escaped);
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(out, html)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::harness::dataset::{EffectiveRange, RequestedRange};
+    use crate::harness::sim::{ClosedTrade, Position};
+    use rust_decimal::Decimal;
+
+    fn provenance() -> Provenance {
+        Provenance {
+            source: "test".into(),
+            requested: RequestedRange {
+                limit: 0,
+                timeframe: "1day".into(),
+                as_of_ms: 0,
+            },
+            effective_range: EffectiveRange {
+                first_open_time_ms: 0,
+                last_open_time_ms: 0,
+                candles: 0,
+            },
+            content_sha256: "0".repeat(64),
+            fetched_at_ms: None,
+            gaps: 0,
+        }
+    }
+
+    fn summary(profit_factor: Option<Decimal>, infinite: bool) -> SimSummary {
+        SimSummary {
+            profit_factor,
+            profit_factor_is_infinite: infinite,
+            ..SimSummary::default()
+        }
+    }
+
+    #[test]
+    fn summary_profit_factor_branches() {
+        let finite = summary_json(&summary(Some(Decimal::new(21, 1)), false), 0);
+        assert_eq!(finite["profit_factor"], "2.1");
+
+        let infinite = summary_json(&summary(None, true), 0);
+        assert_eq!(infinite["profit_factor"], "inf");
+
+        let absent = summary_json(&summary(None, false), 0);
+        assert_eq!(absent["profit_factor"], "null");
+    }
+
+    #[test]
+    fn directions_serialize_explicitly() {
+        let provenance = provenance();
+        let replay = Replay {
+            symbol: "TEST-USDT".into(),
+            candles: Vec::new(),
+            rsi: Vec::new(),
+            sma: Vec::new(),
+            events: Vec::new(),
+            signals: Vec::new(),
+            provenance: provenance.clone(),
+        };
+        let sim = SimOutcome {
+            trades: vec![ClosedTrade {
+                side: Direction::Long,
+                signal_entry: Decimal::ONE,
+                fill: Decimal::ONE,
+                exit: Decimal::ONE,
+                e: Decimal::ONE,
+                pnl: Decimal::ZERO,
+                pnl_pct: Decimal::ZERO,
+                risk_reward: None,
+                reason: "TP".into(),
+                entry_index: 0,
+                exit_index: 1,
+            }],
+            open_positions: vec![Position {
+                side: Direction::Short,
+                signal_entry: Decimal::ONE,
+                fill: Decimal::ONE,
+                e: Decimal::ONE,
+                sl: Decimal::ONE,
+                tp: Decimal::ONE,
+                entry_index: 0,
+            }],
+            ..SimOutcome::default()
+        };
+        let summary = SimSummary::default();
+        let payload = build_payload(
+            &[PayloadInput {
+                symbol: "TEST-USDT",
+                replay: &replay,
+                sim: &sim,
+                summary: &summary,
+                provenance: &provenance,
+            }],
+            &Config::default(),
+            "2026-10-21T00:00:00Z".into(),
+            Vec::new(),
+        );
+
+        assert_eq!(payload["symbols"][0]["trades"][0]["side"], "Long");
+        assert_eq!(payload["symbols"][0]["open_positions"][0]["side"], "Short");
+    }
 }

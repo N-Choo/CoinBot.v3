@@ -132,6 +132,12 @@ fn payload_has_two_symbols_and_report_fields() {
             symbol["open_positions"].as_array().unwrap().len(),
             run.sim.open_positions.len()
         );
+        for trade in symbol["trades"].as_array().unwrap() {
+            assert!(matches!(trade["side"].as_str(), Some("Long" | "Short")));
+        }
+        for position in symbol["open_positions"].as_array().unwrap() {
+            assert!(matches!(position["side"].as_str(), Some("Long" | "Short")));
+        }
 
         let sha = symbol["provenance"]["content_sha256"].as_str().unwrap();
         assert_eq!(sha.len(), 64, "content hash must be a sha256 hex digest");
@@ -210,15 +216,60 @@ fn report_escapes_script_end_and_lists_failures() {
     let html = std::fs::read_to_string(&out).unwrap();
 
     assert!(html.contains("BAD-USDT"));
+    assert!(
+        html.contains("\"symbol\":\"BAD-USDT\""),
+        "the embedded JSON must carry the failure symbol"
+    );
+    assert!(
+        html.contains("\"error\":\"bad "),
+        "the embedded JSON must carry the failure error"
+    );
     assert!(html.contains("failures"));
+    assert!(
+        html.contains("class=\"tab failed\""),
+        "the template must render failures as failed tabs"
+    );
     assert!(html.contains("disabled"));
     assert!(
         !html.contains(reason),
         "the raw closing script tag must not survive serialization"
     );
     assert!(
-        html.contains("bad <\\/script><script>alert(1)<\\/script>"),
-        "the embedded JSON must escape every </ sequence"
+        html.contains("bad \\u003c/script>\\u003cscript>alert(1)\\u003c/script>"),
+        "the embedded JSON must escape every < sequence"
+    );
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn report_escapes_every_angle_bracket() {
+    let cfg = Config::default();
+    let runs = vec![run("SYNTH-USDT", "synthetic_1day.csv", &cfg)];
+    let reason = "<!--<script  | <!--<script> | </SCRIPT>";
+    let failures = vec![json!({"symbol": "BAD-USDT", "error": reason})];
+    let payload = build_payload(
+        &inputs(&runs),
+        &cfg,
+        "2026-10-21T00:00:00Z".into(),
+        failures,
+    );
+
+    let dir = temp_dir("angle-brackets");
+    let out = dir.join("replay.html");
+    write_report(&payload, &out).unwrap();
+    let html = std::fs::read_to_string(&out).unwrap();
+
+    assert!(html.contains("\\u003c!--\\u003cscript "));
+    assert!(html.contains("\\u003c!--\\u003cscript>"));
+    assert!(html.contains("\\u003c/SCRIPT>"));
+    assert!(
+        !html.contains("<!--<script"),
+        "a raw comment opening must not survive serialization"
+    );
+    assert!(
+        !html.contains("</SCRIPT>"),
+        "a raw case-insensitive closing script tag must not survive serialization"
     );
 
     std::fs::remove_dir_all(dir).unwrap();

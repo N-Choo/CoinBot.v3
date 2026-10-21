@@ -140,6 +140,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 
 <div class="wrap">
   <div class="tabs" id="tabs"></div>
+  <template id="failedTabTemplate"><button class="tab failed" disabled></button></template>
 
   <div class="market">
     <div class="picker" id="marketSymbol">—</div>
@@ -324,17 +325,17 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   }
   function fmtSigned(value, digits) {
     const n = Number(value);
-    if (!Number.isFinite(n)) return String(value == null ? "—" : value);
+    if (!Number.isFinite(n)) return "—";
     return (n >= 0 ? "+" : "") + n.toFixed(digits == null ? 2 : digits);
   }
   function fmtPct(value) {
     const n = Number(value);
-    if (!Number.isFinite(n)) return String(value == null ? "—" : value);
+    if (!Number.isFinite(n)) return "—";
     return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
   }
   function fmtNumber(value, digits) {
     const n = Number(value);
-    if (!Number.isFinite(n)) return String(value == null ? "—" : value);
+    if (!Number.isFinite(n)) return "—";
     return n.toFixed(digits == null ? 2 : digits);
   }
   function fmtDate(t, withTime) {
@@ -342,14 +343,23 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     if (!Number.isFinite(n)) return "—";
     const date = new Date(n);
     const opts = withTime
-      ? { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }
-      : { month: "short", day: "2-digit" };
+      ? { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }
+      : { year: "numeric", month: "short", day: "2-digit" };
     return date.toLocaleString("en-US", Object.assign(opts, { timeZone: "UTC", hour12: false }));
   }
-  function fmtAxis(t) {
+  function fmtAxis(t, withYear) {
     const n = Number(t);
     if (!Number.isFinite(n)) return "";
-    return new Date(n).toLocaleDateString("en-US", { month: "short", day: "2-digit", timeZone: "UTC" });
+    const opts = {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+      hour12: false,
+    };
+    if (withYear) opts.year = "numeric";
+    return new Date(n).toLocaleString("en-US", opts);
   }
   function setText(id, text, cls) {
     const node = el(id);
@@ -382,7 +392,11 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       host.appendChild(button);
     });
     FAILURES.forEach((failure) => {
-      const button = document.createElement("button");
+      const failedTemplate = el("failedTabTemplate");
+      const button =
+        failedTemplate && failedTemplate.content && failedTemplate.content.firstElementChild
+          ? failedTemplate.content.firstElementChild.cloneNode(true)
+          : document.createElement("button");
       button.className = "tab failed";
       button.disabled = true;
       button.textContent = failure.symbol + " · " + failure.error;
@@ -454,10 +468,13 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 
     ctx.textAlign = "center";
     const stride = Math.max(1, Math.floor(view.length / 5));
+    const spansYear =
+      new Date(view[0].t).getUTCFullYear() !==
+      new Date(view[view.length - 1].t).getUTCFullYear();
     for (let index = 0; index < view.length; index += stride) {
       const candle = view[index];
       ctx.fillStyle = "#63727f";
-      ctx.fillText(fmtAxis(candle.t), xFor(candle.i), h - 10);
+      ctx.fillText(fmtAxis(candle.t, spansYear), xFor(candle.i), h - 10);
     }
 
     const wx = xFor(start);

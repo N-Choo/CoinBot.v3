@@ -2128,7 +2128,7 @@ pub fn build_payload(
                 "signals": input.replay.signals.iter().map(|s| json!({
                     "candle_index": s.candle_index,
                     "signal_id": s.signal_id,
-                    "action": format!("{:?}", s.signal.action),
+                    "action": direction_str(s.signal.action),
                     "reason": s.signal.reason,
                     "signal_entry": s.signal.entry_price.to_string(),
                     "sl": s.signal.sl_price.to_string(),
@@ -2140,7 +2140,7 @@ pub fn build_payload(
                 "trades": input.sim.trades.iter().map(|t| json!({
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
-                    "side": format!("{:?}", t.side),
+                    "side": direction_str(t.side),
                     "signal_entry": t.signal_entry.to_string(),
                     "fill": t.fill.to_string(),
                     "exit": t.exit.to_string(),
@@ -2152,7 +2152,7 @@ pub fn build_payload(
                 })).collect::<Vec<_>>(),
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
                     "entry_index": p.entry_index,
-                    "side": format!("{:?}", p.side),
+                    "side": direction_str(p.side),
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
@@ -2172,6 +2172,7 @@ pub fn build_payload(
             "limit": 0,
             "window": config.window,
             "init_fund": "1000",
+            "as_of_ms": 0,
             "fees": false,
             "rsi_period": config.rsi_period,
             "rsi_order": config.rsi_order,
@@ -2188,6 +2189,13 @@ pub fn build_payload(
         "symbols": symbols,
         "failures": failures,
     })
+}
+
+fn direction_str(direction: crate::strategy::types::Direction) -> &'static str {
+    match direction {
+        crate::strategy::types::Direction::Long => "Long",
+        crate::strategy::types::Direction::Short => "Short",
+    }
 }
 
 fn event_json(event: &crate::harness::replay::ReplayEvent) -> Value {
@@ -2241,9 +2249,9 @@ fn summary_json(summary: &crate::harness::stats::SimSummary, gaps: usize) -> Val
 
 pub fn write_report(payload: &Value, out: &std::path::Path) -> std::io::Result<()> {
     let template = include_str!("../../templates/replay.html");
-    let json = serde_json::to_string(payload)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
-    let escaped = json.replace("</", "<\\/");
+    let json = serde_json::to_string(payload).map_err(std::io::Error::other)?;
+    // Escape every `<` so the embedded JSON cannot open or close an HTML tag.
+    let escaped = json.replace('<', "\\u003c");
     let html = template.replace("__REPLAY_DATA__", &escaped);
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
