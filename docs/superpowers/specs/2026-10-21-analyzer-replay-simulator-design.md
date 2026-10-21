@@ -1,6 +1,6 @@
 # Analyzer-RS Terminal Replay Simulator — Design
 
-- **Status:** Design approved in brainstorming; awaiting written-spec review
+- **Status:** Design revised per review; awaiting written-spec approval
 - **Date:** 2026-10-21
 - **Scope:** A standalone, self-contained HTML simulator for the analyzer-rs RSI-divergence
   strategy, with one tab per symbol, live-parity signal generation, and an engine-mirroring trade
@@ -9,6 +9,7 @@
   - `docs/superpowers/specs/2026-10-21-rust-analyzer-migration-design.md`
   - `docs/superpowers/plans/2026-10-21-analyzer-rs-live.md`
   - `process/analyzer/benchmark/engine.py` (trade-engine port reference)
+  - `process/trade-engine/src/trader/*`, `position_exit/*`, `reconciler/pnl.rs`
 
 ---
 
@@ -20,9 +21,8 @@
 - a per-symbol `CandleDriver` with rolling window, warm-up seeding, and dedup;
 - a live loop that polls `GetActiveSymbols` and publishes signals over gRPC.
 
-What is missing is a way to inspect and replay the signal generator the way it behaves live. The
-simulator must use the **same Rust driver and core**, not a JavaScript reimplementation, and produce
-a single HTML file that can be opened anywhere.
+The simulator must use the **same Rust driver and core** and produce one HTML file that can be
+opened anywhere.
 
 ---
 
@@ -34,7 +34,8 @@ a single HTML file that can be opened anywhere.
 - The file contains **one tab per symbol**, each with its own rolling window and playback.
 - Signal generation is live-exact: same `CandleDriver`, same `signals()`, same config, same dedup.
 - Trade simulation mirrors the trade engine’s sizing/position rules, with **no fees**.
-- The report is deterministic: same inputs → same bytes.
+- Deterministic: identical inputs (including `--generated-at`) produce identical replay and trade
+  data. Without a fixed `--generated-at`, only the report timestamp differs.
 
 ### 2.2 Non-goals
 
@@ -42,7 +43,9 @@ a single HTML file that can be opened anywhere.
 - No live gRPC, order placement, or trade-engine changes.
 - No fees, slippage, borrow, or margin modeling.
 - No persistence or resume of a replay.
-- No interactive symbol selection server. One file per run, tabs for the symbols in that run.
+- No interactive symbol-selection server. One file per run, tabs for that run’s symbols.
+- **No profitability claim.** The report shows gross simulated performance, excluding costs, and
+  must not be presented as evidence that the strategy has an edge.
 
 ---
 
@@ -55,14 +58,19 @@ a single HTML file that can be opened anywhere.
 | 3 | Rust computes the replay; HTML embeds events/trades | Guarantees live parity; browser cannot drift. |
 | 4 | Terminal UI direction | Chosen from the demos. |
 | 5 | Signals are live-exact; trades are a conservative model | Signals share the live core; trades use replay rules. |
-| 6 | Entry at the next candle open; SL/TP absolute | A signal is only known at close. |
-| 7 | When both TP and SL are inside a candle, SL first; gap fills at the open | Conservative replay. |
+| 6 | Entry at the next candle open; signal levels stay absolute | A signal is only known at close. |
+| 7 | When both TP and SL are inside a candle, SL first | Conservative with OHLC-only data. |
 | 8 | Engine sizing: budget `init_fund / 2`, concurrent positions, loss capped at `-E` | Mirrors the trade engine. |
 | 9 | No fees | Explicit user requirement. |
-| 10 | One account per symbol | Matches the live per-symbol analyzer and the Python benchmark. |
+| 10 | One account per symbol | Matches the live per-symbol analyzer. |
 | 11 | Dedup is the live driver dedup | Emit once per divergence; record suppressions. |
 | 12 | Strategy config comes from the shared `.env` parsing used by live | Same settings in live and replay. |
 | 13 | Network only when `--data` is absent | Offline reproducibility. |
+| 14 | Record signal prices and the actual fill price separately | PnL must use the fill; signal levels are the contract. |
+| 15 | Gap at entry fills at the open and exits at the open if already beyond a level | Models a real gap instead of pretending the fill was at the signal price. |
+| 16 | Closed-candle filtering is a dataset invariant | Replay must not consume a forming candle. |
+| 17 | Per-candle event order and funds order are fixed | Deterministic, testable boundary behavior. |
+| 18 | Summary includes drawdown, profit factor, exposure, and trade counts | Win rate alone is misleading with concurrency and unequal R/R. |
 
 ---
 
@@ -74,15 +82,18 @@ New `harness` feature and `analyzer-replay` binary. Rust does everything; the HT
 process/analyzer-rs/
 ├── src/
 │   ├── config_env.rs            # shared .env + strategy_from_env (also used by live)
+│   ├── identity.rs              # config_version + stable signal_id (also used by live::grpc)
 │   ├── harness/
 │   │   ├── mod.rs
-│   │   ├── dataset.rs           # CSV load, fetch, provenance
+│   │   ├── dataset.rs           # CSV/fetch load + validation + provenance
 │   │   ├── replay.rs            # CandleDriver replay per symbol -> events + signals
 │   │   ├── sim.rs               # engine-mirroring simulator (no fees)
+│   │   ├── stats.rs             # drawdown, profit factor, exposure
 │   │   └── report.rs            # payload + self-contained HTML
 │   └── bin/analyzer-replay.rs   # CLI
 ├── templates/replay.html        # Terminal layout, tabs, canvas, playback
 └── tests/
+    ├── dataset.rs
     ├── sim.rs
     ├── replay_payload.rs
     └── replay_report.rs
@@ -99,75 +110,154 @@ harness = ["exchange", "dep:clap", "dep:dotenvy"]
 implementation. `live::config` re-exports them; no behavior change.
 
 `config_version` and the stable `signal_id` hash currently live in `live::grpc` behind the `grpc`
-feature. They move to a small always-available `src/identity.rs` used by both `live::grpc` and
-`harness::replay`, so the report can show the same identity live would publish.
+feature. They move to an always-available `src/identity.rs` used by both `live::grpc` and
+`harness::replay`, so the report shows the same identity live would publish.
 
 Dependency direction: `harness` depends on `strategy`, `driver`, and `exchange`; the core stays pure.
 
 ---
 
-## 5. Replay model
+## 5. Dataset validation (invariant)
+
+Every dataset (fetched or CSV) is validated before replay:
+
+- OHLC sanity: positive prices, `high >= max(open, close)`, `low <= min(open, close)`,
+  `high >= low`. Violations are a hard failure for that symbol.
+- Ordering: timestamps strictly increasing; duplicates rejected.
+- Spacing: consecutive open times must be a positive multiple of the configured timeframe. A
+  non-multiple is a failure (`timeframe mismatch`); gaps are allowed and counted as `gaps`.
+- **Closed candles only:** a candle is closed iff
+  `as_of_ms - settle_ms >= open_time_ms + interval`. `--as-of` defaults to now and can be set for
+  deterministic historical runs. Trailing unclosed candles are dropped; if fewer than `W + 2`
+  closed candles remain, the symbol is a failure.
+- CSV and exchange data use the same validation; CSV rows carry the same schema.
+
+A symbol that fails validation is recorded in `failures` and does not produce a tab.
+
+---
+
+## 6. Replay model
 
 Per symbol:
 
-1. Load or fetch candles. Require `len >= W + 2`.
-2. Feed all candles in order through a `CandleDriver`:
-   - the driver warms at candle `W - 1` and records a `Warmed` event;
-   - from candle `W` onward it may emit `Signal`, `Suppressed`, or nothing.
-3. Record every driver event with its candle index.
-4. Run the simulator on the same candle sequence (see §6).
+1. Validate the dataset (§5).
+2. Feed candles `0..=W-1` through a `CandleDriver` as warm-up. The driver records a `Warmed`
+   event at candle `W - 1` and seeds its dedup state. No signals are recorded for these candles.
+3. From candle `W` to the end, the simulator loop (§7.3) feeds each candle to the driver in step 3
+   and records `Signal`, `Suppressed`, or nothing.
+4. Run the trade simulator on the same candle sequence (§7).
 
-`Signal` fields recorded for the report: `action`, `reason`, `confidence`, `entry_price`,
+`Signal` fields recorded: `action`, `reason`, `confidence`, `entry_price` (signal entry),
 `sl_price`, `tp_price`, `divergence_index`, `divergence_kind`, `divergence_open_time_ms`,
-`divergence_age_candles`, `signal_candle_open_time_ms`, and a stable `signal_id`
-(same hash inputs as live: symbol, action, kind, divergence time, config version).
+`divergence_age_candles`, `signal_candle_open_time_ms`, and the stable `signal_id`.
 
-Signals are **not** re-emitted for the same divergence. Suppressions are recorded with a reason:
-`duplicate`, `below_watermark`, or `too_old`.
+Suppressions are recorded with `duplicate`, `below_watermark`, or `too_old`.
 
-**Parity window.** Live and replay match when they see the same closed-candle window and start
-with the same warm-up seeding. A replay that starts at a different history point can seed different
-divergences, so the report states the replay range and the window. The parity gate is the existing
-`signal_parity` fixtures plus a replay-vs-live comparison on the same windows.
+**Parity window.** Live and replay match when they see the same closed-candle window and start with
+the same warm-up seeding. A replay starting at a different history point can seed different
+divergences. The report states the replay range and window; parity is verified on identical windows.
 
 ---
 
-## 6. Trade simulation (engine mirror, no fees)
+## 7. Trade simulation (engine mirror, no fees)
 
 One account per symbol.
 
-- `init_fund` default `1000` (CLI `--init-fund`, env `BENCHMARK_INIT_FUND`).
-- `budget = init_fund / 2`.
-- A position opens on each signal while `available_fund >= budget`; otherwise the signal is
-  recorded as `skipped_funds`.
-- Entry at the **next candle open**; `E = budget`; `available_fund -= E`.
-- Exits are evaluated on the entry candle and later, using candle high/low:
-  1. gap: if the open is beyond SL, fill at open; if beyond TP, fill at open;
-  2. if both TP and SL are inside the range, fill at **SL**;
-  3. otherwise TP or SL.
-- `proceeds = E * (exit / entry)`.
-- PnL: long `proceeds - E`; short `E - proceeds`; `pnl = max(pnl, -E)`.
-- On close: `available_fund += E + pnl`.
-- **No fees** are charged.
-- A signal on the final candle whose entry would be beyond the data is recorded as
-  `unfilled_at_end`.
-- Open positions at the end are marked at the last close for `unrealized`; they are not closed.
+### 7.1 Prices
 
-Equity: `available_fund + sum(E) + unrealized`.
+- The signal’s `entry_price`, `sl_price`, and `tp_price` are the **contract** and are recorded
+  unchanged.
+- The simulated **fill price** is the next candle’s open.
+- PnL and risk/reward use the fill price and the absolute SL/TP levels.
+- `risk_reward = (tp - fill) / (fill - sl)` for a long (mirror for short); `null` when the
+  denominator is not positive.
+
+### 7.2 Sizing and funds
+
+- `init_fund` default `1000` (`--init-fund`, env `BENCHMARK_INIT_FUND`).
+- `budget = init_fund / 2`.
+- A position opens on a pending signal while `available_fund >= budget`; otherwise the entry is
+  recorded as `skipped_funds` and the signal is consumed (not retried).
+- `E = budget`; `available_fund -= E` at fill.
+- Multiple concurrent positions are allowed; they are evaluated FIFO by entry index.
+
+### 7.3 Deterministic candle processing
+
+For candle `i` (from `W` to `len - 1`):
+
+1. **Fill** the pending entry from the signal at `i - 1` at `open[i]` (funds check, §7.2).
+2. **Exit evaluation** for all open positions, including one just filled, using candle `i`:
+   - gap: if the fill/open is already beyond SL or TP, exit at the open (`gap_sl` / `gap_tp`);
+   - otherwise if both SL and TP are inside the range, exit at **SL**;
+   - otherwise exit at SL or TP.
+3. **Driver push**: feed candle `i` to the `CandleDriver`; a new signal becomes pending for
+   `i + 1`.
+4. Record events in that order.
+
+Funds released by an exit during step 2 are available for entries on the **next** candle, not the
+current one, because the entry filled at the open before the exit occurred. This is explicit and
+tested.
+
+A signal on the final candle whose entry would be beyond the data is `unfilled_at_end`.
+
+### 7.4 PnL
+
+- `proceeds = E * (exit / fill)`.
+- long: `pnl = proceeds - E`; short: `pnl = E - proceeds`.
+- `pnl = max(pnl, -E)` (loss capped at committed fund).
+- On close: `available_fund += E + pnl`.
+- **No fees.**
+- Open positions at the end are marked at the last close for `unrealized`; they are not closed.
+- `equity = available_fund + sum(E) + unrealized`.
+
+### 7.5 Engine rules: copied vs approximated
+
+| Rule | Status |
+|---|---|
+| `budget = init_fund / 2`; open while `available_fund >= budget` | Copied from the engine |
+| Multiple concurrent positions; FIFO exits | Copied |
+| Absolute SL/TP levels from the signal | Copied |
+| Long/short realized-PnL formulas | Copied from `reconciler/pnl.rs` |
+| Loss capped at `-E`; credit `E + pnl` on close | Copied |
+| One account per symbol | Copied from the per-symbol analyzer model |
+| Fill timing | Approximated: next open, no partial fills |
+| Intrabar order | Approximated: SL-first with OHLC-only data |
+| Fees, slippage, borrow/margin, min size, exchange constraints | Not modeled |
+| Engine dedup, order lifecycle, reconciliation | Not modeled |
+
+The report labels results **gross simulated performance, excluding trading costs**.
+
+### 7.6 Summary statistics
+
+- `realized_pnl` = `gross_realized_pnl` = sum of closed-trade PnL (no fees).
+- `wins`: closed trades with `pnl > 0`; `losses`: `pnl < 0`; zero-PnL trades count in `trades`
+  but in neither wins nor losses.
+- `win_rate = wins / trades * 100` (`0` when no trades).
+- `avg_win` / `avg_loss`: mean PnL over wins / losses (`0` when none).
+- `profit_factor = gross_profit / gross_loss`; `null` when there are no losses and no profit,
+  `"inf"` when there is profit and no loss, otherwise the ratio as a string.
+- `max_drawdown`: from the closed-trade equity curve (`available_fund + reserved` after each
+  close), the largest peak-to-trough drop, as an absolute amount and a percentage of the peak.
+  Unrealized PnL is excluded.
+- `exposure_candles`: sum of holding durations (`exit_index - entry_index` for closed trades, plus
+  `last_index - entry_index` for open positions); `time_in_market_pct` is that over the number of
+  replayed candles.
+- `skipped_funds`, `unfilled_at_end`, and `gaps` are counts.
 
 ---
 
-## 7. Report payload
+## 8. Report payload
 
 ```json
 {
-  "generated_at": "2026-10-21T12:00:00",
+  "generated_at": "2026-10-21T12:00:00Z",
   "config": {
-    "timeframe": "15min",
+    "timeframe": "1day",
     "limit": 500,
     "window": 100,
     "init_fund": "1000",
     "fees": false,
+    "as_of_ms": 1760000000000,
     "rsi_period": 14,
     "rsi_order": 5,
     "price_diff_threshold": "0.05",
@@ -189,78 +279,94 @@ Equity: `available_fund + sum(E) + unrealized`.
       "events": [
         {"i": 99, "kind": "warmup", "seeded_keys": 1},
         {"i": 118, "kind": "signal", "action": "BUY", "reason": "regular_bullish_divergence",
-         "entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112,
-         "divergence_open_time_ms": 1759000000000, "age": 6, "signal_id": "v1:9f2c7a1b4e8d3f6a2c5b9e0d7f1a4c8b3e6d9f2a5c8b1e4d7f0a3c6b9e2d5f8a"},
+         "signal_entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112,
+         "divergence_open_time_ms": 1759000000000, "age": 6,
+         "signal_id": "v1:9f2c7a1b4e8d3f6a2c5b9e0d7f1a4c8b3e6d9f2a5c8b1e4d7f0a3c6b9e2d5f8a"},
         {"i": 119, "kind": "suppressed", "reason": "duplicate", "divergence_index": 112},
-        {"i": 119, "kind": "entry", "side": "BUY", "price": "87120", "E": "500"},
-        {"i": 132, "kind": "exit", "side": "BUY", "price": "90065", "pnl": "16.90", "reason": "TP"}
+        {"i": 119, "kind": "entry", "side": "BUY", "signal_entry": "87272", "fill": "87120",
+         "sl": "85963", "tp": "90065", "E": "500", "risk_reward": "2.23"},
+        {"i": 132, "kind": "exit", "side": "BUY", "fill": "90065", "pnl": "16.90", "reason": "TP"}
       ],
       "signals": [{"i": 118, "action": "BUY", "reason": "regular_bullish_divergence",
-                   "entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112}],
-      "trades": [{"entry_index": 119, "exit_index": 132, "side": "BUY", "entry": "87120",
-                  "exit": "90065", "E": "500", "pnl": "16.90", "pnl_pct": "3.38", "reason": "TP"}],
-      "open_positions": [{"entry_index": 190, "side": "SELL", "entry": "91240", "E": "500",
-                          "tp": "88420", "sl": "92590", "unrealized": "-4.10"}],
+                   "signal_entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112}],
+      "trades": [{"entry_index": 119, "exit_index": 132, "side": "BUY", "signal_entry": "87272",
+                  "fill": "87120", "exit": "90065", "E": "500", "pnl": "16.90", "pnl_pct": "3.38",
+                  "risk_reward": "2.23", "reason": "TP"}],
+      "open_positions": [{"entry_index": 190, "side": "SELL", "signal_entry": "91240",
+                          "fill": "91300", "E": "500", "tp": "88420", "sl": "92590",
+                          "unrealized": "-4.10"}],
       "summary": {
-        "init_fund": "1000", "available_fund": "516.90", "realized_pnl": "16.90",
-        "unrealized_pnl": "-4.10", "equity": "1012.80", "trades": 3, "wins": 2,
-        "win_rate": "66.7", "open_count": 1, "skipped_funds": 0, "unfilled_at_end": 0
+        "init_fund": "1000", "available_fund": "516.90", "reserved": "500",
+        "realized_pnl": "16.90", "unrealized_pnl": "-4.10", "equity": "1012.80",
+        "gross_realized_pnl": "16.90", "profit_factor": "2.10",
+        "max_drawdown": "-8.40", "max_drawdown_pct": "-0.84",
+        "trades": 3, "wins": 2, "losses": 1, "win_rate": "66.7",
+        "avg_win": "12.10", "avg_loss": "-7.30",
+        "exposure_candles": 41, "time_in_market_pct": "8.2",
+        "open_count": 1, "skipped_funds": 0, "unfilled_at_end": 0, "gaps": 0,
+        "returns_label": "gross simulated, excluding fees and slippage"
       }
     }
   ],
-  "failures": [{"symbol": "SOL-USDT", "error": "only 42 closed candles (need >= 102)"}]
+  "failures": [{"symbol": "SOL-USDT", "error": "timeframe mismatch: spacing 14400000 != 900000"}]
 }
 ```
 
-Decimal values are serialized as strings; the HTML parses them for display. JSON is embedded with
-`</` escaped to `<\/` so it cannot break the surrounding `<script>`.
+Decimal values are serialized as strings. JSON is embedded with `</` escaped to `<\/`.
+
+`generated_at` is metadata: replay and trade data are deterministic; byte-identical output requires
+the same `--generated-at`.
 
 ---
 
-## 8. HTML / Terminal UI
+## 9. HTML / Terminal UI
 
 Single file, no build step, no server. Based on `design-demos/simulator/a-terminal.html`.
 
-- Header: brand, report timestamp, config summary, "signals live-exact · trades simulated · no fees".
-- Symbol tabs: one tab per `symbols[]` entry, plus a failure list when some symbols could not load.
+- Header: brand, report timestamp, config summary, and the banner
+  “signals live-exact · trades simulated · fees excluded · not a profitability claim”.
+- Symbol tabs: one per `symbols[]`; failures shown as disabled tabs with the reason.
 - Per tab:
-  - market bar: symbol, timeframe, window, last price, RSI, signal count, trade count;
-  - chart: candles up to the current step, SMA, window-start marker, signal markers, TP/SL lines,
-    entry/exit dots;
-  - RSI panel: 30/50/70 bands and the RSI line;
-  - event stream: warm-up, emitted signal, suppressed, entry, exit;
+  - market bar: symbol, timeframe, window, last price, RSI, signals, trades, equity;
+  - chart: candles up to the step, SMA, window-start marker, signal markers, TP/SL lines,
+    fill/exit dots (fill price distinct from the signal entry);
+  - RSI panel with 30/50/70 bands;
+  - event stream: warm-up, signal, suppressed, entry, exit;
   - open positions and trade ledger;
+  - summary stats: equity, gross realized, profit factor, max drawdown, exposure, trades, win rate;
   - playback: play/pause, step, next signal, reset, speed, scrub; keyboard space/left/right.
 - Each tab keeps its own step; switching tabs preserves it.
-- Numbers are formatted for display; the underlying data stays string-exact.
 
-The template is `templates/replay.html`; `report.rs` injects the payload into a
-`const REPLAY = __REPLAY_DATA__;` slot.
+`report.rs` injects the payload into `const REPLAY = __REPLAY_DATA__;` in
+`templates/replay.html`.
 
 ---
 
-## 9. CLI and configuration
+## 10. CLI and configuration
 
 ```bash
 analyzer-replay \
-  --symbol BTC-USDT --symbol ETH-USDT --symbol SOL-USDT \
-  --timeframe 15min \
+  --symbol BTC-USDT --symbol XRP-USDT \
+  --timeframe 1day \
   --limit 500 \
   --init-fund 1000 \
   --out process/analyzer-rs/out/replay.html \
-  [--data BTC-USDT=tests/fixtures/btc_usdt_1day.csv]
+  [--data BTC-USDT=tests/fixtures/btc_usdt_1day.csv] \
+  [--data XRP-USDT=tests/fixtures/xrp_usdt_1day.csv] \
+  [--as-of 1760000000000] \
+  [--generated-at 2026-10-21T12:00:00Z]
 ```
 
 - `--symbol` repeatable; default from `BENCHMARK_TICKERS`.
-- `--timeframe` default from `KUCOIN_TIMEFRAME` (15min).
+- `--timeframe` default from `KUCOIN_TIMEFRAME`; every dataset must match it (§5).
 - `--limit` replay candles (default 500); warm-up `W` is fetched on top.
 - `--init-fund` default from `BENCHMARK_INIT_FUND` (1000).
 - `--out` default `process/analyzer-rs/out/replay.html` (gitignored).
 - `--data SYMBOL=path.csv` repeatable; when present for a symbol, no network is used for it.
-- Strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `ANALYZER_WINDOW_CANDLES`) come from the shared
-  `.env`/`strategy_from_env`, identical to live.
-- Network failures for one symbol are recorded in `failures`; other symbols still render.
-- Fetching uses the existing `exchange::kucoin::fetch_klines` with a limit of `W + limit`.
+- `--as-of` fixes the closed-candle cutoff for deterministic runs.
+- `--generated-at` fixes the report timestamp for byte-identical output.
+- Strategy settings come from the shared `.env`/`strategy_from_env`, identical to live.
+- Per-symbol failures are recorded; other symbols still render.
 
 Makefile target:
 
@@ -271,42 +377,63 @@ analyzer-replay:
 
 ---
 
-## 10. Testing
+## 11. Testing
 
-- **Simulator unit tests:** budget = `init_fund / 2`; concurrent positions; long/short PnL; loss cap
-  `-E`; SL-first; gap at open; no fees; `skipped_funds`; `unfilled_at_end`; open-position
-  mark-to-market.
-- **Replay builder tests:** events match the driver for the synthetic fixture; the emitted signal
-  sequence matches the existing `signal_parity` expectations for the same windows.
-- **Payload tests:** keys and lengths per symbol; decimal strings; `failures` shape.
-- **Report tests:** one tab per symbol; JSON embedded and escaped; template contains no strategy
-  logic; the file is self-contained (no external requests).
-- **CLI tests:** `--data` offline run for two symbols writes one HTML; missing symbol goes to
+### 11.1 Layer 1 — signal correctness
+
+- Replay events match the `CandleDriver` for the synthetic fixture.
+- The emitted signal sequence matches the existing `signal_parity` expectations for the same
+  closed-candle windows, warm-up, and config.
+- The replay’s `signal_id` matches the live identity for the same inputs.
+
+### 11.2 Layer 2 — trade simulation (not a profitability test)
+
+- Budget `init_fund / 2`; concurrent positions; `skipped_funds`.
+- Long and short PnL, profitable and losing.
+- Loss cap `-E`; credit `E + pnl`.
+- SL-first when both levels are in range.
+- Gap at entry: fill at open, immediate exit at open with `gap_sl`/`gap_tp`.
+- Event order: entry at open before exits; funds released on candle `i` are available at `i + 1`,
+  not `i`.
+- `unfilled_at_end`; open-position mark-to-market.
+- Summary stats: profit factor, max drawdown, exposure, win rate, average win/loss.
+- No fees anywhere.
+
+### 11.3 Dataset and report
+
+- Validation: OHLC sanity, ordering, duplicates, spacing/timeframe mismatch, unclosed candles,
+  short history, `--as-of`.
+- Payload: keys, lengths, decimal strings, `failures`, `signal_entry` vs `fill`.
+- Report: one tab per symbol; failures as disabled tabs; embedded JSON escaped; self-contained.
+- CLI: offline two-symbol same-timeframe run writes one HTML; a mismatched-timeframe CSV goes to
   `failures`.
-- **Purity:** no floats in `src/strategy`; the harness may use `f64` only for JSON/report numbers.
 
 Acceptance:
 
 - `cargo test -p analyzer-rs --features harness` passes.
-- `analyzer-replay --data BTC-USDT=tests/fixtures/btc_usdt_1day.csv --data ETH-USDT=tests/fixtures/eth_usdt_4hour.csv --out /tmp/replay.html` writes a self-contained file that opens with two tabs.
-- A network run for BTC/ETH/SOL 15min produces a report where the signal events match the same
-  windows' `signal_parity` results.
+- `analyzer-replay --timeframe 1day --data BTC-USDT=tests/fixtures/btc_usdt_1day.csv --data XRP-USDT=tests/fixtures/xrp_usdt_1day.csv --out /tmp/replay.html` writes a self-contained two-tab file.
+- A network run for BTC/ETH/SOL 15min produces a report whose signal events match the same windows’
+  `signal_parity` results.
+- A CSV whose spacing does not match `--timeframe` appears in `failures`.
 
 ---
 
-## 11. Risks and open items
+## 12. Risks and open items
 
 | Risk | Mitigation |
 |---|---|
-| Large embedded JSON for many symbols | Default 3 symbols / 500 candles; compact JSON; documented limit. |
-| Browser cannot run the strategy | By design: Rust precomputes; the HTML only plays back. |
-| Parity drift if config differs from live | Replay uses the same `.env`/`strategy_from_env` and window. |
-| JSON breaking the HTML script | Escape `</` in the embedded payload. |
-| Fetch failures for one symbol | Recorded in `failures`; other tabs render. |
-| Trades mistaken for live results | Header banner states signals are exact, trades simulated, fees excluded. |
+| `generated_at` breaks byte-determinism | Determinism is defined over replay/trade data; `--generated-at` makes the file byte-identical. |
+| Signal entry differs from the fill | Both are recorded; PnL and R/R use the fill. |
+| Engine mirror mistaken for live execution | Copied-vs-approximated table and a banner label. |
+| Results mistaken for profitability | “Gross simulated, excluding fees and slippage” label; Layer 1/Layer 2 separation. |
+| Forming candle consumed | Closed-candle filter is a dataset invariant. |
+| Same-candle ordering ambiguity | Fixed candle processing order and funds policy; boundary tests. |
+| Timeframe mismatch | Per-dataset spacing validation; mismatches fail that symbol. |
+| Large embedded JSON | Default 3 symbols / 500 candles; compact JSON. |
+| JSON breaking the HTML script | Escape `</` in the payload. |
 
 Open items:
 
-- Whether to add a "play all tabs" control (v1: independent tabs).
-- Whether to add per-symbol timeframes (v1: one timeframe per run).
-- Whether to expose `--limit` in the report config (v1: yes, informational).
+- Whether to add a “play all tabs” control (v1: independent tabs).
+- Whether to support per-symbol timeframes (v1: one timeframe per run, validated).
+- Whether to add a CSV export of the trade ledger (v1: HTML only).
