@@ -1,4 +1,4 @@
-use crate::driver::{CandleDriver, DriverEvent};
+use crate::driver::{CandleDriver, DriverEvent, SuppressReason};
 use crate::harness::dataset::{Dataset, Provenance};
 use crate::identity::{config_version, signal_id};
 use crate::strategy::config::Config;
@@ -42,6 +42,14 @@ pub struct Replay {
     pub provenance: Provenance,
 }
 
+fn suppress_reason(reason: SuppressReason) -> &'static str {
+    match reason {
+        SuppressReason::Duplicate => "duplicate",
+        SuppressReason::BelowWatermark => "below_watermark",
+        SuppressReason::TooOld => "too_old",
+    }
+}
+
 pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
     let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone());
     let mut events = Vec::new();
@@ -68,7 +76,7 @@ pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
                 }
                 DriverEvent::Suppressed { reason, .. } => events.push(ReplayEvent::Suppressed {
                     candle_index: index,
-                    reason: format!("{reason:?}").to_ascii_lowercase(),
+                    reason: suppress_reason(reason).to_string(),
                 }),
             }
         }

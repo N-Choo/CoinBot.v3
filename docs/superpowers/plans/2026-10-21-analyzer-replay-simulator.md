@@ -1113,7 +1113,7 @@ Expected: compile error (`replay` missing).
 `src/harness/replay.rs`:
 
 ```rust
-use crate::driver::{CandleDriver, DriverEvent};
+use crate::driver::{CandleDriver, DriverEvent, SuppressReason};
 use crate::harness::dataset::Dataset;
 use crate::identity::{config_version, signal_id};
 use crate::strategy::config::Config;
@@ -1151,6 +1151,14 @@ pub struct Replay {
     pub provenance: crate::harness::dataset::Provenance,
 }
 
+fn suppress_reason(reason: SuppressReason) -> &'static str {
+    match reason {
+        SuppressReason::Duplicate => "duplicate",
+        SuppressReason::BelowWatermark => "below_watermark",
+        SuppressReason::TooOld => "too_old",
+    }
+}
+
 pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
     let window = cfg.window;
     let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone());
@@ -1179,7 +1187,7 @@ pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
                 }
                 DriverEvent::Suppressed { reason, .. } => events.push(ReplayEvent::Suppressed {
                     candle_index: index,
-                    reason: format!("{reason:?}").to_ascii_lowercase(),
+                    reason: suppress_reason(reason).to_string(),
                 }),
             }
         }

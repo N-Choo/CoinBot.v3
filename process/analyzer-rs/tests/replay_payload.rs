@@ -60,4 +60,14 @@ fn replay_matches_the_driver_and_uses_live_identity() {
         .events
         .iter()
         .any(|event| matches!(event, ReplayEvent::Warmup { .. })));
+
+    let allowed_reasons = ["duplicate", "below_watermark", "too_old"];
+    for event in &replay.events {
+        if let ReplayEvent::Suppressed { reason, .. } = event {
+            assert!(
+                allowed_reasons.contains(&reason.as_str()),
+                "unexpected suppressed reason: {reason}"
+            );
+        }
+    }
 }
