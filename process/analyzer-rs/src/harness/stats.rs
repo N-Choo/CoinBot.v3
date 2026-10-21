@@ -13,6 +13,7 @@ pub struct SimSummary {
     pub gross_profit: Decimal,
     pub gross_loss: Decimal,
     pub profit_factor: Option<Decimal>,
+    pub profit_factor_is_infinite: bool,
     pub trades: usize,
     pub wins: usize,
     pub losses: usize,
@@ -34,6 +35,7 @@ pub fn summarize(
     init_fund: Decimal,
     outcome: &SimOutcome,
     last_close: Decimal,
+    last_index: usize,
     replayed_candles: usize,
 ) -> SimSummary {
     let trades = &outcome.trades;
@@ -48,6 +50,7 @@ pub fn summarize(
     } else {
         Some(gross_profit / gross_loss.abs())
     };
+    let profit_factor_is_infinite = losses.is_empty() && gross_profit > Decimal::ZERO;
     let win_rate = if trades.is_empty() {
         Decimal::ZERO
     } else {
@@ -67,6 +70,7 @@ pub fn summarize(
     let mut equity = init_fund;
     let mut peak = init_fund;
     let mut max_dd = Decimal::ZERO;
+    let mut max_dd_pct = Decimal::ZERO;
     for trade in trades {
         equity += trade.pnl;
         if equity > peak {
@@ -75,13 +79,13 @@ pub fn summarize(
         let dd = peak - equity;
         if dd > max_dd {
             max_dd = dd;
+            max_dd_pct = if peak.is_zero() {
+                Decimal::ZERO
+            } else {
+                dd / peak * Decimal::from(100)
+            };
         }
     }
-    let max_dd_pct = if peak.is_zero() {
-        Decimal::ZERO
-    } else {
-        max_dd / peak * Decimal::from(100)
-    };
 
     let mut reserved = Decimal::ZERO;
     let mut unrealized = Decimal::ZERO;
@@ -97,7 +101,7 @@ pub fn summarize(
             Direction::Short => -ret,
         };
         unrealized += position.e * ret;
-        exposure_candles += replayed_candles.saturating_sub(position.entry_index);
+        exposure_candles += last_index.saturating_sub(position.entry_index);
     }
     let time_in_market_pct = if replayed_candles == 0 {
         Decimal::ZERO
@@ -115,6 +119,7 @@ pub fn summarize(
         gross_profit,
         gross_loss,
         profit_factor,
+        profit_factor_is_infinite,
         trades: trades.len(),
         wins: wins.len(),
         losses: losses.len(),

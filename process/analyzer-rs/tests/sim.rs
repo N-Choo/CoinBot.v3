@@ -142,7 +142,7 @@ fn summary_stats_use_realized_pnl() {
         1000,
         0,
     );
-    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(99), 4);
+    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(99), 3, 4);
     assert_eq!(summary.trades, 2);
     assert_eq!(summary.wins + summary.losses + summary.breakeven, 2);
     assert!(summary.max_drawdown >= Decimal::ZERO);
@@ -178,4 +178,92 @@ fn gap_beyond_the_stop_fills_at_the_open_for_long_and_short() {
     assert_eq!(short.trades[0].reason, "gap_sl");
     assert_eq!(short.trades[0].fill, d(106));
     assert_eq!(short.trades[0].exit, d(106));
+}
+
+#[test]
+fn gap_beyond_the_target_fills_at_the_open_for_long_and_short() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 106, 107, 105, 106), // long opens above TP 104
+    ];
+    let long = simulate(
+        &candles,
+        &[signal(0, Direction::Long, 100, 98, 104)],
+        1000,
+        0,
+    );
+    assert_eq!(long.trades[0].reason, "gap_tp");
+    assert_eq!(long.trades[0].fill, d(106));
+    assert_eq!(long.trades[0].exit, d(106));
+
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 90, 91, 89, 90), // short opens below TP 95
+    ];
+    let short = simulate(
+        &candles,
+        &[signal(0, Direction::Short, 100, 105, 95)],
+        1000,
+        0,
+    );
+    assert_eq!(short.trades[0].reason, "gap_tp");
+    assert_eq!(short.trades[0].fill, d(90));
+    assert_eq!(short.trades[0].exit, d(90));
+}
+
+#[test]
+fn released_funds_fill_the_next_signal_instead_of_skipping() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 106, 99, 105),
+        candle(3, 100, 101, 99, 100),
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 90, 105),
+            signal(1, Direction::Long, 100, 90, 120),
+            signal(2, Direction::Long, 100, 90, 120),
+        ],
+        1000,
+        0,
+    );
+    // The signal at candle 2 fills on candle 3 using funds released when the first
+    // position exits at TP on candle 2.
+    assert_eq!(outcome.trades.len(), 1);
+    assert_eq!(outcome.trades[0].entry_index, 1);
+    assert_eq!(outcome.open_positions.len(), 2);
+    assert!(outcome.open_positions.iter().any(|p| p.entry_index == 3));
+    assert_eq!(outcome.skipped_funds, 0);
+}
+
+#[test]
+fn summary_reports_exact_risk_and_exposure_metrics() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 101, 79, 80),
+        candle(3, 100, 101, 99, 100),
+        candle(4, 100, 111, 99, 110),
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 80, 110),
+            signal(2, Direction::Long, 100, 80, 110),
+        ],
+        1000,
+        0,
+    );
+    let summary = summarize(Decimal::from(1000), &outcome, d(110), 4, 5);
+    assert_eq!(summary.trades, 2);
+    assert_eq!(summary.profit_factor, Some(Decimal::new(5, 1)));
+    assert!(!summary.profit_factor_is_infinite);
+    assert_eq!(summary.avg_win, d(50));
+    assert_eq!(summary.avg_loss, d(-100));
+    assert_eq!(summary.max_drawdown, d(100));
+    assert_eq!(summary.max_drawdown_pct, d(10));
+    assert_eq!(summary.exposure_candles, 2);
 }
