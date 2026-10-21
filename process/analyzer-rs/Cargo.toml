@@ -5,11 +5,19 @@ edition = "2021"
 
 [features]
 default = []
+exchange = ["dep:ureq", "dep:serde_json", "dep:chrono"]
+live = ["exchange", "dep:tokio", "dep:chrono", "dep:log", "dep:env_logger"]
 
 [dependencies]
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"
+ureq = { version = "2", features = ["json"], optional = true }
+serde_json = { version = "1", optional = true }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "time", "sync", "signal"], optional = true }
+chrono = { workspace = true, optional = true }
+log = { workspace = true, optional = true }
+env_logger = { workspace = true, optional = true }
 
 [dev-dependencies]
 serde_json = "1"
