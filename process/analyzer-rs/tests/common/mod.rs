@@ -189,4 +189,30 @@ mod tests {
             1e-10
         ));
     }
+
+    #[test]
+    fn close_enough_uses_relative_scale_above_one() {
+        let a = decimal_from_str("1000000").unwrap();
+        let within = decimal_from_str("1000000.0005").unwrap();
+        let outside = decimal_from_str("1000000.002").unwrap();
+        assert!(close_enough(a, within, 1e-9));
+        assert!(!close_enough(a, outside, 1e-9));
+    }
+
+    #[test]
+    fn assert_opt_close_at_accepts_both_none() {
+        assert_opt_close_at(None, None, 1e-9, "missing");
+    }
+
+    #[test]
+    #[should_panic(expected = "case: got Some")]
+    fn assert_opt_close_at_panics_when_expected_is_none() {
+        assert_opt_close_at(Some(Decimal::ONE), None, 1e-9, "case");
+    }
+
+    #[test]
+    #[should_panic(expected = "case: got None")]
+    fn assert_opt_close_at_panics_when_actual_is_none() {
+        assert_opt_close_at(None, Some("1"), 1e-9, "case");
+    }
 }
