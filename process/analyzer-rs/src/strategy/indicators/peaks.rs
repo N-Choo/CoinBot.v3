@@ -1,7 +1,9 @@
 use rust_decimal::Decimal;
 
 /// A `Decimal`/`Option` port of `scipy.signal.find_peaks(values, distance=distance)`.
-/// `None` behaves like NaN: it never forms a peak and never blocks one.
+/// `None` behaves like NaN: it cannot itself be a peak, and a `None` adjacent to a candidate
+/// suppresses that peak (scipy does the same for NaN). `distance <= 1` is treated as no filtering;
+/// scipy rejects `distance < 1`, and the core config guarantees `>= 1`.
 ///
 /// It matches scipy exactly when peak priorities (heights) are distinct. For equal-priority
 /// peaks, scipy processes them in the order produced by numpy's unstable `argsort`, which is an
@@ -31,6 +33,8 @@ fn local_maxima(values: &[Option<Decimal>]) -> Vec<usize> {
             peaks.push(i);
             i += 1;
         } else if cur > prev && cur == next {
+            // A plateau is a peak only when the value after it is lower. Report its midpoint
+            // (rounded down) and jump past the plateau, which cannot itself be a peak.
             let mut j = i + 1;
             while j + 1 < n && values[j] == Some(cur) && values[j + 1] == Some(cur) {
                 j += 1;
@@ -52,6 +56,7 @@ fn select_by_distance(peaks: &[usize], values: &[Option<Decimal>], distance: usi
     use std::cmp::Ordering;
     let mut order: Vec<usize> = (0..peaks.len()).collect();
     order.sort_by(|&a, &b| {
+        // Peaks always index `Some` values; the zero fallback is defensive only.
         let va = values[peaks[a]].unwrap_or(Decimal::ZERO);
         let vb = values[peaks[b]].unwrap_or(Decimal::ZERO);
         match va.cmp(&vb) {
@@ -64,6 +69,9 @@ fn select_by_distance(peaks: &[usize], values: &[Option<Decimal>], distance: usi
     let mut kept: Vec<usize> = Vec::new();
     for &index in &order {
         let position = peaks[index];
+        // Descending priority means any higher-priority neighbour was already processed, so
+        // keeping a peak only when it is far from every already-kept peak reproduces scipy's
+        // remove-within-distance pass whenever priorities are distinct.
         if kept
             .iter()
             .all(|&k| position.abs_diff(peaks[k]) >= distance)
@@ -86,6 +94,10 @@ mod tests {
         v.iter().map(|x| Some(Decimal::from(*x))).collect()
     }
 
+    fn opts(v: &[Option<i64>]) -> Vec<Option<Decimal>> {
+        v.iter().map(|x| x.map(Decimal::from)).collect()
+    }
+
     #[test]
     fn plateau_reports_the_middle() {
         assert_eq!(find_peaks(&vals(&[0, 1, 1, 1, 0]), 1), vec![2]);
@@ -106,7 +118,7 @@ mod tests {
     }
 
     #[test]
-    fn distance_removes_smaller_peaks_first() {
+    fn distance_filtering_prefers_higher_priority() {
         assert_eq!(find_peaks(&vals(&[0, 3, 2, 3, 0]), 2), vec![1, 3]);
         assert_eq!(find_peaks(&vals(&[0, 3, 2, 3, 0]), 3), vec![3]);
         assert_eq!(find_peaks(&vals(&[0, 3, 0, 3, 0, 3, 0]), 3), vec![1, 5]);
@@ -132,5 +144,47 @@ mod tests {
         // Likewise scipy returns [2, 9] here; the deterministic tie-break yields [5, 12].
         let second = [0, 2, 3, 1, 1, 3, 2, 0, 0, 2, 1, 0, 2, 0];
         assert_eq!(find_peaks(&vals(&second), 4), vec![5, 12]);
+    }
+
+    #[test]
+    fn none_values_suppress_adjacent_candidates() {
+        // Expected values are the verified scipy 1.16.1 outputs.
+        assert_eq!(
+            find_peaks(&opts(&[Some(0), Some(5), None, Some(0)]), 1),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            find_peaks(&opts(&[None, Some(5), Some(0)]), 1),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            find_peaks(
+                &opts(&[Some(0), Some(5), Some(0), None, Some(0), Some(5), Some(0)]),
+                1
+            ),
+            vec![1, 5]
+        );
+        assert_eq!(
+            find_peaks(&opts(&[Some(0), Some(1), Some(1), None, Some(0)]), 1),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            find_peaks(&opts(&[Some(0), None, Some(1), Some(1), Some(0)]), 1),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            find_peaks(
+                &opts(&[Some(0), Some(1), Some(1), None, Some(2), Some(1), Some(0)]),
+                1
+            ),
+            Vec::<usize>::new()
+        );
+        assert_eq!(
+            find_peaks(
+                &opts(&[Some(0), None, Some(1), Some(1), Some(2), Some(1), Some(0)]),
+                1
+            ),
+            vec![4]
+        );
     }
 }
