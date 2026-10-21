@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset analyzer-rs-check analyzer-rs-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -76,6 +76,14 @@ test:
 
 analyzer-test:
 	@cd process/analyzer && python3 -m pytest . -v
+
+analyzer-rs-check:
+	cargo fmt -p analyzer-rs -- --check
+	cargo clippy -p analyzer-rs --all-targets --no-deps -- -D warnings
+	cargo test -p analyzer-rs
+
+analyzer-rs-test:
+	cargo test -p analyzer-rs
 
 benchmark-test:
 	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
