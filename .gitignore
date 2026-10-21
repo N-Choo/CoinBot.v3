@@ -10,3 +10,5 @@ __pycache__/
 .venv/
 .worktrees/
 process/analyzer/benchmark/out/
+# strategy-analyzer runtime data: fetched CSVs, live state/stream artifacts
+process/strategy-analyzer/data/

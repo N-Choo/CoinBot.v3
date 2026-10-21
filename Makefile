@@ -1,6 +1,6 @@
-PACKAGES = api-gateway share deposit trade-engine
+PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test status seed seed-reset benchmark-web
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -9,13 +9,13 @@ help:
 	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
 	@echo ""
 	@echo "Testing (starts Postgres + Redis automatically)"
-	@echo "  make test         Run all tests (Rust + Python)"
+	@echo "  make test         Run all Rust tests"
 	@echo "  make analyzer-test  Python analyzer unit tests only"
 	@echo "  make benchmark-test  Benchmark unit tests only"
 	@echo "  make frontend-test  Frontend tests only"
 	@echo ""
 	@echo "Trading"
-	@echo "  make trade        Run trade-engine + Python analyzer live (needs DB + Redis)"
+	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
 	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
 	@echo "  make benchmark-web  Backtest and write a self-contained HTML replay report"
 	@echo ""
@@ -52,7 +52,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test analyzer-test frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test strategy-check frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -62,16 +62,17 @@ fmt-fix:
 
 clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
+	cargo clippy -p strategy-analyzer --all-features --no-deps -- -D warnings
 
 test:
 	@[ -f .env ] || cp .env.ci .env; \
 	 docker compose up -d postgres redis && \
 		sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)) && \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test -p strategy-analyzer --all-features; \
 		rst=$$?; \
-		if [ -d process/analyzer ]; then (cd process/analyzer && python3 -m pytest . -v); pst=$$?; else echo "skipping analyzer tests (process/analyzer absent)"; pst=0; fi; \
 		docker compose stop redis postgres; \
-		exit $$(( rst + pst ))
+		exit $$rst
 
 analyzer-test:
 	@cd process/analyzer && python3 -m pytest . -v
@@ -84,6 +85,18 @@ benchmark:
 
 benchmark-web:
 	@cd process && python3 -m analyzer.benchmark.main --web
+
+# Purity gate for the deterministic core: no float arithmetic and no hash-map iteration
+# under src/strategy. The greps below are fast pre-filters that strip trailing `//` comments;
+# the authoritative check is the `syn` token-level test (tests/purity.rs), which still catches
+# a real `f64` on a line that carries a trailing comment and does not flag comments/strings.
+strategy-check:
+	@echo "checking strategy core purity..."
+	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(f32|f64)\b' || (echo "float type in core" && exit 1)
+	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(HashMap|HashSet)\b' || (echo "hash-map in core" && exit 1)
+	cargo test -p strategy-analyzer --no-default-features --test purity
+	cargo build -p strategy-analyzer --no-default-features
+	cargo build -p strategy-analyzer --all-features
 
 frontend-install:
 	cd react && npm ci
@@ -105,25 +118,24 @@ clean:
 	docker compose --profile prod down --rmi all --volumes --remove-orphans
 
 clean-all:
-	docker compose stop
-	docker compose down --rmi all --volumes --remove-orphans
+	docker compose --profile dev --profile prod down --rmi all --volumes --remove-orphans
 	docker volume prune -f
 
 status:
 	@docker compose ps 2>/dev/null
 
 restart:
-	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine)
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine strategy-analyzer)
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine frontend
+		docker compose up api_gateway deposit-worker trade-engine strategy-analyzer frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod strategy-analyzer-prod
 
 prod:
-	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer redis postgres
+	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod strategy-analyzer-prod redis postgres
 
 logs:
 	docker compose logs -f
@@ -135,14 +147,15 @@ test-api:
 	./scripts/test-api.sh
 
 trade:
-	@docker compose up -d postgres redis && \
+	@docker compose up -d postgres && \
 		sleep 2 && \
-		(cd process && DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_HOST=127.0.0.1 REDIS_URL=redis://127.0.0.1:6379 python3 -m analyzer.main & \
-		PID=$$!; sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot REDIS_URL=redis://127.0.0.1:6379 cargo run -p trade-engine; st=$$?; \
-		sleep 3; kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
+		(GRPC_ADDR=127.0.0.1:50051 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo run -p trade-engine & \
+		PID=$$!; sleep 5 && \
+		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT LIVE_CANDLE_INTERVAL=15min \
+		cargo run -p strategy-analyzer --features "harness live grpc" --bin serve -- live; st=$$?; \
+		kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \
-		docker compose stop redis postgres
+		docker compose stop postgres
 
 proto:
 	cargo build -p common --timings

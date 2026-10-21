@@ -1,21 +1,32 @@
 syntax = "proto3";
 package analyzer;
 
-message AnalyzeRequest {
-  repeated string tickers = 1;
-}
-
+// One trade signal pushed by the analyzer.
 message Signal {
-  string ticker = 1;
-  string action = 2;    // "buy", "sell", "hold"
-  double confidence = 3;
-  double entry_price = 4;
+  string ticker = 1;          // KuCoin symbol, e.g. "XRP-USDT"
+  string action = 2;          // "BUY" (long) or "SELL" (short)
+  double entry_price = 3;     // reference entry price (core signal)
+  uint32 schema_version = 4;  // payload schema version
+  string signal_id = 5;       // stable id; the engine's dedup key
+  uint64 seq = 6;             // global monotonic counter, assigned at emission
+  int64 expires_at_ms = 7;    // emission time + TTL; the engine ignores a signal after this.
+  int64 trigger_time_ms = 8;  // touching-tick time — the strategy event time
+  double sl_price = 9;        // stop loss
+  double tp_price = 10;       // take profit
+  string zone_id = 11;        // originating supply/demand zone id
+  string reason = 12;         // e.g. "supply_demand_4h rr=<gross_rr> mode=<target_mode>"
 }
 
-message AnalyzeResponse {
-  repeated Signal signals = 1;
+message Empty {}
+message Symbols { repeated string tickers = 1; }
+message Ack {
+  bool accepted = 1; // false = received but rejected (expired / past tolerance / duplicate)
+  string reason = 2; // human-readable outcome, for logs
 }
 
-service AnalyzerService {
-  rpc Analyze(AnalyzeRequest) returns (AnalyzeResponse);
+// Trade-engine : Server
+// strategy-analyzer : Client
+service EngineService {
+  rpc GetActiveSymbols(Empty) returns (Symbols);
+  rpc Publish(Signal) returns (Ack);
 }
