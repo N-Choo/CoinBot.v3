@@ -3,5 +3,6 @@
 pub mod config;
 pub mod decimal;
 pub mod error;
+pub mod indicators;
 pub mod types;
 pub mod window;
