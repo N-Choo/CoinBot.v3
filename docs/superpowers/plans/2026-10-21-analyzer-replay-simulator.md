@@ -97,6 +97,16 @@ fn signal_id_is_stable_and_kind_sensitive() {
     other.divergence_kind = DivergenceKind::HiddenBullish;
     assert_ne!(id, signal_id(&other, &version));
 }
+
+#[test]
+fn signal_id_golden() {
+    let signal = sample();
+    let version = config_version(&Config::default());
+    assert_eq!(
+        signal_id(&signal, &version),
+        "v1:fc81233b2919db8993f593457a464db67d026bb46c136ad3876daeee10673be3"
+    );
+}
 ```
 
 - [ ] **Step 2: Run it to verify it fails**
@@ -138,8 +148,6 @@ pub mod identity;
 pub mod exchange;
 #[cfg(feature = "live")]
 pub mod live;
-#[cfg(feature = "harness")]
-pub mod harness;
 ```
 
 `src/config_env.rs`:
@@ -169,6 +177,13 @@ pub fn load_dotenv() {
             return;
         }
     }
+}
+
+pub fn env_string(key: &'static str) -> Option<String> {
+    std::env::var(key)
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
 }
 
 pub fn strategy_from_env() -> Result<Config, ConfigEnvError> {
@@ -218,23 +233,83 @@ pub fn parse_optional_usize_str(
 }
 
 fn parse<T: FromStr>(key: &'static str, default: T) -> Result<T, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => value.parse().map_err(|_| ConfigEnvError::Invalid(key, value)),
-        Err(_) => Ok(default),
+    match env_string(key) {
+        Some(value) => value
+            .parse()
+            .map_err(|_| ConfigEnvError::Invalid(key, value)),
+        None => Ok(default),
     }
 }
 
 fn parse_decimal(key: &'static str, default: Decimal) -> Result<Decimal, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => parse_decimal_str(key, &value),
-        Err(_) => Ok(default),
+    match env_string(key) {
+        Some(value) => parse_decimal_str(key, &value),
+        None => Ok(default),
     }
 }
 
 fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigEnvError> {
-    match std::env::var(key) {
-        Ok(value) => parse_bool_str(key, &value),
-        Err(_) => Ok(default),
+    match env_string(key) {
+        Some(value) => parse_bool_str(key, &value),
+        None => Ok(default),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decimal_values_are_trimmed() {
+        assert_eq!(
+            parse_decimal_str("X", " 1.5 ").unwrap(),
+            Decimal::new(15, 1)
+        );
+    }
+
+    #[test]
+    fn booleans_are_case_and_space_insensitive() {
+        assert!(parse_bool_str("X", " ON ").unwrap());
+        assert!(!parse_bool_str("X", " Off ").unwrap());
+    }
+
+    #[test]
+    fn empty_optional_is_none() {
+        assert_eq!(parse_optional_usize_str("X", "  ").unwrap(), None);
+        assert_eq!(parse_optional_usize_str("X", " 7 ").unwrap(), Some(7));
+    }
+
+    #[test]
+    fn env_string_trims_and_treats_empty_as_unset() {
+        std::env::set_var("ANALYZER_TEST_TRIMMED", " 42 ");
+        std::env::set_var("ANALYZER_TEST_EMPTY", "   ");
+        assert_eq!(env_string("ANALYZER_TEST_TRIMMED"), Some("42".into()));
+        assert_eq!(env_string("ANALYZER_TEST_EMPTY"), None);
+        std::env::remove_var("ANALYZER_TEST_TRIMMED");
+        std::env::remove_var("ANALYZER_TEST_EMPTY");
+    }
+
+    #[test]
+    fn parse_uses_trimmed_env_and_empty_falls_back() {
+        std::env::set_var("ANALYZER_TEST_INT", " 14 ");
+        std::env::set_var("ANALYZER_TEST_INT_EMPTY", " ");
+        assert_eq!(parse("ANALYZER_TEST_INT", 8usize).unwrap(), 14);
+        assert_eq!(parse("ANALYZER_TEST_INT_EMPTY", 8usize).unwrap(), 8);
+        std::env::remove_var("ANALYZER_TEST_INT");
+        std::env::remove_var("ANALYZER_TEST_INT_EMPTY");
+    }
+
+    #[test]
+    fn decimal_and_bool_env_are_trimmed() {
+        std::env::set_var("ANALYZER_TEST_DEC", " 1.5 ");
+        std::env::set_var("ANALYZER_TEST_BOOL", " ON ");
+        assert_eq!(
+            parse_decimal("ANALYZER_TEST_DEC", Decimal::ZERO).unwrap(),
+            Decimal::new(15, 1)
+        );
+        assert!(parse_bool("ANALYZER_TEST_BOOL", false).unwrap());
+        std::env::remove_var("ANALYZER_TEST_DEC");
+        std::env::remove_var("ANALYZER_TEST_BOOL");
     }
 }
 ```
@@ -364,6 +439,7 @@ git commit -m "refactor(analyzer-rs): share config env and signal identity"
 **Files:**
 - Create: `process/analyzer-rs/src/harness/mod.rs`
 - Create: `process/analyzer-rs/src/harness/dataset.rs`
+- Modify: `process/analyzer-rs/src/lib.rs`
 - Test: `process/analyzer-rs/tests/dataset.rs`
 
 - [ ] **Step 1: Write the failing test**
@@ -375,6 +451,7 @@ git commit -m "refactor(analyzer-rs): share config env and signal identity"
 
 use analyzer_rs::exchange::timeframes::Timeframe;
 use analyzer_rs::harness::dataset::{load_csv, DatasetError};
+use rust_decimal::Decimal;
 
 fn write_csv(name: &str, rows: &[(&str, &str, &str, &str, &str)]) -> std::path::PathBuf {
     let path = std::env::temp_dir().join(name);
@@ -396,11 +473,11 @@ fn loads_and_hashes_a_valid_csv() {
             ("1700172800000", "102", "104", "101", "103"),
         ],
     );
-    let dataset = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap();
+    let dataset = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
     assert_eq!(dataset.candles.len(), 3);
     assert_eq!(dataset.provenance.gaps, 0);
     assert_eq!(dataset.provenance.content_sha256.len(), 64);
-    let again = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap();
+    let again = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
     assert_eq!(dataset.provenance.content_sha256, again.provenance.content_sha256);
 }
 
@@ -410,7 +487,7 @@ fn rejects_bad_ohlc() {
         "analyzer-rs-bad-ohlc.csv",
         &[("1700000000000", "100", "99", "101", "100")],
     );
-    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap_err();
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
     assert!(matches!(error, DatasetError::InvalidOhlc { .. }));
 }
 
@@ -423,7 +500,8 @@ fn rejects_a_timeframe_mismatch() {
             ("1700000900000", "101", "103", "100", "102"),
         ],
     );
-    let error = load_csv("TEST-USDT", &path, Timeframe::M15, i64::MAX, 0, 0, 0).unwrap_err();
+    // The rows are 15 minutes apart, so they cannot form a D1 series.
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
     assert!(matches!(error, DatasetError::TimeframeMismatch { .. }));
 }
 
@@ -439,7 +517,7 @@ fn counts_gaps_and_enforces_the_gap_limit() {
     );
     // Duplicate row is rejected first.
     assert!(matches!(
-        load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap_err(),
+        load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err(),
         DatasetError::Duplicate { .. }
     ));
 
@@ -450,10 +528,174 @@ fn counts_gaps_and_enforces_the_gap_limit() {
             ("1700259200000", "101", "103", "100", "102"),
         ],
     );
-    let dataset = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap();
+    let dataset = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
     assert_eq!(dataset.provenance.gaps, 2);
-    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 1, 0).unwrap_err();
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 1, 0, 0).unwrap_err();
     assert!(matches!(error, DatasetError::GapTooLarge { .. }));
+}
+
+#[test]
+fn loads_the_lowercase_synthetic_fixture() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/synthetic_1day.csv");
+    let dataset = load_csv("SYNTH-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
+    assert_eq!(dataset.candles.len(), 400);
+    assert_eq!(dataset.provenance.gaps, 0);
+}
+
+#[test]
+fn rejects_a_reversed_csv() {
+    let path = write_csv(
+        "analyzer-rs-reversed.csv",
+        &[
+            ("1700086400000", "101", "103", "100", "102"),
+            ("1700000000000", "100", "102", "99", "101"),
+        ],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
+    assert!(matches!(error, DatasetError::OutOfOrder { .. }));
+}
+
+#[test]
+fn drops_candles_at_the_close_boundary() {
+    let third = 1700172800000i64;
+    let path = write_csv(
+        "analyzer-rs-boundary.csv",
+        &[
+            ("1700000000000", "100", "102", "99", "101"),
+            ("1700086400000", "101", "103", "100", "102"),
+            ("1700172800000", "102", "104", "101", "103"),
+        ],
+    );
+    let boundary = third + Timeframe::D1.millis();
+    let dropped = load_csv("TEST-USDT", &path, Timeframe::D1, boundary, 0, 0, 0, 0).unwrap();
+    assert_eq!(dropped.candles.len(), 2);
+    assert_eq!(dropped.candles.last().unwrap().open_time_ms, 1700086400000);
+
+    let kept = load_csv(
+        "TEST-USDT",
+        &path,
+        Timeframe::D1,
+        boundary + 1,
+        0,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    assert_eq!(kept.candles.len(), 3);
+    assert_eq!(kept.candles.last().unwrap().open_time_ms, third);
+}
+
+#[test]
+fn enforces_the_warmup_window() {
+    let path = write_csv(
+        "analyzer-rs-short.csv",
+        &[
+            ("1700000000000", "100", "102", "99", "101"),
+            ("1700086400000", "101", "103", "100", "102"),
+            ("1700172800000", "102", "104", "101", "103"),
+        ],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 3, 0).unwrap_err();
+    assert!(matches!(
+        error,
+        DatasetError::TooShort { got: 3, need: 5 }
+    ));
+}
+
+#[test]
+fn reads_columns_by_header_name() {
+    let path = std::env::temp_dir().join("analyzer-rs-reordered.csv");
+    std::fs::write(
+        &path,
+        "\u{feff} Volume ,High, open_time_ms , Low ,Close,Open\n\
+         1,102,1700000000000,99,101,100\n\
+         1,103,1700086400000,100,102,101\n",
+    )
+    .unwrap();
+    let dataset =
+        load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
+    assert_eq!(dataset.candles.len(), 2);
+    assert_eq!(dataset.candles[0].open_time_ms, 1700000000000);
+    assert_eq!(dataset.candles[0].open, Decimal::from(100));
+    assert_eq!(dataset.candles[0].high, Decimal::from(102));
+    assert_eq!(dataset.candles[0].low, Decimal::from(99));
+    assert_eq!(dataset.candles[0].close, Decimal::from(101));
+    assert_eq!(dataset.candles[0].volume, Decimal::from(1));
+}
+
+#[test]
+fn hashes_ignore_decimal_scale_but_not_values() {
+    let scaled = write_csv(
+        "analyzer-rs-hash-scale-a.csv",
+        &[
+            ("1700000000000", "100.0", "102.00", "99.000", "101.0"),
+            ("1700086400000", "101.00", "103.0", "100.000", "102.00"),
+        ],
+    );
+    let plain = write_csv(
+        "analyzer-rs-hash-scale-b.csv",
+        &[
+            ("1700000000000", "100", "102", "99", "101"),
+            ("1700086400000", "101", "103", "100", "102"),
+        ],
+    );
+    let scaled = load_csv("TEST-USDT", &scaled, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
+    let plain = load_csv("TEST-USDT", &plain, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap();
+    assert_eq!(
+        scaled.provenance.content_sha256,
+        plain.provenance.content_sha256
+    );
+
+    let changed = write_csv(
+        "analyzer-rs-hash-changed.csv",
+        &[
+            ("1700000000000", "100", "102", "99", "101"),
+            ("1700086400000", "101", "103", "100", "102.5"),
+        ],
+    );
+    let changed = load_csv(
+        "TEST-USDT",
+        &changed,
+        Timeframe::D1,
+        i64::MAX,
+        0,
+        0,
+        0,
+        0,
+    )
+    .unwrap();
+    assert_ne!(
+        scaled.provenance.content_sha256,
+        changed.provenance.content_sha256
+    );
+}
+
+#[test]
+fn rejects_non_positive_prices() {
+    let path = write_csv(
+        "analyzer-rs-non-positive.csv",
+        &[("1700000000000", "0", "102", "99", "101")],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
+    assert!(matches!(
+        error,
+        DatasetError::InvalidOhlc { why, .. } if why == "non-positive price"
+    ));
+}
+
+#[test]
+fn rejects_low_above_high() {
+    let path = write_csv(
+        "analyzer-rs-low-high.csv",
+        &[("1700000000000", "100", "101", "102", "100")],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
+    assert!(matches!(
+        error,
+        DatasetError::InvalidOhlc { why, .. } if why.contains("bound")
+    ));
 }
 ```
 
@@ -466,6 +708,13 @@ cargo test -p analyzer-rs --features harness --test dataset
 Expected: compile error (`harness` missing).
 
 - [ ] **Step 3: Implement the dataset layer**
+
+`src/lib.rs`: add the harness module declaration:
+
+```rust
+#[cfg(feature = "harness")]
+pub mod harness;
+```
 
 `src/harness/mod.rs`:
 
@@ -497,7 +746,9 @@ pub enum DatasetError {
     OutOfOrder { got_ms: i64, prev_ms: i64 },
     #[error("duplicate candle at {0}")]
     Duplicate(i64),
-    #[error("timeframe mismatch: spacing {spacing_ms} != {interval_ms}")]
+    #[error(
+        "timeframe mismatch: spacing {spacing_ms} is not a multiple of the interval {interval_ms}"
+    )]
     TimeframeMismatch { spacing_ms: i64, interval_ms: i64 },
     #[error("gap too large at {open_time_ms}: {missing} missing candles")]
     GapTooLarge { open_time_ms: i64, missing: i64 },
@@ -536,6 +787,7 @@ pub struct Dataset {
     pub provenance: Provenance,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn load_csv(
     symbol: &str,
     path: &Path,
@@ -543,28 +795,55 @@ pub fn load_csv(
     as_of_ms: i64,
     settle_ms: i64,
     max_gap_candles: i64,
+    window: usize,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
-    let mut reader = csv::Reader::from_path(path)
-        .map_err(|error| DatasetError::Csv(error.to_string()))?;
+    let mut reader =
+        csv::Reader::from_path(path).map_err(|error| DatasetError::Csv(error.to_string()))?;
+    let headers = reader
+        .headers()
+        .map_err(|error| DatasetError::Csv(error.to_string()))?
+        .clone();
+    let index = |name: &str| -> Result<usize, DatasetError> {
+        headers
+            .iter()
+            .position(|header| {
+                header
+                    .trim_start_matches('\u{feff}')
+                    .trim()
+                    .eq_ignore_ascii_case(name)
+            })
+            .ok_or_else(|| DatasetError::Csv(format!("missing column: {name}")))
+    };
+    let open_time_index = index("open_time_ms")?;
+    let open_index = index("open")?;
+    let high_index = index("high")?;
+    let low_index = index("low")?;
+    let close_index = index("close")?;
+    let volume_index = index("volume")?;
     let mut candles = Vec::new();
     for row in reader.records() {
         let row = row.map_err(|error| DatasetError::Csv(error.to_string()))?;
-        let field = |index: usize| -> Result<Decimal, DatasetError> {
-            Decimal::from_str(row.get(index).unwrap_or_default())
-                .map_err(|error| DatasetError::Csv(format!("column {index}: {error}")))
+        let field = |index: usize, name: &str| -> Result<Decimal, DatasetError> {
+            Decimal::from_str(row.get(index).unwrap_or_default()).map_err(|error| {
+                DatasetError::Csv(format!("column {name} at index {index}: {error}"))
+            })
         };
         candles.push(Candle {
             open_time_ms: row
-                .get(0)
+                .get(open_time_index)
                 .unwrap_or_default()
                 .parse()
-                .map_err(|error| DatasetError::Csv(format!("timestamp: {error}")))?,
-            open: field(1)?,
-            high: field(2)?,
-            low: field(3)?,
-            close: field(4)?,
-            volume: field(5)?,
+                .map_err(|error| {
+                    DatasetError::Csv(format!(
+                        "column open_time_ms at index {open_time_index}: {error}"
+                    ))
+                })?,
+            open: field(open_index, "open")?,
+            high: field(high_index, "high")?,
+            low: field(low_index, "low")?,
+            close: field(close_index, "close")?,
+            volume: field(volume_index, "volume")?,
         });
     }
     validate(
@@ -574,6 +853,7 @@ pub fn load_csv(
         as_of_ms,
         settle_ms,
         max_gap_candles,
+        window,
         format!("csv:{}", path.display()),
         None,
         requested_limit,
@@ -591,7 +871,7 @@ pub fn fetch_dataset(
     max_gap_candles: i64,
     base_url: &str,
 ) -> Result<Dataset, DatasetError> {
-    let candles = fetch_klines(base_url, symbol, timeframe, window + limit)?;
+    let candles = fetch_klines(base_url, symbol, timeframe, window + limit, Some(as_of_ms))?;
     validate(
         symbol,
         candles,
@@ -599,11 +879,39 @@ pub fn fetch_dataset(
         as_of_ms,
         settle_ms,
         max_gap_candles,
+        window,
         "kucoin".into(),
         Some(crate::identity::now_ms()),
         limit,
     )
 }
+
+`src/exchange/kucoin.rs`: move the request window behind a pure helper so `--as-of` controls the
+network cutoff:
+
+```rust
+/// Returns `(start_s, end_s)` for the KuCoin kline request.
+pub fn kline_window(as_of_ms: Option<i64>, now_s: i64, span_s: i64) -> (i64, i64) {
+    let end_s = as_of_ms.map(|ms| ms / 1_000).unwrap_or(now_s);
+    (end_s - span_s, end_s)
+}
+
+pub fn fetch_klines(
+    base_url: &str,
+    symbol: &str,
+    timeframe: Timeframe,
+    limit: usize,
+    as_of_ms: Option<i64>,
+) -> Result<Vec<Candle>, ExchangeError> {
+    let now_s = chrono::Utc::now().timestamp();
+    let span_s = ((limit as i64) * timeframe.millis() / 1_000) + 120;
+    let (start_s, end_s) = kline_window(as_of_ms, now_s, span_s);
+    // ... send startAt=start_s and endAt=end_s ...
+}
+```
+
+Live callers pass `None`; `fetch_dataset` passes `Some(as_of_ms)`. Add unit tests in
+`tests/exchange.rs` for a fixed cutoff, the live clock, and an `as_of` older than the span.
 
 #[allow(clippy::too_many_arguments)]
 fn validate(
@@ -613,11 +921,11 @@ fn validate(
     as_of_ms: i64,
     settle_ms: i64,
     max_gap_candles: i64,
+    window: usize,
     source: String,
     fetched_at_ms: Option<i64>,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
-    candles.sort_by_key(|candle| candle.open_time_ms);
     for candle in &candles {
         if candle.open <= Decimal::ZERO
             || candle.high <= Decimal::ZERO
@@ -641,7 +949,6 @@ fn validate(
             });
         }
     }
-    let mut gaps = 0usize;
     for pair in candles.windows(2) {
         let prev = &pair[0];
         let next = &pair[1];
@@ -661,23 +968,27 @@ fn validate(
                 interval_ms: timeframe.millis(),
             });
         }
+    }
+    candles.retain(|candle| timeframe.is_closed(candle.open_time_ms, as_of_ms, settle_ms));
+    if candles.len() < window + 2 {
+        return Err(DatasetError::TooShort {
+            got: candles.len(),
+            need: window + 2,
+        });
+    }
+    let mut gaps = 0usize;
+    for pair in candles.windows(2) {
+        let spacing = pair[1].open_time_ms - pair[0].open_time_ms;
         let missing = spacing / timeframe.millis() - 1;
         if missing > 0 {
             gaps += missing as usize;
             if max_gap_candles > 0 && missing > max_gap_candles {
                 return Err(DatasetError::GapTooLarge {
-                    open_time_ms: next.open_time_ms,
+                    open_time_ms: pair[1].open_time_ms,
                     missing,
                 });
             }
         }
-    }
-    candles.retain(|candle| timeframe.is_closed(candle.open_time_ms, as_of_ms, settle_ms));
-    if candles.len() < 2 {
-        return Err(DatasetError::TooShort {
-            got: candles.len(),
-            need: 2,
-        });
     }
     let content_sha256 = hash_candles(&candles);
     let provenance = Provenance {
@@ -707,15 +1018,15 @@ fn hash_candles(candles: &[Candle]) -> String {
     let mut hasher = Sha256::new();
     for candle in candles {
         hasher.update(candle.open_time_ms.to_be_bytes());
-        hasher.update(candle.open.to_string().as_bytes());
+        hasher.update(candle.open.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.high.to_string().as_bytes());
+        hasher.update(candle.high.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.low.to_string().as_bytes());
+        hasher.update(candle.low.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.close.to_string().as_bytes());
+        hasher.update(candle.close.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.volume.to_string().as_bytes());
+        hasher.update(candle.volume.normalize().to_string().as_bytes());
         hasher.update([0]);
     }
     let digest = hasher.finalize();
@@ -762,12 +1073,14 @@ git commit -m "feat(analyzer-rs): add validated dataset layer"
 ```rust
 #![cfg(feature = "harness")]
 
-use analyzer_rs::driver::CandleDriver;
+use analyzer_rs::driver::{CandleDriver, DriverEvent, SuppressReason};
 use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
+use analyzer_rs::harness::dataset::{load_csv, Dataset};
 use analyzer_rs::harness::replay::{build_replay, ReplayEvent};
 use analyzer_rs::identity::{config_version, signal_id};
 use analyzer_rs::strategy::config::Config;
+use analyzer_rs::strategy::indicators::rsi::rsi;
+use analyzer_rs::strategy::types::Signal;
 
 fn fixture(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -775,10 +1088,8 @@ fn fixture(name: &str) -> std::path::PathBuf {
         .join(name)
 }
 
-#[test]
-fn replay_matches_the_driver_and_uses_live_identity() {
-    let cfg = Config::default();
-    let dataset = load_csv(
+fn load_synthetic() -> Dataset {
+    load_csv(
         "SYNTH-USDT",
         &fixture("synthetic_1day.csv"),
         Timeframe::D1,
@@ -786,27 +1097,109 @@ fn replay_matches_the_driver_and_uses_live_identity() {
         0,
         0,
         0,
+        0,
     )
-    .unwrap();
-    let replay = build_replay(&dataset, &cfg).unwrap();
+    .unwrap()
+}
 
-    // Same warm-up and emitted sequence as a direct driver run.
-    let mut driver = CandleDriver::new("SYNTH-USDT", cfg.clone());
-    let mut expected_signals = 0usize;
-    for candle in &dataset.candles {
+fn suppress_name(reason: SuppressReason) -> &'static str {
+    match reason {
+        SuppressReason::Duplicate => "duplicate",
+        SuppressReason::BelowWatermark => "below_watermark",
+        SuppressReason::TooOld => "too_old",
+    }
+}
+
+#[derive(Debug, PartialEq, Eq)]
+enum EventKind {
+    Warmup { seeded_keys: usize },
+    Signal { signal_index: usize },
+    Suppressed { reason: String },
+}
+
+type EventSequence = Vec<(usize, EventKind)>;
+type SignalSequence = Vec<(usize, Signal)>;
+
+fn driver_sequence(dataset: &Dataset, cfg: &Config) -> (EventSequence, SignalSequence) {
+    let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone());
+    let mut events = Vec::new();
+    let mut signals = Vec::new();
+    for (index, candle) in dataset.candles.iter().enumerate() {
         for event in driver.push_closed(candle.clone()).unwrap() {
-            if matches!(event, analyzer_rs::driver::DriverEvent::Signal { .. }) {
-                expected_signals += 1;
+            match event {
+                DriverEvent::Warmed { seeded_keys } => {
+                    events.push((index, EventKind::Warmup { seeded_keys }));
+                }
+                DriverEvent::Signal { signal, .. } => {
+                    let signal_index = signals.len();
+                    signals.push((index, signal));
+                    events.push((index, EventKind::Signal { signal_index }));
+                }
+                DriverEvent::Suppressed { reason, .. } => {
+                    events.push((
+                        index,
+                        EventKind::Suppressed {
+                            reason: suppress_name(reason).to_string(),
+                        },
+                    ));
+                }
             }
         }
     }
-    let actual_signals = replay
+    (events, signals)
+}
+
+fn replay_event_parts(event: &ReplayEvent) -> (usize, EventKind) {
+    match event {
+        ReplayEvent::Warmup {
+            candle_index,
+            seeded_keys,
+        } => (
+            *candle_index,
+            EventKind::Warmup {
+                seeded_keys: *seeded_keys,
+            },
+        ),
+        ReplayEvent::Signal {
+            candle_index,
+            signal_index,
+        } => (
+            *candle_index,
+            EventKind::Signal {
+                signal_index: *signal_index,
+            },
+        ),
+        ReplayEvent::Suppressed {
+            candle_index,
+            reason,
+        } => (
+            *candle_index,
+            EventKind::Suppressed {
+                reason: reason.clone(),
+            },
+        ),
+    }
+}
+
+#[test]
+fn replay_matches_the_driver_and_uses_live_identity() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let replay = build_replay(&dataset, &cfg, None).unwrap();
+
+    let (expected_events, expected_signals) = driver_sequence(&dataset, &cfg);
+    let actual_events: Vec<_> = replay.events.iter().map(replay_event_parts).collect();
+    let actual_signals: Vec<_> = replay
         .signals
         .iter()
-        .filter(|signal| signal.candle_index >= cfg.window)
-        .count();
+        .map(|signal| (signal.candle_index, signal.signal.clone()))
+        .collect();
+    assert!(
+        !expected_signals.is_empty(),
+        "synthetic fixture must emit signals"
+    );
+    assert_eq!(actual_events, expected_events);
     assert_eq!(actual_signals, expected_signals);
-    assert!(actual_signals > 0);
 
     let version = config_version(&cfg);
     for signal in &replay.signals {
@@ -818,10 +1211,99 @@ fn replay_matches_the_driver_and_uses_live_identity() {
         );
     }
 
-    assert!(replay
-        .events
+    assert_eq!(
+        replay.events.iter().find_map(|event| match event {
+            ReplayEvent::Warmup { candle_index, .. } => Some(*candle_index),
+            _ => None,
+        }),
+        Some(cfg.window - 1),
+        "warmup fires when the window fills"
+    );
+
+    let allowed_reasons = ["duplicate", "below_watermark", "too_old"];
+    for event in &replay.events {
+        if let ReplayEvent::Suppressed { reason, .. } = event {
+            assert!(
+                allowed_reasons.contains(&reason.as_str()),
+                "unexpected suppressed reason: {reason}"
+            );
+        }
+    }
+}
+
+#[test]
+fn replay_rsi_matches_the_rolling_window() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let replay = build_replay(&dataset, &cfg, None).unwrap();
+    let closes: Vec<Option<rust_decimal::Decimal>> =
+        dataset.candles.iter().map(|c| Some(c.close)).collect();
+    assert!(replay.rsi[..cfg.window - 1].iter().all(Option::is_none));
+    for i in (cfg.window - 1)..closes.len() {
+        let expected = rsi(&closes[i + 1 - cfg.window..=i], cfg.rsi_period)
+            .unwrap()
+            .last()
+            .copied()
+            .flatten();
+        assert_eq!(replay.rsi[i], expected, "rsi at {i}");
+    }
+}
+
+#[test]
+fn age_cap_suppresses_old_divergences() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let baseline = build_replay(&dataset, &cfg, None).unwrap();
+    let youngest = baseline
+        .signals
         .iter()
-        .any(|event| matches!(event, ReplayEvent::Warmup { .. })));
+        .map(|signal| signal.signal.divergence_age_candles)
+        .min()
+        .expect("fixture must emit at least one signal");
+    assert!(
+        youngest > 0,
+        "fixture must emit a divergence older than zero candles"
+    );
+
+    let cap = youngest - 1;
+    let replay = build_replay(&dataset, &cfg, Some(cap)).unwrap();
+    assert!(
+        replay
+            .signals
+            .iter()
+            .all(|signal| signal.signal.divergence_age_candles <= cap),
+        "every emitted signal must respect the age cap"
+    );
+    assert!(
+        replay.events.iter().any(|event| matches!(
+            event,
+            ReplayEvent::Suppressed { reason, .. } if reason == "too_old"
+        )),
+        "expected a too_old suppression, got events: {:?}",
+        replay.events
+    );
+}
+
+#[test]
+fn build_replay_rejects_a_short_dataset() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let short = Dataset {
+        symbol: dataset.symbol.clone(),
+        candles: dataset.candles[..cfg.window + 1].to_vec(),
+        provenance: dataset.provenance.clone(),
+    };
+    assert!(build_replay(&short, &cfg, None).is_err());
+}
+
+#[test]
+fn build_replay_rejects_an_invalid_config() {
+    let dataset = load_synthetic();
+    let cfg = Config {
+        window: 7,
+        ..Config::default()
+    };
+    assert!(build_replay(&dataset, &cfg, None).is_err());
 }
 ```
 
@@ -838,11 +1320,11 @@ Expected: compile error (`replay` missing).
 `src/harness/replay.rs`:
 
 ```rust
-use crate::driver::{CandleDriver, DriverEvent};
-use crate::harness::dataset::Dataset;
+use crate::driver::{CandleDriver, DriverEvent, SuppressReason};
+use crate::harness::dataset::{Dataset, Provenance};
 use crate::identity::{config_version, signal_id};
 use crate::strategy::config::Config;
-use crate::strategy::error::Result as StrategyResult;
+use crate::strategy::error::{Error as StrategyError, Result as StrategyResult};
 use crate::strategy::indicators::rsi::rsi;
 use crate::strategy::indicators::sma::sma;
 use crate::strategy::types::{Candle, Signal};
@@ -873,12 +1355,34 @@ pub struct Replay {
     pub sma: Vec<Option<Decimal>>,
     pub events: Vec<ReplayEvent>,
     pub signals: Vec<ReplaySignal>,
-    pub provenance: crate::harness::dataset::Provenance,
+    pub provenance: Provenance,
 }
 
-pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
+fn suppress_reason(reason: SuppressReason) -> &'static str {
+    match reason {
+        SuppressReason::Duplicate => "duplicate",
+        SuppressReason::BelowWatermark => "below_watermark",
+        SuppressReason::TooOld => "too_old",
+    }
+}
+
+pub fn build_replay(
+    dataset: &Dataset,
+    cfg: &Config,
+    max_age_candles: Option<usize>,
+) -> StrategyResult<Replay> {
+    cfg.validate()?;
+    let need = cfg.window.saturating_add(2);
+    if dataset.candles.len() < need {
+        return Err(StrategyError::ConfigInvalid(format!(
+            "dataset shorter than window: got {} need {}",
+            dataset.candles.len(),
+            need
+        )));
+    }
+
     let window = cfg.window;
-    let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone());
+    let mut driver = CandleDriver::new(&dataset.symbol, cfg.clone()).with_max_age(max_age_candles);
     let mut events = Vec::new();
     let mut signals = Vec::new();
     let version = config_version(cfg);
@@ -904,17 +1408,27 @@ pub fn build_replay(dataset: &Dataset, cfg: &Config) -> StrategyResult<Replay> {
                 }
                 DriverEvent::Suppressed { reason, .. } => events.push(ReplayEvent::Suppressed {
                     candle_index: index,
-                    reason: format!("{reason:?}").to_ascii_lowercase(),
+                    reason: suppress_reason(reason).to_string(),
                 }),
             }
         }
     }
 
     let closes: Vec<Option<Decimal>> = dataset.candles.iter().map(|c| Some(c.close)).collect();
-    let rsi_values = rsi(&closes, cfg.rsi_period)?;
+    let rsi_values = (0..closes.len())
+        .map(|index| {
+            if index + 1 < window {
+                return Ok(None);
+            }
+            let window_closes = &closes[index + 1 - window..=index];
+            let values = rsi(window_closes, cfg.rsi_period)?;
+            Ok(values.last().copied().flatten())
+        })
+        .collect::<StrategyResult<Vec<Option<Decimal>>>>()?;
+    // SMA is time-invariant once its period is covered, so the full-series computation
+    // matches what any rolling window would show.
     let sma_values = sma(&closes, cfg.sma_period)?;
 
-    let _ = window;
     Ok(Replay {
         symbol: dataset.symbol.clone(),
         candles: dataset.candles.clone(),
@@ -1097,7 +1611,7 @@ fn summary_stats_use_realized_pnl() {
         1000,
         0,
     );
-    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(99), 4);
+    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(99), 3, 4);
     assert_eq!(summary.trades, 2);
     assert_eq!(summary.wins + summary.losses + summary.breakeven, 2);
     assert!(summary.max_drawdown >= Decimal::ZERO);
@@ -1123,6 +1637,84 @@ fn gap_beyond_the_stop_fills_at_the_open_for_long_and_short() {
     assert_eq!(short.trades[0].reason, "gap_sl");
     assert_eq!(short.trades[0].fill, d(106));
     assert_eq!(short.trades[0].exit, d(106));
+}
+
+#[test]
+fn gap_beyond_the_target_fills_at_the_open_for_long_and_short() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 106, 107, 105, 106), // long opens above TP 104
+    ];
+    let long = simulate(&candles, &[signal(0, Direction::Long, 100, 98, 104)], 1000, 0);
+    assert_eq!(long.trades[0].reason, "gap_tp");
+    assert_eq!(long.trades[0].fill, d(106));
+    assert_eq!(long.trades[0].exit, d(106));
+
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 90, 91, 89, 90), // short opens below TP 95
+    ];
+    let short = simulate(&candles, &[signal(0, Direction::Short, 100, 105, 95)], 1000, 0);
+    assert_eq!(short.trades[0].reason, "gap_tp");
+    assert_eq!(short.trades[0].fill, d(90));
+    assert_eq!(short.trades[0].exit, d(90));
+}
+
+#[test]
+fn released_funds_fill_the_next_signal_instead_of_skipping() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 106, 99, 105),
+        candle(3, 100, 101, 99, 100),
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 90, 105),
+            signal(1, Direction::Long, 100, 90, 120),
+            signal(2, Direction::Long, 100, 90, 120),
+        ],
+        1000,
+        0,
+    );
+    // The signal at candle 2 fills on candle 3 using funds released when the first
+    // position exits at TP on candle 2.
+    assert_eq!(outcome.trades.len(), 1);
+    assert_eq!(outcome.trades[0].entry_index, 1);
+    assert_eq!(outcome.open_positions.len(), 2);
+    assert!(outcome.open_positions.iter().any(|p| p.entry_index == 3));
+    assert_eq!(outcome.skipped_funds, 0);
+}
+
+#[test]
+fn summary_reports_exact_risk_and_exposure_metrics() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 101, 79, 80),
+        candle(3, 100, 101, 99, 100),
+        candle(4, 100, 111, 99, 110),
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 80, 110),
+            signal(2, Direction::Long, 100, 80, 110),
+        ],
+        1000,
+        0,
+    );
+    let summary = summarize(Decimal::from(1000), &outcome, d(110), 4, 5);
+    assert_eq!(summary.trades, 2);
+    assert_eq!(summary.profit_factor, Some(Decimal::new(5, 1)));
+    assert!(!summary.profit_factor_is_infinite);
+    assert_eq!(summary.avg_win, d(50));
+    assert_eq!(summary.avg_loss, d(-100));
+    assert_eq!(summary.max_drawdown, d(100));
+    assert_eq!(summary.max_drawdown_pct, d(10));
+    assert_eq!(summary.exposure_candles, 2);
 }
 ```
 
@@ -1347,6 +1939,7 @@ pub struct SimSummary {
     pub gross_profit: Decimal,
     pub gross_loss: Decimal,
     pub profit_factor: Option<Decimal>,
+    pub profit_factor_is_infinite: bool,
     pub trades: usize,
     pub wins: usize,
     pub losses: usize,
@@ -1368,6 +1961,7 @@ pub fn summarize(
     init_fund: Decimal,
     outcome: &SimOutcome,
     last_close: Decimal,
+    last_index: usize,
     replayed_candles: usize,
 ) -> SimSummary {
     let trades = &outcome.trades;
@@ -1382,6 +1976,7 @@ pub fn summarize(
     } else {
         Some(gross_profit / gross_loss.abs())
     };
+    let profit_factor_is_infinite = losses.is_empty() && gross_profit > Decimal::ZERO;
     let win_rate = if trades.is_empty() {
         Decimal::ZERO
     } else {
@@ -1393,6 +1988,7 @@ pub fn summarize(
     let mut equity = init_fund;
     let mut peak = init_fund;
     let mut max_dd = Decimal::ZERO;
+    let mut max_dd_pct = Decimal::ZERO;
     for trade in trades {
         equity += trade.pnl;
         if equity > peak {
@@ -1401,9 +1997,9 @@ pub fn summarize(
         let dd = peak - equity;
         if dd > max_dd {
             max_dd = dd;
+            max_dd_pct = if peak.is_zero() { Decimal::ZERO } else { dd / peak * Decimal::from(100) };
         }
     }
-    let max_dd_pct = if peak.is_zero() { Decimal::ZERO } else { max_dd / peak * Decimal::from(100) };
 
     let mut reserved = Decimal::ZERO;
     let mut unrealized = Decimal::ZERO;
@@ -1419,7 +2015,7 @@ pub fn summarize(
             Direction::Short => -ret,
         };
         unrealized += position.e * ret;
-        exposure_candles += replayed_candles.saturating_sub(position.entry_index);
+        exposure_candles += last_index.saturating_sub(position.entry_index);
     }
     let time_in_market_pct = if replayed_candles == 0 {
         Decimal::ZERO
@@ -1437,6 +2033,7 @@ pub fn summarize(
         gross_profit,
         gross_loss,
         profit_factor,
+        profit_factor_is_infinite,
         trades: trades.len(),
         wins: wins.len(),
         losses: losses.len(),
@@ -1501,7 +2098,7 @@ fn payload_has_one_tab_per_symbol_and_is_self_contained() {
 ```
 
 The full test is completed after the implementation, because it needs a real replay and sim. The implementer should extend it to:
-- run `load_csv` + `build_replay` + `simulate` + `summarize` for the synthetic fixture,
+- run `load_csv` + `build_replay(&dataset, &cfg, None)` + `simulate` + `summarize` for the synthetic fixture,
 - call `build_payload`,
 - assert `symbols[0].provenance.content_sha256` is 64 hex chars,
 - assert `symbols[0].summary.returns_label` contains "gross simulated",
@@ -1558,7 +2155,7 @@ pub fn build_payload(
                 "signals": input.replay.signals.iter().map(|s| json!({
                     "candle_index": s.candle_index,
                     "signal_id": s.signal_id,
-                    "action": format!("{:?}", s.signal.action),
+                    "action": direction_str(s.signal.action),
                     "reason": s.signal.reason,
                     "signal_entry": s.signal.entry_price.to_string(),
                     "sl": s.signal.sl_price.to_string(),
@@ -1570,7 +2167,7 @@ pub fn build_payload(
                 "trades": input.sim.trades.iter().map(|t| json!({
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
-                    "side": format!("{:?}", t.side),
+                    "side": direction_str(t.side),
                     "signal_entry": t.signal_entry.to_string(),
                     "fill": t.fill.to_string(),
                     "exit": t.exit.to_string(),
@@ -1582,7 +2179,7 @@ pub fn build_payload(
                 })).collect::<Vec<_>>(),
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
                     "entry_index": p.entry_index,
-                    "side": format!("{:?}", p.side),
+                    "side": direction_str(p.side),
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
@@ -1602,6 +2199,7 @@ pub fn build_payload(
             "limit": 0,
             "window": config.window,
             "init_fund": "1000",
+            "as_of_ms": 0,
             "fees": false,
             "rsi_period": config.rsi_period,
             "rsi_order": config.rsi_order,
@@ -1620,6 +2218,13 @@ pub fn build_payload(
     })
 }
 
+fn direction_str(direction: crate::strategy::types::Direction) -> &'static str {
+    match direction {
+        crate::strategy::types::Direction::Long => "Long",
+        crate::strategy::types::Direction::Short => "Short",
+    }
+}
+
 fn event_json(event: &crate::harness::replay::ReplayEvent) -> Value {
     match event {
         crate::harness::replay::ReplayEvent::Warmup { candle_index, seeded_keys } => {
@@ -1635,10 +2240,10 @@ fn event_json(event: &crate::harness::replay::ReplayEvent) -> Value {
 }
 
 fn summary_json(summary: &crate::harness::stats::SimSummary, gaps: usize) -> Value {
-    let profit_factor = match summary.profit_factor {
-        Some(ratio) => ratio.to_string(),
-        None if summary.gross_profit > rust_decimal::Decimal::ZERO => "inf".to_string(),
-        None => "null".to_string(),
+    let profit_factor = match (summary.profit_factor, summary.profit_factor_is_infinite) {
+        (Some(ratio), _) => ratio.to_string(),
+        (None, true) => "inf".to_string(),
+        (None, false) => "null".to_string(),
     };
     json!({
         "init_fund": summary.init_fund.to_string(),
@@ -1671,9 +2276,9 @@ fn summary_json(summary: &crate::harness::stats::SimSummary, gaps: usize) -> Val
 
 pub fn write_report(payload: &Value, out: &std::path::Path) -> std::io::Result<()> {
     let template = include_str!("../../templates/replay.html");
-    let json = serde_json::to_string(payload)
-        .map_err(|error| std::io::Error::new(std::io::ErrorKind::Other, error))?;
-    let escaped = json.replace("</", "<\\/");
+    let json = serde_json::to_string(payload).map_err(std::io::Error::other)?;
+    // Escape every `<` so the embedded JSON cannot open or close an HTML tag.
+    let escaped = json.replace('<', "\\u003c");
     let html = template.replace("__REPLAY_DATA__", &escaped);
     if let Some(parent) = out.parent() {
         std::fs::create_dir_all(parent)?;
@@ -1771,38 +2376,114 @@ required-features = ["harness"]
 `src/bin/analyzer-replay.rs`:
 
 ```rust
-use analyzer_rs::config_env::{load_dotenv, strategy_from_env};
+use analyzer_rs::config_env::{
+    env_string, load_dotenv, parse_optional_usize_str, strategy_from_env,
+};
 use analyzer_rs::exchange::timeframes::Timeframe;
 use analyzer_rs::harness::dataset::{fetch_dataset, load_csv, Dataset};
 use analyzer_rs::harness::replay::build_replay;
 use analyzer_rs::harness::report::{build_payload, write_report, PayloadInput};
 use analyzer_rs::harness::sim::{simulate, SimSignal};
 use analyzer_rs::harness::stats::summarize;
+use analyzer_rs::identity;
 use clap::Parser;
+use std::collections::BTreeMap;
 use std::path::PathBuf;
 
 #[derive(Parser, Debug)]
 struct Cli {
-    /// Symbol to replay; repeat for multiple symbols.
+    /// Symbol to replay; repeat for multiple symbols. Defaults to --data keys, then BENCHMARK_TICKERS.
     #[arg(long = "symbol")]
     symbols: Vec<String>,
+    /// Candle interval (15min, 4hour, 1day); defaults to KUCOIN_TIMEFRAME, then 15min.
     #[arg(long)]
     timeframe: Option<String>,
+    /// Fetch request size; offline --data still replays every closed row.
     #[arg(long, default_value_t = 500)]
     limit: usize,
+    /// Initial account fund; defaults to BENCHMARK_INIT_FUND, then 1000. Must be > 0.
     #[arg(long)]
     init_fund: Option<i64>,
+    /// HTML report output path.
     #[arg(long, default_value = "process/analyzer-rs/out/replay.html")]
     out: PathBuf,
     /// Offline CSV: SYMBOL=path (repeatable).
     #[arg(long = "data")]
     data: Vec<String>,
+    /// Reference time in ms; defaults to now. Sets the fetch cutoff and closed-candle filter.
     #[arg(long)]
     as_of: Option<i64>,
+    /// Override the report generation timestamp (RFC 3339).
     #[arg(long)]
     generated_at: Option<String>,
-    #[arg(long, default_value_t = 0)]
+    /// Maximum missing candles allowed between rows; must be >= 0.
+    #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
     max_gap_candles: i64,
+}
+
+fn parse_data_entries(entries: &[String]) -> Result<Vec<(String, PathBuf)>, String> {
+    let mut parsed: Vec<(String, PathBuf)> = Vec::new();
+    for entry in entries {
+        let (symbol, path) = entry
+            .split_once('=')
+            .ok_or_else(|| format!("invalid --data entry {entry:?}: expected SYMBOL=path"))?;
+        let symbol = symbol.trim();
+        let path = path.trim();
+        if symbol.is_empty() {
+            return Err(format!("invalid --data entry {entry:?}: empty symbol"));
+        }
+        if path.is_empty() {
+            return Err(format!("invalid --data entry {entry:?}: empty path"));
+        }
+        if parsed
+            .iter()
+            .any(|(existing, _)| existing.as_str() == symbol)
+        {
+            continue;
+        }
+        parsed.push((symbol.to_string(), PathBuf::from(path)));
+    }
+    Ok(parsed)
+}
+
+fn resolve_symbols(
+    explicit: &[String],
+    data_symbols: &[String],
+    env_value: Option<String>,
+) -> Result<Vec<String>, String> {
+    fn normalize(values: impl IntoIterator<Item = String>) -> Vec<String> {
+        let mut out: Vec<String> = Vec::new();
+        for value in values {
+            let value = value.trim();
+            if value.is_empty() || out.iter().any(|existing| existing.as_str() == value) {
+                continue;
+            }
+            out.push(value.to_string());
+        }
+        out
+    }
+
+    let explicit = normalize(explicit.iter().cloned());
+    if !explicit.is_empty() {
+        return Ok(explicit);
+    }
+
+    let data = normalize(data_symbols.iter().cloned());
+    if !data.is_empty() {
+        return Ok(data);
+    }
+
+    let env_symbols = normalize(
+        env_value
+            .unwrap_or_default()
+            .split(',')
+            .map(str::to_string),
+    );
+    if !env_symbols.is_empty() {
+        return Ok(env_symbols);
+    }
+
+    Err("no symbols resolved: pass --symbol, --data SYMBOL=path, or set BENCHMARK_TICKERS".into())
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -1812,36 +2493,49 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let timeframe_name = cli
         .timeframe
         .clone()
-        .or_else(|| std::env::var("KUCOIN_TIMEFRAME").ok())
+        .or_else(|| env_string("KUCOIN_TIMEFRAME"))
         .unwrap_or_else(|| "15min".into());
     let timeframe = Timeframe::from_kucoin(&timeframe_name)
         .ok_or_else(|| format!("unsupported timeframe {timeframe_name:?}"))?;
-    let init_fund = cli
-        .init_fund
-        .or_else(|| std::env::var("BENCHMARK_INIT_FUND").ok().and_then(|v| v.parse().ok()))
-        .unwrap_or(1000);
-    let as_of = cli.as_of.unwrap_or(i64::MAX);
-    let base_url = std::env::var("KUCOIN_BASE_URL")
-        .unwrap_or_else(|_| "https://api.kucoin.com".into());
-
-    let symbols = if cli.symbols.is_empty() {
-        std::env::var("BENCHMARK_TICKERS")
-            .unwrap_or_default()
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect()
-    } else {
-        cli.symbols.clone()
+    let init_fund = match cli.init_fund {
+        Some(value) => value,
+        None => match env_string("BENCHMARK_INIT_FUND") {
+            Some(value) => value.parse::<i64>().map_err(|_| {
+                format!("invalid BENCHMARK_INIT_FUND={value:?}: expected an integer")
+            })?,
+            None => 1000,
+        },
+    };
+    if init_fund <= 0 {
+        return Err(format!(
+            "--init-fund/BENCHMARK_INIT_FUND must be > 0 (got {init_fund})"
+        )
+        .into());
+    }
+    let as_of = cli.as_of.unwrap_or_else(identity::now_ms);
+    if cli.max_gap_candles < 0 {
+        return Err(format!(
+            "--max-gap-candles must be >= 0 (got {})",
+            cli.max_gap_candles
+        )
+        .into());
+    }
+    let base_url = env_string("KUCOIN_BASE_URL").unwrap_or_else(|| "https://api.kucoin.com".into());
+    let max_age_candles = match env_string("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
+        Some(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
+        None => None,
+    };
+    let settle_ms = match env_string("ANALYZER_CANDLE_SETTLE_MS") {
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            format!("invalid ANALYZER_CANDLE_SETTLE_MS={value:?}: expected milliseconds")
+        })?,
+        None => 5_000,
     };
 
-    let offline: std::collections::BTreeMap<String, PathBuf> = cli
-        .data
-        .iter()
-        .filter_map(|entry| entry.split_once('='))
-        .map(|(symbol, path)| (symbol.to_string(), PathBuf::from(path)))
-        .collect();
+    let parsed_data = parse_data_entries(&cli.data)?;
+    let data_symbols: Vec<String> = parsed_data.iter().map(|(symbol, _)| symbol.clone()).collect();
+    let symbols = resolve_symbols(&cli.symbols, &data_symbols, env_string("BENCHMARK_TICKERS"))?;
+    let offline: BTreeMap<String, PathBuf> = parsed_data.into_iter().collect();
 
     let mut inputs = Vec::new();
     let mut failures = Vec::new();
@@ -1852,8 +2546,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path,
                 timeframe,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
+                strategy.window,
                 cli.limit,
             )
             .map_err(|error| error.to_string())
@@ -1864,7 +2559,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cli.limit,
                 strategy.window,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
                 &base_url,
             )
@@ -1877,7 +2572,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let replay = build_replay(&dataset, &strategy)?;
+        let replay = build_replay(&dataset, &strategy, max_age_candles)?;
         let sim_signals: Vec<SimSignal> = replay
             .signals
             .iter()
@@ -1889,9 +2584,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             rust_decimal::Decimal::from(init_fund),
             &outcome,
             last_close,
+            dataset.candles.len().saturating_sub(1),
             dataset.candles.len().saturating_sub(strategy.window),
         );
         inputs.push((symbol, replay, outcome, summary, dataset.provenance));
+    }
+
+    if inputs.is_empty() {
+        for failure in &failures {
+            let symbol = failure
+                .get("symbol")
+                .and_then(|value| value.as_str())
+                .unwrap_or("?");
+            let error = failure
+                .get("error")
+                .and_then(|value| value.as_str())
+                .unwrap_or("unknown error");
+            eprintln!("failed symbol {symbol}: {error}");
+        }
+        return Err("no symbols replayed successfully".into());
     }
 
     let generated_at = cli
@@ -1921,6 +2632,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
 The `simulate` call needs the `summarize` integration; keep it simple by having `simulate` return trades/open positions and a base summary, then `summarize` recomputes the full summary from the trades. Adjust the `simulate` signature to return only `trades` and `open_positions`, or have `summarize` take the `SimOutcome`. Keep the CLI code above and adjust `simulate` accordingly during implementation.
 
+Add `#[cfg(test)]` unit tests in the same binary for `parse_data_entries` (malformed entry, empty symbol/path, trimming + duplicate symbols) and `resolve_symbols` (explicit → data → env precedence, dedupe, and empty resolution).
+
 - [ ] **Step 3: Makefile and README**
 
 Makefile:
@@ -1932,7 +2645,18 @@ analyzer-replay:
 
 Add `analyzer-replay` to `.PHONY` and to `make help`.
 
-README: document the CLI, the `.env` settings, the offline `--data` mode, and the label that results exclude fees and are not a profitability claim.
+Extend `analyzer-rs-check` and `analyzer-rs-test` with the harness gate:
+
+```make
+	cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings
+	cargo test -p analyzer-rs --features harness
+```
+
+Add `process/analyzer-rs/out/` to the root `.gitignore`, add `BENCHMARK_TICKERS` /
+`BENCHMARK_INIT_FUND` to `process/analyzer-rs/.env.example`, and add `analyzer-rs-check` to the
+`make ci` prerequisites.
+
+README: document the CLI, the `.env` settings, the offline `--data` mode, and the label that results exclude fees and are not a profitability claim. Note that offline `--data` replays every closed row (not capped by `--limit`) and that `provenance.effective_range` reports the actual count. Document that `--as-of` controls the network fetch cutoff and the offline closed-candle filter, and that `ANALYZER_CANDLE_SETTLE_MS` moves the closed-candle boundary.
 
 - [ ] **Step 4: Run the acceptance commands**
 

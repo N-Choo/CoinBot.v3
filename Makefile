@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine strategy-analyzer analyzer-rs
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web status seed seed-reset analyzer-rs-check analyzer-rs-test
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web analyzer-replay status seed seed-reset analyzer-rs-check analyzer-rs-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -20,6 +20,8 @@ help:
 	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
 	@echo "  make benchmark    Backtest all tickers (no services needed, just .env)"
 	@echo "  make benchmark-web  Backtest and write a self-contained HTML replay report"
+	@echo "  make analyzer-replay  Replay signals into a self-contained HTML report (fees excluded)"
+	@echo "                        make analyzer-replay ARGS='--timeframe 1day --data BTC-USDT=path'"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -54,7 +56,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test strategy-check frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test analyzer-rs-check strategy-check frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -83,12 +85,19 @@ analyzer-rs-check:
 	cargo fmt -p analyzer-rs -- --check
 	cargo clippy -p analyzer-rs --all-targets --no-deps -- -D warnings
 	cargo clippy -p analyzer-rs --features grpc --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings
 	cargo test -p analyzer-rs
 	cargo test -p analyzer-rs --features grpc
+	cargo test -p analyzer-rs --features harness
 
 analyzer-rs-test:
+	cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings
 	cargo test -p analyzer-rs
 	cargo test -p analyzer-rs --features grpc
+	cargo test -p analyzer-rs --features harness
+
+analyzer-replay:
+	cargo run -p analyzer-rs --features harness --bin analyzer-replay -- $(ARGS)
 
 benchmark-test:
 	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v

@@ -1,7 +1,24 @@
 #![cfg(feature = "exchange")]
 
-use analyzer_rs::exchange::kucoin::parse_klines;
+use analyzer_rs::exchange::kucoin::{kline_window, parse_klines};
 use analyzer_rs::exchange::timeframes::Timeframe;
+
+#[test]
+fn kline_window_uses_the_as_of_cutoff() {
+    assert_eq!(
+        kline_window(Some(1_700_000_000_000), 1_800_000_000, 100),
+        (1_699_999_900, 1_700_000_000)
+    );
+    assert_eq!(
+        kline_window(None, 1_800_000_000, 100),
+        (1_799_999_900, 1_800_000_000)
+    );
+}
+
+#[test]
+fn kline_window_can_start_before_the_epoch() {
+    assert_eq!(kline_window(Some(10_000), 0, 100), (-90, 10));
+}
 
 #[test]
 fn parses_and_sorts_ku_coin_rows() {

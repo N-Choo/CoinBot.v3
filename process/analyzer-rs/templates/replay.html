@@ -1,0 +1,1086 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>CoinBot — Signal Replay · Terminal</title>
+<style>
+/* Self-contained Terminal theme. */
+:root{
+  --bg:#05070a; --panel:#0a0d12; --panel2:#070a0e; --panel3:#0d1117;
+  --line:rgba(29,205,159,.16); --line2:rgba(255,255,255,.06);
+  --teal:#1dcd9f; --orange:#ff5722; --blue:#00e0ff;
+  --up:#1dcd9f; --down:#ff4d4d;
+  --text:#d9e2e8; --muted:#63727f; --dim:#33404b;
+  --mono:ui-monospace,SFMono-Regular,Menlo,Consolas,"Liberation Mono",monospace;
+  --disp:"Barlow Condensed","Arial Narrow",sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  background:var(--bg);color:var(--text);font-family:var(--mono);font-size:13px;line-height:1.45;
+  background-image:
+    radial-gradient(1100px 520px at 82% -12%, rgba(29,205,159,.07), transparent 62%),
+    radial-gradient(900px 500px at -5% 110%, rgba(255,87,34,.05), transparent 60%),
+    repeating-linear-gradient(0deg, transparent 0 22px, rgba(255,255,255,.012) 22px 23px);
+}
+button,select,input{font-family:var(--mono)}
+.mono{font-family:var(--mono)} .disp{font-family:var(--disp);letter-spacing:.02em}
+.muted{color:var(--muted)} .dim{color:var(--dim)} .up{color:var(--up)} .down{color:var(--down)} .or{color:var(--orange)} .teal{color:var(--teal)} .blue{color:var(--blue)}
+.wrap{max-width:1480px;margin:0 auto;padding:0 16px}
+header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(29,205,159,.05),transparent)}
+.bar{display:flex;align-items:center;gap:20px;height:52px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.14em;font-size:15px}
+.brand .sq{width:9px;height:9px;background:var(--teal);box-shadow:0 0 10px var(--teal)}
+.nav{display:flex;gap:16px;font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.nav a{color:inherit;text-decoration:none}.nav a.on{color:var(--teal)}.nav a:hover{color:var(--text)}
+.spacer{flex:1}
+.status{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--muted);letter-spacing:.1em}
+.dot{width:7px;height:7px;border-radius:50%;background:var(--teal);box-shadow:0 0 8px var(--teal);animation:pulse 1.8s infinite}
+.dot.warn{background:var(--orange);box-shadow:0 0 8px var(--orange)}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.banner{padding:7px 16px;border-bottom:1px solid var(--line2);background:rgba(29,205,159,.055);color:var(--teal);font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0 0}
+.tab{background:transparent;border:1px solid var(--line2);color:var(--muted);font-size:11px;letter-spacing:.1em;padding:7px 12px;cursor:pointer;transition:.15s;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tab:hover{border-color:var(--teal);color:var(--teal)}
+.tab.on{background:var(--teal);border-color:var(--teal);color:#04110d;font-weight:700}
+.tab.failed{border-color:rgba(255,87,34,.35);color:var(--orange);cursor:not-allowed;opacity:.82}
+.tab.failed:hover{border-color:rgba(255,87,34,.35);color:var(--orange)}
+.card{border:1px solid var(--line);background:var(--panel);min-width:0}
+.ph{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:9px 13px;border-bottom:1px solid var(--line2)}
+.ph h3{margin:0;font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.16em;text-transform:uppercase;white-space:nowrap}
+.ph h3::before{content:"// ";color:var(--teal)}
+.ph .hint{font-size:10px;color:var(--muted);letter-spacing:.08em;text-align:right}
+.pad{padding:13px}
+.market{display:flex;align-items:center;border:1px solid var(--line);background:var(--panel);margin-top:12px;flex-wrap:wrap}
+.picker{display:flex;align-items:center;gap:8px;padding:10px 16px;border-right:1px solid var(--line2);font-weight:700;font-size:15px}
+.mprice{padding:8px 16px;border-right:1px solid var(--line2);display:flex;align-items:baseline;gap:10px}
+.mprice .p{font-size:20px;font-weight:700;letter-spacing:-.01em}
+.ms{display:flex;flex-direction:column;padding:6px 16px;min-width:92px;border-right:1px solid var(--line2)}
+.ms .k{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.ms .v{font-size:12px;font-weight:600;margin-top:2px}
+.chart-wrap{position:relative;min-height:300px;background:
+    linear-gradient(180deg, rgba(29,205,159,.05), transparent 72%),
+    repeating-linear-gradient(90deg, transparent 0 71px, var(--line2) 71px 72px),
+    repeating-linear-gradient(0deg, transparent 0 53px, var(--line2) 53px 54px)}
+.chart-wrap canvas{display:block;width:100%;height:100%}
+.chart-wrap .chart-tag{position:absolute;right:12px;top:10px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted);background:rgba(5,7,10,.7);padding:3px 7px;border:1px solid var(--line2)}
+.rsi-wrap{position:relative;height:120px;border-top:1px solid var(--line2);background:
+    repeating-linear-gradient(0deg, transparent 0 29px, var(--line2) 29px 30px),var(--panel2)}
+.rsi-wrap canvas{display:block;width:100%;height:100%}
+.rsi-wrap .rsi-tag{position:absolute;left:12px;top:7px;font-size:10px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.rsi-wrap .rsi-tag b{color:var(--blue)}
+.controls{display:flex;align-items:center;gap:8px;padding:10px 12px;border-top:1px solid var(--line2);flex-wrap:wrap}
+.controls button{background:transparent;border:1px solid var(--line);color:var(--muted);font-size:11px;letter-spacing:.08em;padding:7px 10px;cursor:pointer;transition:.15s}
+.controls button:hover{border-color:var(--teal);color:var(--teal)}
+.controls button.primary{border-color:var(--teal);color:#04110d;background:var(--teal);font-weight:700}
+.controls button.primary:hover{filter:brightness(1.08)}
+.controls button:disabled{opacity:.4;cursor:not-allowed}
+.controls select{background:rgba(0,0,0,.35);border:1px solid var(--line2);color:var(--text);font-size:11px;padding:7px 8px}
+.controls .scrub{flex:1;min-width:160px;display:flex;align-items:center;gap:8px;color:var(--muted);font-size:10px;letter-spacing:.08em}
+.controls input[type=range]{width:100%;accent-color:var(--teal)}
+.stats{display:flex;gap:18px;flex-wrap:wrap;padding:9px 13px;border-bottom:1px solid var(--line2)}
+.stat{display:flex;flex-direction:column;gap:1px;min-width:74px}
+.stat .k{font-size:9px;letter-spacing:.16em;text-transform:uppercase;color:var(--muted)}
+.stat .v{font-size:13px;font-weight:600}
+.events{display:flex;flex-direction:column;gap:7px;padding:10px;max-height:430px;overflow:auto}
+.event{border:1px solid var(--line2);border-left:2px solid var(--dim);background:rgba(255,255,255,.012);padding:8px 9px}
+.event.signal{border-left-color:var(--teal);background:rgba(29,205,159,.045)}
+.event.sell{border-left-color:var(--down);background:rgba(255,77,77,.04)}
+.event.suppressed{border-left-color:var(--orange);opacity:.72;background:rgba(255,87,34,.035)}
+.event.entry{border-left-color:var(--blue);background:rgba(0,224,255,.035)}
+.event .top{display:flex;justify-content:space-between;gap:8px;font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.event .what{font-size:12px;font-weight:600;margin-top:3px}
+.event .meta{font-size:10px;color:var(--muted);margin-top:3px;font-variant-numeric:tabular-nums}
+.badge{font-size:9px;letter-spacing:.12em;text-transform:uppercase;padding:2px 6px;border:1px solid transparent;white-space:nowrap}
+.badge.buy{color:var(--teal);border-color:rgba(29,205,159,.4);background:rgba(29,205,159,.07)}
+.badge.sell{color:var(--down);border-color:rgba(255,77,77,.4);background:rgba(255,77,77,.07)}
+.badge.warn{color:var(--orange);border-color:rgba(255,87,34,.4);background:rgba(255,87,34,.07)}
+.badge.neutral{color:var(--muted);border-color:var(--line2)}
+table{width:100%;border-collapse:collapse;font-size:11px;font-variant-numeric:tabular-nums}
+th,td{text-align:right;padding:7px 9px;border-bottom:1px solid var(--line2)}
+th{font-weight:500;font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+th:first-child,td:first-child{text-align:left}
+tr:hover td{background:rgba(29,205,159,.04)}
+td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
+.empty{padding:18px 12px;color:var(--muted);font-size:11px;text-align:center;letter-spacing:.06em}
+.foot{display:flex;justify-content:space-between;gap:12px;padding:9px 13px;border-top:1px solid var(--line2);color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);letter-spacing:.06em}
+.legend i{display:inline-block;width:7px;height:7px;margin-right:5px;vertical-align:0}
+.deck{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;margin-top:12px}
+.maincol{display:flex;flex-direction:column;gap:12px;min-width:0}
+.ledgercard{grid-column:1/-1}
+.side{display:flex;flex-direction:column;gap:12px;min-width:0}
+.chartcard{display:flex;flex-direction:column}
+.chartwrap{height:430px}
+.signalstrip{display:flex;gap:6px;flex-wrap:wrap}
+.signalstrip .pill{font-size:10px;letter-spacing:.08em;text-transform:uppercase;border:1px solid var(--line2);padding:3px 7px;color:var(--muted)}
+.signalstrip .pill b{color:var(--teal)}
+.summarygrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:1px;background:var(--line2)}
+.summarygrid .cell{background:var(--panel);padding:9px 12px;display:flex;flex-direction:column;gap:2px}
+.summarygrid .k{font-size:9px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
+.summarygrid .v{font-size:12px;font-weight:600;word-break:break-all}
+.labelbar{padding:9px 13px;border-top:1px solid var(--line2);color:var(--orange);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
+.prov{padding:10px 13px;border-top:1px solid var(--line2);color:var(--muted);font-size:10px;line-height:1.7;word-break:break-all}
+.prov b{color:var(--text);font-weight:600}
+@media (max-width:1050px){.deck{grid-template-columns:1fr}.ledgercard{grid-column:auto}}
+@media (max-width:900px){.market{flex-direction:column;align-items:stretch}.mprice,.ms,.picker{border-right:0;border-bottom:1px solid var(--line2)}}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap bar">
+    <div class="brand"><span class="sq"></span>COIN<span class="teal">BOT</span></div>
+    <nav class="nav"><a class="on">Replay</a><a>Simulator</a><a>History</a></nav>
+    <div class="spacer"></div>
+    <div class="status"><span class="dot"></span><span id="statusText">REPLAY ENGINE · DETERMINISTIC</span></div>
+  </div>
+  <div class="banner">signals live-exact · trades simulated · fees excluded · not a profitability claim</div>
+</header>
+
+<div class="wrap">
+  <div class="tabs" id="tabs"></div>
+  <template id="failedTabTemplate"><button class="tab failed" disabled></button></template>
+
+  <div class="market">
+    <div class="picker" id="marketSymbol">—</div>
+    <div class="mprice"><span class="p" id="statPrice">—</span></div>
+    <div class="ms"><span class="k">Timeframe</span><span class="v" id="configTimeframe">—</span></div>
+    <div class="ms"><span class="k">Window</span><span class="v" id="statWindow">—</span></div>
+    <div class="ms"><span class="k">RSI</span><span class="v" id="statRsi">—</span></div>
+    <div class="ms"><span class="k">Signals</span><span class="v" id="statSignals">0</span></div>
+    <div class="ms"><span class="k">Trades</span><span class="v" id="statTrades">0/0</span></div>
+    <div class="ms"><span class="k">Equity</span><span class="v" id="statEquity">—</span></div>
+    <div class="ms"><span class="k">Realized</span><span class="v" id="statPnl">—</span></div>
+    <div class="ms"><span class="k">Generated</span><span class="v" id="configGenerated">—</span></div>
+  </div>
+
+  <div class="deck">
+    <div class="maincol">
+      <div class="card chartcard">
+        <div class="ph"><h3>Replay · signal generator</h3><span class="hint">closed candles only · same <b class="mono">CandleDriver</b> as live</span></div>
+        <div class="stats">
+          <div class="stat"><span class="k">Candle</span><span class="v" id="scrubLabel">—</span></div>
+          <div class="stat"><span class="k">Last</span><span class="v" id="statLast">—</span></div>
+          <div class="stat"><span class="k">Open</span><span class="v" id="statOpen">0</span></div>
+          <div class="stat" style="margin-left:auto"><span class="k">Dedup</span><span class="v mono" style="font-size:11px">key + watermark</span></div>
+        </div>
+        <div class="chart-wrap chartwrap"><canvas id="chart"></canvas><span class="chart-tag" id="chartTag">—</span></div>
+        <div class="rsi-wrap"><canvas id="rsi"></canvas><span class="rsi-tag" id="rsiTag">RSI · --</span></div>
+        <div class="controls">
+          <button id="play" class="primary" disabled>▶ Play</button>
+          <button id="prev" disabled>◀ Step</button>
+          <button id="next" disabled>Step ▶</button>
+          <button id="nextSignal" disabled>Next signal ⤼</button>
+          <button id="reset" disabled>Reset</button>
+          <select id="speed" disabled>
+            <option value="700">0.7s</option>
+            <option value="350" selected>0.35s</option>
+            <option value="150">0.15s</option>
+            <option value="60">0.06s</option>
+          </select>
+          <div class="scrub"><span>window</span><input id="scrub" type="range" min="0" max="0" value="0" disabled /></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="side">
+      <div class="card">
+        <div class="ph"><h3>Event stream</h3><span class="hint">warm-up · signal · suppress · entry · exit</span></div>
+        <div class="events" id="events"></div>
+        <div class="foot"><span>candle-close events</span><span>no fees</span></div>
+      </div>
+      <div class="card">
+        <div class="ph"><h3>Open positions</h3><span class="hint">next-open entry</span></div>
+        <div class="pad"><div class="signalstrip" id="openPositions"><span class="pill">no open positions</span></div></div>
+      </div>
+    </div>
+
+    <div class="card ledgercard">
+      <div class="ph"><h3>Trade ledger</h3><span class="hint">signal entry → next candle open fill · exits at TP/SL · fees excluded</span></div>
+      <table>
+        <thead><tr><th>Entry</th><th>Side</th><th>Signal entry</th><th>Fill</th><th>Exit</th><th>Exit price</th><th>PnL</th><th>Result</th></tr></thead>
+        <tbody id="ledger"></tbody>
+      </table>
+    </div>
+
+    <div class="card ledgercard">
+      <div class="ph"><h3>Simulation summary</h3><span class="hint">gross simulated · fees and slippage excluded</span></div>
+      <div class="summarygrid" id="summaryGrid"></div>
+      <div class="labelbar" id="returnsLabel">gross simulated, excluding fees and slippage</div>
+      <div class="prov" id="provenance">—</div>
+    </div>
+  </div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+  const REPLAY = __REPLAY_DATA__;
+  const CONFIG = REPLAY.config || {};
+  const FAILURES = REPLAY.failures || [];
+  const TABS = buildTabs(REPLAY);
+  const STEPS = TABS.map((tab) => initialStep(tab));
+  let active = TABS.length ? 0 : -1;
+  let timer = null;
+  let speed = 350;
+
+  const el = (id) => document.getElementById(id);
+
+  function num(value) { return Number(value); }
+  function finite(value) {
+    const n = Number(value);
+    return Number.isFinite(n);
+  }
+  function escapeHtml(value) {
+    return String(value == null ? "" : value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#39;");
+  }
+  function sideOf(value) { return value === "Long" ? "BUY" : "SELL"; }
+  function buildTabs(payload) {
+    return (payload.symbols || []).map((symbol) => ({
+      symbol: symbol.symbol,
+      candles: (symbol.candles || []).map((c, i) => ({
+        i: i,
+        t: num(c.t),
+        o: num(c.o),
+        h: num(c.h),
+        l: num(c.l),
+        c: num(c.c),
+      })),
+      rsi: (symbol.rsi || []).map((v) => (v === null ? null : num(v))),
+      sma: (symbol.sma || []).map((v) => (v === null ? null : num(v))),
+      events: symbol.events || [],
+      signals: (symbol.signals || []).map((s) => ({
+        i: s.candle_index,
+        id: s.signal_id,
+        side: sideOf(s.action),
+        reason: s.reason,
+        entry: num(s.signal_entry),
+        sl: num(s.sl),
+        tp: num(s.tp),
+        age: s.age,
+        divergenceIndex: s.divergence_index,
+        divergenceTime: s.divergence_open_time_ms,
+      })),
+      trades: (symbol.trades || []).map((t) => ({
+        entryIndex: t.entry_index,
+        exitIndex: t.exit_index,
+        side: sideOf(t.side),
+        signalEntry: num(t.signal_entry),
+        fill: num(t.fill),
+        exit: num(t.exit),
+        e: num(t.E),
+        pnl: num(t.pnl),
+        pnlPct: num(t.pnl_pct),
+        rr: t.risk_reward === null ? null : num(t.risk_reward),
+        reason: t.reason,
+      })),
+      openPositions: (symbol.open_positions || []).map((p) => ({
+        entryIndex: p.entry_index,
+        side: sideOf(p.side),
+        signalEntry: num(p.signal_entry),
+        fill: num(p.fill),
+        e: num(p.E),
+        sl: num(p.sl),
+        tp: num(p.tp),
+      })),
+      summary: symbol.summary || {},
+      provenance: symbol.provenance || {},
+    }));
+  }
+
+  function windowFor(tab) {
+    const n = tab ? tab.candles.length : 0;
+    const configured = Number(CONFIG.window) || 100;
+    return Math.max(1, Math.min(configured, n || configured));
+  }
+  function initialStep(tab) {
+    if (!tab || !tab.candles.length) return 0;
+    return Math.max(0, Math.min(windowFor(tab) - 1, tab.candles.length - 1));
+  }
+  function current() { return active >= 0 ? TABS[active] : null; }
+  function currentStep() { return active >= 0 ? STEPS[active] : 0; }
+  function setStep(value) {
+    const tab = current();
+    if (!tab || !tab.candles.length) return;
+    STEPS[active] = Math.max(0, Math.min(tab.candles.length - 1, value));
+  }
+  function visibleStart() {
+    const tab = current();
+    if (!tab) return 0;
+    return Math.max(0, currentStep() - windowFor(tab) + 1);
+  }
+  function fmtPrice(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    const abs = Math.abs(n);
+    if (abs >= 1000) return "$" + n.toLocaleString("en-US", { maximumFractionDigits: 0 });
+    if (abs >= 1) return "$" + n.toFixed(2);
+    return "$" + n.toFixed(4);
+  }
+  function fmtSigned(value, digits) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return (n >= 0 ? "+" : "") + n.toFixed(digits == null ? 2 : digits);
+  }
+  function fmtPct(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+  }
+  function fmtNumber(value, digits) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return "—";
+    return n.toFixed(digits == null ? 2 : digits);
+  }
+  function fmtDate(t, withTime) {
+    const n = Number(t);
+    if (!Number.isFinite(n)) return "—";
+    const date = new Date(n);
+    const opts = withTime
+      ? { year: "numeric", month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" }
+      : { year: "numeric", month: "short", day: "2-digit" };
+    return date.toLocaleString("en-US", Object.assign(opts, { timeZone: "UTC", hour12: false }));
+  }
+  function fmtAxis(t, withYear) {
+    const n = Number(t);
+    if (!Number.isFinite(n)) return "";
+    const opts = {
+      month: "short",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      timeZone: "UTC",
+      hour12: false,
+    };
+    if (withYear) opts.year = "numeric";
+    return new Date(n).toLocaleString("en-US", opts);
+  }
+  function setText(id, text, cls) {
+    const node = el(id);
+    if (!node) return;
+    node.textContent = text;
+    if (cls !== undefined) node.className = cls;
+  }
+  function signalForTrade(tab, trade) {
+    return (
+      tab.signals.find(
+        (signal) => signal.i + 1 === trade.entryIndex && signal.side === trade.side
+      ) || null
+    );
+  }
+  function renderTabs() {
+    const host = el("tabs");
+    if (!host) return;
+    host.innerHTML = "";
+    TABS.forEach((tab, index) => {
+      const button = document.createElement("button");
+      button.className = "tab" + (index === active ? " on" : "");
+      button.textContent = tab.symbol;
+      button.title = tab.symbol;
+      button.addEventListener("click", () => {
+        active = index;
+        stop();
+        renderTabs();
+        render();
+      });
+      host.appendChild(button);
+    });
+    FAILURES.forEach((failure) => {
+      const failedTemplate = el("failedTabTemplate");
+      const button =
+        failedTemplate && failedTemplate.content && failedTemplate.content.firstElementChild
+          ? failedTemplate.content.firstElementChild.cloneNode(true)
+          : document.createElement("button");
+      button.className = "tab failed";
+      button.disabled = true;
+      button.textContent = failure.symbol + " · " + failure.error;
+      button.title = failure.error;
+      host.appendChild(button);
+    });
+    if (!TABS.length && !FAILURES.length) {
+      const empty = document.createElement("span");
+      empty.className = "muted";
+      empty.textContent = "no symbols in this report";
+      host.appendChild(empty);
+    }
+  }
+
+  function drawChart() {
+    const canvas = el("chart");
+    const tab = current();
+    if (!canvas || !tab || !tab.candles.length) return;
+    const step = currentStep();
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(10, rect.width * dpr);
+    canvas.height = Math.max(10, rect.height * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = rect.width;
+    const h = rect.height;
+    const m = { l: 54, r: 14, t: 16, b: 22 };
+    const plotW = w - m.l - m.r;
+    const plotH = h - m.t - m.b;
+    const start = visibleStart();
+    const view = tab.candles.slice(start, step + 1);
+    if (!view.length) return;
+
+    let lo = Infinity;
+    let hi = -Infinity;
+    for (const candle of view) {
+      lo = Math.min(lo, candle.l);
+      hi = Math.max(hi, candle.h);
+    }
+    for (const signal of tab.signals) {
+      if (signal.i < start || signal.i > step) continue;
+      lo = Math.min(lo, signal.sl, signal.tp, signal.entry);
+      hi = Math.max(hi, signal.sl, signal.tp, signal.entry);
+    }
+    const pad = (hi - lo) * 0.06 || 1;
+    lo -= pad;
+    hi += pad;
+    const xFor = (i) => m.l + ((i - start) / Math.max(1, view.length - 1)) * plotW;
+    const yFor = (v) => m.t + (1 - (v - lo) / (hi - lo)) * plotH;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = "10px ui-monospace, monospace";
+    ctx.textBaseline = "middle";
+
+    for (let k = 0; k <= 4; k++) {
+      const v = lo + ((hi - lo) * k) / 4;
+      const y = yFor(v);
+      ctx.strokeStyle = "rgba(255,255,255,.055)";
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(m.l, y);
+      ctx.lineTo(w - m.r, y);
+      ctx.stroke();
+      ctx.fillStyle = "#63727f";
+      ctx.textAlign = "right";
+      ctx.fillText(fmtPrice(v), m.l - 8, y);
+    }
+
+    ctx.textAlign = "center";
+    const stride = Math.max(1, Math.floor(view.length / 5));
+    const spansYear =
+      new Date(view[0].t).getUTCFullYear() !==
+      new Date(view[view.length - 1].t).getUTCFullYear();
+    for (let index = 0; index < view.length; index += stride) {
+      const candle = view[index];
+      ctx.fillStyle = "#63727f";
+      ctx.fillText(fmtAxis(candle.t, spansYear), xFor(candle.i), h - 10);
+    }
+
+    const wx = xFor(start);
+    ctx.strokeStyle = "rgba(0,224,255,.32)";
+    ctx.setLineDash([3, 4]);
+    ctx.beginPath();
+    ctx.moveTo(wx, m.t);
+    ctx.lineTo(wx, h - m.b);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(0,224,255,.9)";
+    ctx.textAlign = "left";
+    ctx.fillText("window " + windowFor(tab), wx + 5, m.t + 9);
+
+    const cw = Math.max(2, Math.min(8, (plotW / view.length) * 0.62));
+    for (const candle of view) {
+      const x = xFor(candle.i);
+      const up = candle.c >= candle.o;
+      const color = up ? "#1dcd9f" : "#ff4d4d";
+      ctx.strokeStyle = color;
+      ctx.fillStyle = color;
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(x, yFor(candle.h));
+      ctx.lineTo(x, yFor(candle.l));
+      ctx.stroke();
+      const bodyTop = yFor(Math.max(candle.o, candle.c));
+      const bodyBot = yFor(Math.min(candle.o, candle.c));
+      ctx.fillRect(x - cw / 2, bodyTop, cw, Math.max(1, bodyBot - bodyTop));
+    }
+
+    ctx.strokeStyle = "rgba(0,224,255,.75)";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    let started = false;
+    for (const candle of view) {
+      const value = tab.sma[candle.i];
+      if (value === null || !Number.isFinite(value)) continue;
+      if (!started) {
+        ctx.moveTo(xFor(candle.i), yFor(value));
+        started = true;
+      } else {
+        ctx.lineTo(xFor(candle.i), yFor(value));
+      }
+    }
+    ctx.stroke();
+
+    // Signal markers, distinct signal-entry ticks, fill dots, TP/SL and exits.
+    for (const signal of tab.signals) {
+      if (signal.i < start || signal.i > step) continue;
+      const x = xFor(signal.i);
+      const color = signal.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
+      const y = signal.side === "BUY" ? yFor(tab.candles[signal.i].l) + 12 : yFor(tab.candles[signal.i].h) - 12;
+      ctx.fillStyle = color;
+      ctx.beginPath();
+      if (signal.side === "BUY") {
+        ctx.moveTo(x, y - 7);
+        ctx.lineTo(x - 5, y + 3);
+        ctx.lineTo(x + 5, y + 3);
+      } else {
+        ctx.moveTo(x, y + 7);
+        ctx.lineTo(x - 5, y - 3);
+        ctx.lineTo(x + 5, y - 3);
+      }
+      ctx.closePath();
+      ctx.fill();
+
+      // hollow tick at the live-exact signal entry price
+      ctx.strokeStyle = "#ffb020";
+      ctx.fillStyle = "#05070a";
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.arc(x, yFor(signal.entry), 3.1, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.stroke();
+    }
+
+    function levels(tab, side, sl, tp, fromIndex, toIndex, color) {
+      if (!Number.isFinite(sl) || !Number.isFinite(tp)) return;
+      const from = Math.max(fromIndex, start);
+      const to = Math.min(toIndex, step);
+      if (to < from) return;
+      ctx.strokeStyle = color;
+      ctx.globalAlpha = 0.55;
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath();
+      ctx.moveTo(xFor(from), yFor(tp));
+      ctx.lineTo(xFor(to), yFor(tp));
+      ctx.moveTo(xFor(from), yFor(sl));
+      ctx.lineTo(xFor(to), yFor(sl));
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.globalAlpha = 1;
+    }
+
+    for (const trade of tab.trades) {
+      if (trade.entryIndex > step) continue;
+      const signal = signalForTrade(tab, trade);
+      const color = trade.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
+      if (signal) levels(tab, trade.side, signal.sl, signal.tp, trade.entryIndex, trade.exitIndex, color);
+      if (trade.entryIndex >= start) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(xFor(trade.entryIndex), yFor(trade.fill), 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      if (trade.exitIndex <= step) {
+        ctx.fillStyle = trade.reason === "TP" || trade.reason === "gap_tp" ? "#1dcd9f" : "#ff4d4d";
+        ctx.beginPath();
+        ctx.arc(xFor(trade.exitIndex), yFor(trade.exit), 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    for (const position of tab.openPositions) {
+      if (position.entryIndex > step) continue;
+      const color = position.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
+      levels(tab, position.side, position.sl, position.tp, position.entryIndex, step, color);
+      if (position.entryIndex >= start) {
+        ctx.fillStyle = color;
+        ctx.beginPath();
+        ctx.arc(xFor(position.entryIndex), yFor(position.fill), 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    const last = tab.candles[step];
+    ctx.strokeStyle = "rgba(255,255,255,.55)";
+    ctx.lineWidth = 1;
+    ctx.strokeRect(
+      xFor(last.i) - cw / 2 - 2,
+      yFor(last.h) - 2,
+      cw + 4,
+      yFor(last.l) - yFor(last.h) + 4
+    );
+
+    setText("chartTag", tab.symbol + " · " + (CONFIG.timeframe || "?") + " · candle " + (step + 1) + "/" + tab.candles.length);
+  }
+
+  function drawRsi() {
+    const canvas = el("rsi");
+    const tab = current();
+    if (!canvas || !tab || !tab.candles.length) return;
+    const step = currentStep();
+    const rect = canvas.parentElement.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.max(10, rect.width * dpr);
+    canvas.height = Math.max(10, rect.height * dpr);
+    const ctx = canvas.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const w = rect.width;
+    const h = rect.height;
+    const m = { l: 54, r: 14, t: 10, b: 12 };
+    const plotW = w - m.l - m.r;
+    const plotH = h - m.t - m.b;
+    const start = visibleStart();
+    const xFor = (i) => m.l + ((i - start) / Math.max(1, step - start)) * plotW;
+    const yFor = (v) => m.t + (1 - v / 100) * plotH;
+
+    ctx.clearRect(0, 0, w, h);
+    ctx.font = "9px ui-monospace, monospace";
+    ctx.textBaseline = "middle";
+    for (const band of [[70, "rgba(255,77,77,.35)"], [30, "rgba(29,205,159,.35)"], [50, "rgba(255,255,255,.08)"]]) {
+      const y = yFor(band[0]);
+      ctx.strokeStyle = band[1];
+      ctx.setLineDash(band[0] === 50 ? [2, 4] : [3, 3]);
+      ctx.beginPath();
+      ctx.moveTo(m.l, y);
+      ctx.lineTo(w - m.r, y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = "#63727f";
+      ctx.textAlign = "right";
+      ctx.fillText(String(band[0]), m.l - 8, y);
+    }
+
+    ctx.strokeStyle = "#00e0ff";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    let started = false;
+    for (let i = start; i <= step; i++) {
+      const value = tab.rsi[i];
+      if (value === null || !Number.isFinite(value)) continue;
+      if (!started) {
+        ctx.moveTo(xFor(i), yFor(value));
+        started = true;
+      } else {
+        ctx.lineTo(xFor(i), yFor(value));
+      }
+    }
+    ctx.stroke();
+
+    const value = tab.rsi[step];
+    const tag = el("rsiTag");
+    if (tag) {
+      const period = Number(CONFIG.rsi_period) || 14;
+      tag.innerHTML = "RSI " + period + " · <b>" + (value === null || !Number.isFinite(value) ? "--" : value.toFixed(1)) + "</b>";
+    }
+  }
+
+  function renderEvents() {
+    const host = el("events");
+    const tab = current();
+    if (!host || !tab) return;
+    const step = currentStep();
+    const items = [];
+
+    for (const event of tab.events) {
+      if (event.i > step) continue;
+      if (event.kind === "warmup") {
+        items.push({
+          i: event.i,
+          html:
+            '<div class="event"><div class="top"><span>candle ' + (event.i + 1) +
+            '</span><span class="badge neutral">warm-up</span></div>' +
+            '<div class="what">Window warmed · dedup state seeded</div>' +
+            '<div class="meta">' + escapeHtml(event.seeded_keys) + ' keys seeded · no historical signals published</div></div>',
+        });
+      } else if (event.kind === "signal") {
+        const signal = tab.signals[event.signal_index];
+        if (!signal) continue;
+        const cls = signal.side === "BUY" ? "signal" : "signal sell";
+        items.push({
+          i: event.i,
+          html:
+            '<div class="event ' + cls + '"><div class="top"><span>candle ' + (event.i + 1) +
+            '</span><span class="badge ' + (signal.side === "BUY" ? "buy" : "sell") + '">' + signal.side +
+            '</span></div><div class="what">' + escapeHtml(String(signal.reason).replaceAll("_", " ")) + '</div>' +
+            '<div class="meta">signal entry ' + fmtPrice(signal.entry) + ' · SL ' + fmtPrice(signal.sl) +
+            ' · TP ' + fmtPrice(signal.tp) + ' · age ' + escapeHtml(signal.age) + '</div></div>',
+        });
+      } else if (event.kind === "suppressed") {
+        items.push({
+          i: event.i,
+          html:
+            '<div class="event suppressed"><div class="top"><span>candle ' + (event.i + 1) +
+            '</span><span class="badge warn">suppressed</span></div>' +
+            '<div class="what">' + escapeHtml(String(event.reason).replaceAll("_", " ")) + '</div>' +
+            '<div class="meta">signal suppressed by live dedup</div></div>',
+        });
+      }
+    }
+
+    for (const trade of tab.trades) {
+      if (trade.entryIndex > step) continue;
+      items.push({
+        i: trade.entryIndex,
+        html:
+          '<div class="event entry"><div class="top"><span>candle ' + (trade.entryIndex + 1) +
+          '</span><span class="badge ' + (trade.side === "BUY" ? "buy" : "sell") + '">' + trade.side +
+          '</span></div><div class="what">Entry filled at next open</div>' +
+          '<div class="meta">signal ' + fmtPrice(trade.signalEntry) + ' → fill ' + fmtPrice(trade.fill) +
+          ' · E ' + fmtPrice(trade.e) + '</div></div>',
+      });
+      if (trade.exitIndex <= step) {
+        items.push({
+          i: trade.exitIndex,
+          html:
+            '<div class="event"><div class="top"><span>candle ' + (trade.exitIndex + 1) +
+            '</span><span class="badge neutral">' + escapeHtml(trade.reason) + '</span></div>' +
+            '<div class="what">Trade closed ' + trade.side + '</div>' +
+            '<div class="meta">' + fmtPrice(trade.fill) + ' → ' + fmtPrice(trade.exit) + ' · ' +
+            '<span class="' + (trade.pnl >= 0 ? "up" : "down") + '">' + fmtSigned(trade.pnl) +
+            ' (' + fmtPct(trade.pnlPct) + ')</span></div></div>',
+        });
+      }
+    }
+    for (const position of tab.openPositions) {
+      if (position.entryIndex > step) continue;
+      items.push({
+        i: position.entryIndex,
+        html:
+          '<div class="event entry"><div class="top"><span>candle ' + (position.entryIndex + 1) +
+          '</span><span class="badge ' + (position.side === "BUY" ? "buy" : "sell") + '">' + position.side +
+          '</span></div><div class="what">Entry filled at next open</div>' +
+          '<div class="meta">signal ' + fmtPrice(position.signalEntry) + ' → fill ' + fmtPrice(position.fill) +
+          ' · E ' + fmtPrice(position.e) + ' · open at end</div></div>',
+      });
+    }
+
+    items.sort((a, b) => a.i - b.i);
+    host.innerHTML = items.length
+      ? items.map((item) => item.html).join("")
+      : '<div class="empty">Waiting for the window to warm…</div>';
+    host.scrollTop = host.scrollHeight;
+  }
+
+  function openAtStep(tab, step) {
+    const open = [];
+    for (const trade of tab.trades) {
+      if (trade.entryIndex <= step && trade.exitIndex > step) {
+        open.push({ kind: "trade", trade: trade, entryIndex: trade.entryIndex, side: trade.side, signalEntry: trade.signalEntry, fill: trade.fill });
+      }
+    }
+    for (const position of tab.openPositions) {
+      if (position.entryIndex <= step) {
+        open.push({
+          kind: "position",
+          position: position,
+          entryIndex: position.entryIndex,
+          side: position.side,
+          signalEntry: position.signalEntry,
+          fill: position.fill,
+          sl: position.sl,
+          tp: position.tp,
+        });
+      }
+    }
+    return open;
+  }
+
+  function pnlAtStep(tab, step, trade) {
+    const mark = tab.candles[step].c;
+    return trade.side === "BUY"
+      ? trade.e * (mark / trade.fill - 1)
+      : trade.e * (trade.fill - mark) / trade.fill;
+  }
+
+  function renderLedger() {
+    const body = el("ledger");
+    const tab = current();
+    if (!body || !tab) return;
+    const step = currentStep();
+    const rows = [];
+
+    for (const trade of tab.trades) {
+      if (trade.entryIndex > step) continue;
+      const open = trade.exitIndex > step;
+      const pnl = open ? pnlAtStep(tab, step, trade) : trade.pnl;
+      rows.push(
+        "<tr><td>" + fmtDate(tab.candles[trade.entryIndex].t) +
+        '</td><td><span class="side ' + (trade.side === "BUY" ? "up" : "down") + '">' + trade.side +
+        "</span></td><td>" + fmtPrice(trade.signalEntry) +
+        "</td><td>" + fmtPrice(trade.fill) +
+        "</td><td>" + (open ? "open" : fmtDate(tab.candles[trade.exitIndex].t)) +
+        "</td><td>" + (open ? fmtPrice(tab.candles[step].c) : fmtPrice(trade.exit)) +
+        '</td><td class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) +
+        '</td><td><span class="badge ' + (open ? "neutral" : pnl >= 0 ? "buy" : "sell") + '">' +
+        (open ? "open" : escapeHtml(trade.reason)) + "</span></td></tr>"
+      );
+    }
+    for (const position of tab.openPositions) {
+      if (position.entryIndex > step) continue;
+      const pnl = position.side === "BUY"
+        ? position.e * (tab.candles[step].c / position.fill - 1)
+        : position.e * (position.fill - tab.candles[step].c) / position.fill;
+      rows.push(
+        "<tr><td>" + fmtDate(tab.candles[position.entryIndex].t) +
+        '</td><td><span class="side ' + (position.side === "BUY" ? "up" : "down") + '">' + position.side +
+        "</span></td><td>" + fmtPrice(position.signalEntry) +
+        "</td><td>" + fmtPrice(position.fill) +
+        "</td><td>open</td><td>" + fmtPrice(tab.candles[step].c) +
+        '</td><td class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) +
+        '</td><td><span class="badge neutral">open</span></td></tr>'
+      );
+    }
+
+    body.innerHTML = rows.length
+      ? rows.join("")
+      : '<tr><td colspan="8"><div class="empty">No trades yet.</div></td></tr>';
+  }
+
+  function renderOpenPositions() {
+    const host = el("openPositions");
+    const tab = current();
+    if (!host || !tab) return;
+    const step = currentStep();
+    const open = openAtStep(tab, step);
+    if (!open.length) {
+      host.innerHTML = '<span class="pill">no open positions</span>';
+      return;
+    }
+    host.innerHTML = open
+      .map((item) => {
+        let sl = item.sl;
+        let tp = item.tp;
+        if (item.kind === "trade") {
+          const signal = signalForTrade(tab, item.trade);
+          sl = signal ? signal.sl : null;
+          tp = signal ? signal.tp : null;
+        }
+        const pnl = item.kind === "trade"
+          ? pnlAtStep(tab, step, item.trade)
+          : item.side === "BUY"
+            ? item.position.e * (tab.candles[step].c / item.fill - 1)
+            : item.position.e * (item.fill - tab.candles[step].c) / item.fill;
+        return (
+          '<span class="pill"><b>' + item.side + "</b> signal " + fmtPrice(item.signalEntry) +
+          " · fill " + fmtPrice(item.fill) +
+          (Number.isFinite(sl) ? " · SL " + fmtPrice(sl) : "") +
+          (Number.isFinite(tp) ? " · TP " + fmtPrice(tp) : "") +
+          ' · <span class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) + "</span></span>"
+        );
+      })
+      .join("");
+  }
+
+  function renderStats() {
+    const tab = current();
+    if (!tab || !tab.candles.length) {
+      setText("marketSymbol", "—");
+      return;
+    }
+    const step = currentStep();
+    const candle = tab.candles[step];
+    const signals = tab.signals.filter((signal) => signal.i <= step);
+    const closed = tab.trades.filter((trade) => trade.entryIndex <= step && trade.exitIndex <= step);
+    const open = openAtStep(tab, step);
+    const realized = closed.reduce((sum, trade) => sum + trade.pnl, 0);
+    let unrealized = 0;
+    for (const item of open) {
+      unrealized += item.kind === "trade"
+        ? pnlAtStep(tab, step, item.trade)
+        : item.side === "BUY"
+          ? item.position.e * (candle.c / item.fill - 1)
+          : item.position.e * (item.fill - candle.c) / item.fill;
+    }
+    const equity = Number(tab.summary.init_fund || 0) + realized + unrealized;
+
+    setText("marketSymbol", tab.symbol);
+    setText("statPrice", fmtPrice(candle.c));
+    setText("statWindow", Math.min(windowFor(tab), step + 1) + "/" + windowFor(tab));
+    setText("statRsi", tab.rsi[step] === null || !Number.isFinite(tab.rsi[step]) ? "--" : tab.rsi[step].toFixed(1));
+    setText("statSignals", String(signals.length));
+    setText("statTrades", closed.length + "/" + (tab.trades.filter((trade) => trade.entryIndex <= step).length + tab.openPositions.filter((position) => position.entryIndex <= step).length));
+    setText("statEquity", equity.toFixed(2));
+    setText("statPnl", fmtSigned(realized), "v " + (realized >= 0 ? "up" : "down"));
+    setText("statLast", fmtPrice(candle.c));
+    setText("statOpen", String(open.length));
+    setText("scrubLabel", "candle " + (step + 1) + " / " + tab.candles.length);
+    setText("configTimeframe", CONFIG.timeframe || "—");
+    setText("configGenerated", REPLAY.generated_at || "—");
+
+    const scrub = el("scrub");
+    if (scrub) {
+      scrub.min = String(Math.min(windowFor(tab) - 1, tab.candles.length - 1));
+      scrub.max = String(Math.max(0, tab.candles.length - 1));
+      scrub.value = String(step);
+      scrub.disabled = !tab.candles.length;
+    }
+  }
+
+  function summaryCells(summary) {
+    const cells = [
+      ["Equity", fmtNumber(summary.equity)],
+      ["Gross realized", fmtSigned(summary.gross_realized_pnl)],
+      ["Unrealized", fmtSigned(summary.unrealized_pnl)],
+      ["Profit factor", summary.profit_factor === "null" ? "--" : String(summary.profit_factor)],
+      ["Max drawdown", fmtNumber(summary.max_drawdown) + " (" + fmtNumber(summary.max_drawdown_pct) + "%)"],
+      ["Trades", summary.wins + "W / " + summary.losses + "L / " + summary.breakeven + "B"],
+      ["Win rate", fmtNumber(summary.win_rate) + "%"],
+      ["Exposure", summary.exposure_candles + " candles · " + fmtNumber(summary.time_in_market_pct) + "%"],
+      ["Open at end", String(summary.open_count)],
+      ["Skipped funds", String(summary.skipped_funds)],
+      ["Unfilled at end", String(summary.unfilled_at_end)],
+      ["Invalid levels", String(summary.invalid_levels)],
+      ["Gaps", String(summary.gaps)],
+      ["Avg win / loss", fmtNumber(summary.avg_win) + " / " + fmtNumber(summary.avg_loss)],
+    ];
+    return cells;
+  }
+
+  function renderSummary() {
+    const host = el("summaryGrid");
+    const tab = current();
+    if (!host || !tab) return;
+    const summary = tab.summary || {};
+    host.innerHTML = summaryCells(summary)
+      .map((cell) => '<div class="cell"><span class="k">' + escapeHtml(cell[0]) + '</span><span class="v">' + escapeHtml(cell[1]) + "</span></div>")
+      .join("");
+    setText("returnsLabel", summary.returns_label || "gross simulated, excluding fees and slippage");
+
+    const provenance = tab.provenance || {};
+    const effective = provenance.effective_range || {};
+    const hostProv = el("provenance");
+    if (hostProv) {
+      hostProv.innerHTML =
+        "<b>source</b> " + escapeHtml(provenance.source || "—") +
+        " · <b>range</b> " + escapeHtml(fmtDate(effective.first_open_time_ms, true)) + " → " + escapeHtml(fmtDate(effective.last_open_time_ms, true)) +
+        " · <b>candles</b> " + escapeHtml(effective.candles == null ? "—" : effective.candles) +
+        " · <b>gaps</b> " + escapeHtml(provenance.gaps == null ? "—" : provenance.gaps) +
+        "<br><b>content sha256</b> " + escapeHtml(provenance.content_sha256 || "—") +
+        " · <b>generated_at</b> " + escapeHtml(REPLAY.generated_at || "—") +
+        " · <b>timeframe</b> " + escapeHtml(CONFIG.timeframe || "—") +
+        " · <b>limit</b> " + escapeHtml(CONFIG.limit == null ? "—" : CONFIG.limit) +
+        " · <b>init fund</b> " + escapeHtml(CONFIG.init_fund || "—") +
+        " · <b>fees</b> " + (CONFIG.fees ? "on" : "off") +
+        " · <b>window</b> " + escapeHtml(CONFIG.window == null ? "—" : CONFIG.window);
+    }
+  }
+
+  function render() {
+    const tab = current();
+    const controls = ["play", "prev", "next", "nextSignal", "reset", "speed"];
+    controls.forEach((id) => {
+      const node = el(id);
+      if (node) node.disabled = !tab || !tab.candles.length;
+    });
+    if (!tab || !tab.candles.length) {
+      setText("chartTag", "no symbol data");
+      return;
+    }
+    drawChart();
+    drawRsi();
+    renderEvents();
+    renderLedger();
+    renderOpenPositions();
+    renderStats();
+    renderSummary();
+  }
+
+  function stop() {
+    if (timer) {
+      clearInterval(timer);
+      timer = null;
+    }
+    const button = el("play");
+    if (button) button.textContent = "▶ Play";
+  }
+
+  function play() {
+    const tab = current();
+    if (!tab || !tab.candles.length) return;
+    if (timer) return stop();
+    const button = el("play");
+    if (button) button.textContent = "❚❚ Pause";
+    timer = setInterval(() => {
+      if (currentStep() >= tab.candles.length - 1) {
+        stop();
+        return;
+      }
+      setStep(currentStep() + 1);
+      render();
+    }, speed);
+  }
+
+  function bind() {
+    el("play")?.addEventListener("click", play);
+    el("prev")?.addEventListener("click", () => {
+      stop();
+      setStep(currentStep() - 1);
+      render();
+    });
+    el("next")?.addEventListener("click", () => {
+      stop();
+      setStep(currentStep() + 1);
+      render();
+    });
+    el("nextSignal")?.addEventListener("click", () => {
+      stop();
+      const tab = current();
+      if (!tab) return;
+      const next = tab.signals.find((signal) => signal.i > currentStep());
+      setStep(next ? next.i : tab.candles.length - 1);
+      render();
+    });
+    el("reset")?.addEventListener("click", () => {
+      stop();
+      const tab = current();
+      if (!tab) return;
+      setStep(initialStep(tab));
+      render();
+    });
+    el("speed")?.addEventListener("change", (event) => {
+      speed = Number(event.target.value);
+      if (timer) {
+        stop();
+        play();
+      }
+    });
+    el("scrub")?.addEventListener("input", (event) => {
+      stop();
+      setStep(Number(event.target.value));
+      render();
+    });
+    window.addEventListener("resize", render);
+    document.addEventListener("keydown", (event) => {
+      if (event.target.tagName === "INPUT" || event.target.tagName === "SELECT") return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        play();
+      } else if (event.code === "ArrowRight") {
+        event.preventDefault();
+        stop();
+        setStep(currentStep() + 1);
+        render();
+      } else if (event.code === "ArrowLeft") {
+        event.preventDefault();
+        stop();
+        setStep(currentStep() - 1);
+        render();
+      }
+    });
+  }
+
+  function init() {
+    renderTabs();
+    if (TABS.length && !TABS[0].candles.length) {
+      const empty = el("events");
+      if (empty) empty.innerHTML = '<div class="empty">No candles in this report.</div>';
+    }
+    bind();
+    render();
+  }
+
+  document.addEventListener("DOMContentLoaded", init);
+})();
+</script>
+</body>
+</html>

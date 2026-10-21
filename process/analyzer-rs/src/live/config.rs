@@ -1,8 +1,6 @@
 use crate::exchange::timeframes::Timeframe;
 use crate::strategy::config::Config;
-use rust_decimal::Decimal;
 use std::collections::BTreeSet;
-use std::str::FromStr;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LiveConfigError {
@@ -110,7 +108,11 @@ impl LiveConfig {
             base_url,
         )?;
         cfg.max_divergence_age_candles = match env_string("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
-            Some(value) => parse_optional_usize("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
+            Some(value) => crate::config_env::parse_optional_usize_str(
+                "ANALYZER_MAX_DIVERGENCE_AGE_CANDLES",
+                &value,
+            )
+            .map_err(|_| LiveConfigError::Invalid("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", value))?,
             None => None,
         };
         Ok(cfg)
@@ -129,42 +131,13 @@ impl LiveConfig {
     }
 }
 
-/// Load `.env` from the current directory first, then from the crate directory (for `cargo run`
-/// from a parent directory). Existing process environment variables are not overwritten.
-pub fn load_dotenv() {
-    let candidates = [
-        std::env::current_dir().ok().map(|dir| dir.join(".env")),
-        Some(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join(".env")),
-    ];
-    for path in candidates.into_iter().flatten() {
-        if path.is_file() {
-            let _ = dotenvy::from_path(path);
-            return;
-        }
-    }
-}
+pub use crate::config_env::load_dotenv;
 
 /// Build the strategy config from the Python-compatible environment names, falling back to
 /// `Config::default()` for anything that is unset.
 pub fn strategy_from_env() -> Result<Config, LiveConfigError> {
-    let default = Config::default();
-    let cfg = Config {
-        rsi_period: env_parse("RSI_PERIOD", default.rsi_period)?,
-        rsi_order: env_parse("RSI_DIVERGENCE_ORDER", default.rsi_order)?,
-        price_diff_threshold: env_decimal("PRICE_DIFF_THRESHOLD", default.price_diff_threshold)?,
-        sma_enabled: env_bool("SMA_ENABLED", default.sma_enabled)?,
-        sma_period: env_parse("SMA_PERIOD", default.sma_period)?,
-        atr_period: env_parse("ATR_PERIOD", default.atr_period)?,
-        atr_sl_multiplier: env_decimal("ATR_SL_MULTIPLIER", default.atr_sl_multiplier)?,
-        atr_tp_multiplier: env_decimal("ATR_TP_MULTIPLIER", default.atr_tp_multiplier)?,
-        atr_pct_high: env_decimal("ATR_PCT_HIGH", default.atr_pct_high)?,
-        atr_high_adjust: env_decimal("ATR_HIGH_ADJUST", default.atr_high_adjust)?,
-        atr_sl_max_pct: env_decimal("ATR_SL_MAX_PCT", default.atr_sl_max_pct)?,
-        window: env_parse("ANALYZER_WINDOW_CANDLES", default.window)?,
-    };
-    cfg.validate()
-        .map_err(|error| LiveConfigError::Invalid("strategy", error.to_string()))?;
-    Ok(cfg)
+    crate::config_env::strategy_from_env()
+        .map_err(|error| LiveConfigError::Invalid("strategy", error.to_string()))
 }
 
 fn env_string(key: &'static str) -> Option<String> {
@@ -172,52 +145,6 @@ fn env_string(key: &'static str) -> Option<String> {
         .ok()
         .map(|value| value.trim().to_string())
         .filter(|value| !value.is_empty())
-}
-
-fn parse_bool_str(key: &'static str, value: &str) -> Result<bool, LiveConfigError> {
-    match value.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" | "on" => Ok(true),
-        "0" | "false" | "no" | "off" => Ok(false),
-        _ => Err(LiveConfigError::Invalid(key, value.to_string())),
-    }
-}
-
-fn parse_decimal_str(key: &'static str, value: &str) -> Result<Decimal, LiveConfigError> {
-    Decimal::from_str(value.trim()).map_err(|_| LiveConfigError::Invalid(key, value.to_string()))
-}
-
-fn parse_optional_usize(key: &'static str, value: &str) -> Result<Option<usize>, LiveConfigError> {
-    let value = value.trim();
-    if value.is_empty() {
-        return Ok(None);
-    }
-    value
-        .parse()
-        .map(Some)
-        .map_err(|_| LiveConfigError::Invalid(key, value.to_string()))
-}
-
-fn env_parse<T: FromStr>(key: &'static str, default: T) -> Result<T, LiveConfigError> {
-    match env_string(key) {
-        Some(value) => value
-            .parse()
-            .map_err(|_| LiveConfigError::Invalid(key, value)),
-        None => Ok(default),
-    }
-}
-
-fn env_bool(key: &'static str, default: bool) -> Result<bool, LiveConfigError> {
-    match env_string(key) {
-        Some(value) => parse_bool_str(key, &value),
-        None => Ok(default),
-    }
-}
-
-fn env_decimal(key: &'static str, default: Decimal) -> Result<Decimal, LiveConfigError> {
-    match env_string(key) {
-        Some(value) => parse_decimal_str(key, &value),
-        None => Ok(default),
-    }
 }
 
 fn parse<T: std::str::FromStr>(key: &'static str, default: T) -> Result<T, LiveConfigError> {
@@ -231,7 +158,10 @@ fn parse<T: std::str::FromStr>(key: &'static str, default: T) -> Result<T, LiveC
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    use crate::config_env::{
+        parse_bool_str, parse_decimal_str, parse_optional_usize_str, ConfigEnvError,
+    };
+    use rust_decimal::Decimal;
 
     #[test]
     fn boolean_forms_are_accepted() {
@@ -243,7 +173,7 @@ mod tests {
         }
         assert!(matches!(
             parse_bool_str("TEST", "maybe"),
-            Err(LiveConfigError::Invalid("TEST", _))
+            Err(ConfigEnvError::Invalid("TEST", _))
         ));
     }
 
@@ -260,18 +190,18 @@ mod tests {
         );
         assert!(matches!(
             parse_decimal_str("TEST", "nope"),
-            Err(LiveConfigError::Invalid("TEST", _))
+            Err(ConfigEnvError::Invalid("TEST", _))
         ));
     }
 
     #[test]
     fn optional_age_cap_treats_empty_as_none() {
-        assert_eq!(parse_optional_usize("TEST", "").unwrap(), None);
-        assert_eq!(parse_optional_usize("TEST", "   ").unwrap(), None);
-        assert_eq!(parse_optional_usize("TEST", "5").unwrap(), Some(5));
+        assert_eq!(parse_optional_usize_str("TEST", "").unwrap(), None);
+        assert_eq!(parse_optional_usize_str("TEST", "   ").unwrap(), None);
+        assert_eq!(parse_optional_usize_str("TEST", "5").unwrap(), Some(5));
         assert!(matches!(
-            parse_optional_usize("TEST", "-1"),
-            Err(LiveConfigError::Invalid("TEST", _))
+            parse_optional_usize_str("TEST", "-1"),
+            Err(ConfigEnvError::Invalid("TEST", _))
         ));
     }
 }
