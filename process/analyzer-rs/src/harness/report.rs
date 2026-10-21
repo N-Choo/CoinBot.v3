@@ -62,6 +62,7 @@ pub fn build_payload(
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
                     "side": direction_str(t.side),
+                    "signal_id": t.signal_id,
                     "signal_entry": t.signal_entry.to_string(),
                     "fill": t.fill.to_string(),
                     "exit": t.exit.to_string(),
@@ -74,12 +75,24 @@ pub fn build_payload(
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
                     "entry_index": p.entry_index,
                     "side": direction_str(p.side),
+                    "signal_id": p.signal_id,
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
                     "sl": p.sl.to_string(),
                     "tp": p.tp.to_string(),
                     "unrealized": position_unrealized(p, last_close).to_string(),
+                })).collect::<Vec<_>>(),
+                "account": input.sim.account.iter().map(|a| json!({
+                    "i": a.index,
+                    "available_fund": a.available_fund.to_string(),
+                    "reserved": a.reserved.to_string(),
+                    "unrealized": a.unrealized.to_string(),
+                    "equity": a.equity.to_string(),
+                    "open": a.open.iter().map(|o| json!({
+                        "signal_id": o.signal_id,
+                        "unrealized": o.unrealized.to_string(),
+                    })).collect::<Vec<_>>(),
                 })).collect::<Vec<_>>(),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
@@ -175,6 +188,10 @@ fn summary_json(summary: &SimSummary, gaps: usize) -> Value {
         "unfilled_at_end": summary.unfilled_at_end,
         "invalid_levels": summary.invalid_levels,
         "gaps": gaps,
+        "tp_hits": summary.tp_hits,
+        "sl_hits": summary.sl_hits,
+        "other_exits": summary.other_exits,
+        "avg_risk_reward": summary.avg_risk_reward.map(|v| v.to_string()),
         "returns_label": "gross simulated, excluding fees and slippage",
     })
 }

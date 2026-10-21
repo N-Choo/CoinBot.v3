@@ -82,6 +82,10 @@ fn inputs(runs: &[Run]) -> Vec<PayloadInput<'_>> {
         .collect()
 }
 
+fn dec(s: &str) -> Decimal {
+    s.parse().unwrap()
+}
+
 fn temp_dir(label: &str) -> PathBuf {
     let nanos = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -282,4 +286,30 @@ fn report_escapes_every_angle_bracket() {
     );
 
     std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn payload_includes_signal_ids_account_and_exit_counts() {
+    let cfg = Config::default();
+    let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
+    let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
+    let symbol = &payload["symbols"][0];
+    assert!(!symbol["account"].as_array().unwrap().is_empty());
+    assert!(symbol["trades"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|t| t["signal_id"].is_string()));
+    for step in symbol["account"].as_array().unwrap() {
+        let available = dec(step["available_fund"].as_str().unwrap());
+        let reserved = dec(step["reserved"].as_str().unwrap());
+        let unrealized = dec(step["unrealized"].as_str().unwrap());
+        let equity = dec(step["equity"].as_str().unwrap());
+        assert_eq!(equity, available + reserved + unrealized);
+    }
+    assert!(symbol["summary"]["tp_hits"].is_number());
+    assert!(symbol["summary"]["sl_hits"].is_number());
+    assert!(symbol["summary"]["other_exits"].is_number());
+    let avg = &symbol["summary"]["avg_risk_reward"];
+    assert!(avg.is_string() || avg.is_null());
 }
