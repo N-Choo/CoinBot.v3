@@ -131,9 +131,9 @@ Every dataset (fetched or CSV) is validated before replay:
   would see the exchange rows. `--max-gap-candles N` (default `0` = no limit) fails the symbol with
   `gap too large` when a single gap exceeds `N` intervals.
 - **Closed candles only:** a candle is closed iff
-  `as_of_ms - settle_ms >= open_time_ms + interval`. `--as-of` defaults to now and can be set for
-  deterministic historical runs. Trailing unclosed candles are dropped; if fewer than `W + 2`
-  closed candles remain, the symbol is a failure.
+  `as_of_ms - settle_ms > open_time_ms + interval` (strictly after the close). `--as-of` defaults
+  to now and can be set for deterministic historical runs. Trailing unclosed candles are dropped;
+  if fewer than `W + 2` closed candles remain, the symbol is a failure.
 - CSV and exchange data use the same validation; CSV rows carry the same schema.
 
 A symbol that fails validation is recorded in `failures` and does not produce a tab.

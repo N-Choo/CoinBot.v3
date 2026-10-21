@@ -19,7 +19,9 @@ pub enum DatasetError {
     OutOfOrder { got_ms: i64, prev_ms: i64 },
     #[error("duplicate candle at {0}")]
     Duplicate(i64),
-    #[error("timeframe mismatch: spacing {spacing_ms} != {interval_ms}")]
+    #[error(
+        "timeframe mismatch: spacing {spacing_ms} is not a multiple of the interval {interval_ms}"
+    )]
     TimeframeMismatch { spacing_ms: i64, interval_ms: i64 },
     #[error("gap too large at {open_time_ms}: {missing} missing candles")]
     GapTooLarge { open_time_ms: i64, missing: i64 },
@@ -58,6 +60,7 @@ pub struct Dataset {
     pub provenance: Provenance,
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn load_csv(
     symbol: &str,
     path: &Path,
@@ -65,6 +68,7 @@ pub fn load_csv(
     as_of_ms: i64,
     settle_ms: i64,
     max_gap_candles: i64,
+    window: usize,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
     let mut reader =
@@ -76,7 +80,12 @@ pub fn load_csv(
     let index = |name: &str| -> Result<usize, DatasetError> {
         headers
             .iter()
-            .position(|header| header.eq_ignore_ascii_case(name))
+            .position(|header| {
+                header
+                    .trim_start_matches('\u{feff}')
+                    .trim()
+                    .eq_ignore_ascii_case(name)
+            })
             .ok_or_else(|| DatasetError::Csv(format!("missing column: {name}")))
     };
     let open_time_index = index("open_time_ms")?;
@@ -88,21 +97,26 @@ pub fn load_csv(
     let mut candles = Vec::new();
     for row in reader.records() {
         let row = row.map_err(|error| DatasetError::Csv(error.to_string()))?;
-        let field = |index: usize| -> Result<Decimal, DatasetError> {
-            Decimal::from_str(row.get(index).unwrap_or_default())
-                .map_err(|error| DatasetError::Csv(format!("column {index}: {error}")))
+        let field = |index: usize, name: &str| -> Result<Decimal, DatasetError> {
+            Decimal::from_str(row.get(index).unwrap_or_default()).map_err(|error| {
+                DatasetError::Csv(format!("column {name} at index {index}: {error}"))
+            })
         };
         candles.push(Candle {
             open_time_ms: row
                 .get(open_time_index)
                 .unwrap_or_default()
                 .parse()
-                .map_err(|error| DatasetError::Csv(format!("timestamp: {error}")))?,
-            open: field(open_index)?,
-            high: field(high_index)?,
-            low: field(low_index)?,
-            close: field(close_index)?,
-            volume: field(volume_index)?,
+                .map_err(|error| {
+                    DatasetError::Csv(format!(
+                        "column open_time_ms at index {open_time_index}: {error}"
+                    ))
+                })?,
+            open: field(open_index, "open")?,
+            high: field(high_index, "high")?,
+            low: field(low_index, "low")?,
+            close: field(close_index, "close")?,
+            volume: field(volume_index, "volume")?,
         });
     }
     validate(
@@ -112,6 +126,7 @@ pub fn load_csv(
         as_of_ms,
         settle_ms,
         max_gap_candles,
+        window,
         format!("csv:{}", path.display()),
         None,
         requested_limit,
@@ -137,6 +152,7 @@ pub fn fetch_dataset(
         as_of_ms,
         settle_ms,
         max_gap_candles,
+        window,
         "kucoin".into(),
         Some(crate::identity::now_ms()),
         limit,
@@ -151,6 +167,7 @@ fn validate(
     as_of_ms: i64,
     settle_ms: i64,
     max_gap_candles: i64,
+    window: usize,
     source: String,
     fetched_at_ms: Option<i64>,
     requested_limit: usize,
@@ -178,7 +195,6 @@ fn validate(
             });
         }
     }
-    let mut gaps = 0usize;
     for pair in candles.windows(2) {
         let prev = &pair[0];
         let next = &pair[1];
@@ -198,23 +214,27 @@ fn validate(
                 interval_ms: timeframe.millis(),
             });
         }
+    }
+    candles.retain(|candle| timeframe.is_closed(candle.open_time_ms, as_of_ms, settle_ms));
+    if candles.len() < window + 2 {
+        return Err(DatasetError::TooShort {
+            got: candles.len(),
+            need: window + 2,
+        });
+    }
+    let mut gaps = 0usize;
+    for pair in candles.windows(2) {
+        let spacing = pair[1].open_time_ms - pair[0].open_time_ms;
         let missing = spacing / timeframe.millis() - 1;
         if missing > 0 {
             gaps += missing as usize;
             if max_gap_candles > 0 && missing > max_gap_candles {
                 return Err(DatasetError::GapTooLarge {
-                    open_time_ms: next.open_time_ms,
+                    open_time_ms: pair[1].open_time_ms,
                     missing,
                 });
             }
         }
-    }
-    candles.retain(|candle| timeframe.is_closed(candle.open_time_ms, as_of_ms, settle_ms));
-    if candles.len() < 2 {
-        return Err(DatasetError::TooShort {
-            got: candles.len(),
-            need: 2,
-        });
     }
     let content_sha256 = hash_candles(&candles);
     let provenance = Provenance {
@@ -244,15 +264,15 @@ fn hash_candles(candles: &[Candle]) -> String {
     let mut hasher = Sha256::new();
     for candle in candles {
         hasher.update(candle.open_time_ms.to_be_bytes());
-        hasher.update(candle.open.to_string().as_bytes());
+        hasher.update(candle.open.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.high.to_string().as_bytes());
+        hasher.update(candle.high.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.low.to_string().as_bytes());
+        hasher.update(candle.low.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.close.to_string().as_bytes());
+        hasher.update(candle.close.normalize().to_string().as_bytes());
         hasher.update([0]);
-        hasher.update(candle.volume.to_string().as_bytes());
+        hasher.update(candle.volume.normalize().to_string().as_bytes());
         hasher.update([0]);
     }
     let digest = hasher.finalize();
