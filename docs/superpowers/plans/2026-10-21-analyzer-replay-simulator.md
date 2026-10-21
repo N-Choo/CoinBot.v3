@@ -138,8 +138,6 @@ pub mod identity;
 pub mod exchange;
 #[cfg(feature = "live")]
 pub mod live;
-#[cfg(feature = "harness")]
-pub mod harness;
 ```
 
 `src/config_env.rs`:
@@ -364,6 +362,7 @@ git commit -m "refactor(analyzer-rs): share config env and signal identity"
 **Files:**
 - Create: `process/analyzer-rs/src/harness/mod.rs`
 - Create: `process/analyzer-rs/src/harness/dataset.rs`
+- Modify: `process/analyzer-rs/src/lib.rs`
 - Test: `process/analyzer-rs/tests/dataset.rs`
 
 - [ ] **Step 1: Write the failing test**
@@ -466,6 +465,13 @@ cargo test -p analyzer-rs --features harness --test dataset
 Expected: compile error (`harness` missing).
 
 - [ ] **Step 3: Implement the dataset layer**
+
+`src/lib.rs`: add the harness module declaration:
+
+```rust
+#[cfg(feature = "harness")]
+pub mod harness;
+```
 
 `src/harness/mod.rs`:
 
