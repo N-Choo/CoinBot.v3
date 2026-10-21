@@ -1315,10 +1315,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_extrema_one_to_one_and_in_order() {
+    fn matches_extrema_greedily_consumes_the_nearest() {
+        // Price 9 is left unmatched: price 6 greedily consumed RSI 7, the only remaining
+        // extremum near it.
         assert_eq!(
             match_extrema(&[2, 6, 9], &[1, 4, 7], 5),
-            vec![(2, 1), (6, 4), (9, 7)]
+            vec![(2, 1), (6, 7)]
+        );
+    }
+
+    #[test]
+    fn matches_identical_extrema_in_order() {
+        assert_eq!(
+            match_extrema(&[1, 4, 7], &[1, 4, 7], 5),
+            vec![(1, 1), (4, 4), (7, 7)]
         );
     }
 
@@ -1406,10 +1416,18 @@ pub fn detect(candles: &[Candle], cfg: &Config) -> Result<Divergences> {
         });
     }
 
+    let mut inverted_rsi = Vec::with_capacity(n);
+    for value in &rsi_values {
+        inverted_rsi.push(match value {
+            Some(v) => Some(neg(*v)?),
+            None => None,
+        });
+    }
+
     let price_peaks = find_peaks(&highs, cfg.rsi_order);
     let price_troughs = find_peaks(&inverted_lows, cfg.rsi_order);
     let rsi_peaks = find_peaks(&rsi_values, cfg.rsi_order);
-    let rsi_troughs = find_peaks(&rsi_values, cfg.rsi_order);
+    let rsi_troughs = find_peaks(&inverted_rsi, cfg.rsi_order);
 
     let mut regular_bullish = vec![false; n];
     let mut regular_bearish = vec![false; n];
@@ -1461,23 +1479,26 @@ pub fn match_extrema(price: &[usize], rsi_idx: &[usize], order: usize) -> Vec<(u
     let mut prev_rsi: Option<usize> = None;
 
     for &p_idx in price {
-        let mut best: Option<(usize, usize)> = None; // (distance, rsi index)
+        let mut best_distance = usize::MAX;
+        let mut best_slot: Option<usize> = None;
         for (slot, &r_idx) in rsi_idx.iter().enumerate() {
             if used[slot] {
                 continue;
             }
-            if prev_rsi.is_some_and(|prev| r_idx <= prev) {
-                continue;
+            if let Some(prev) = prev_rsi {
+                if r_idx <= prev {
+                    continue;
+                }
             }
             let distance = p_idx.abs_diff(r_idx);
-            if distance <= order && best.is_none_or(|(best_distance, _)| distance < best_distance) {
-                best = Some((distance, r_idx));
+            if distance <= order && distance < best_distance {
+                best_distance = distance;
+                best_slot = Some(slot);
             }
         }
-        if let Some((_, r_idx)) = best {
-            if let Some(slot) = rsi_idx.iter().position(|&x| x == r_idx) {
-                used[slot] = true;
-            }
+        if let Some(slot) = best_slot {
+            let r_idx = rsi_idx[slot];
+            used[slot] = true;
             matches.push((p_idx, r_idx));
             prev_rsi = Some(r_idx);
         }
@@ -1492,8 +1513,6 @@ Add to `src/strategy/mod.rs`:
 pub mod divergence;
 ```
 
-Note: `Option::is_some_and` and `Option::is_none_or` require Rust 1.82+ (workspace uses a recent toolchain). If the toolchain is older, replace with `matches!`/`map_or`.
-
 - [ ] **Step 4: Re-run the tests**
 
 Run:
@@ -1502,7 +1521,7 @@ Run:
 cargo test -p analyzer-rs strategy::divergence
 ```
 
-Expected: 5 tests pass.
+Expected: 6 tests pass.
 
 - [ ] **Step 5: Commit**
 
