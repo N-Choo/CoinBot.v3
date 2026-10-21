@@ -174,7 +174,7 @@ process/analyzer-rs/
 ├── src/bin/analyzer-backtest.rs  # required-features = ["harness"]
 ├── src/bin/analyzer-serve.rs     # required-features = ["live"]
 ├── templates/replay.html         # copy of the current replay template
-├── tools/parity/                 # Python oracle scripts (outside the crate src)
+├── (oracle scripts live in process/analyzer/tools/parity/, outside this crate)
 └── tests/
     ├── fixtures/ parity/
     ├── indicator_parity.rs  signal_parity.rs  driver_equivalence.rs
@@ -864,7 +864,7 @@ silently clamped.
 
 ### 10.1 Python oracle
 
-During migration, `tools/parity/` contains Python scripts that emit:
+During migration, `process/analyzer/tools/parity/` contains Python scripts that emit:
 
 - indicator series (RSI, SMA, ATR) and the four divergence flags per dataset and window size;
 - per-window signal outputs (action, reason, confidence, entry, SL/TP, divergence index, kind, age);
