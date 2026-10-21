@@ -274,6 +274,7 @@ name = "analyzer-rs"
 version = "0.1.0"
 dependencies = [
  "chrono",
+ "clap",
  "dotenvy",
  "proc-macro2",
  "prost",

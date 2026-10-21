@@ -1,11 +1,12 @@
 use crate::exchange::timeframes::Timeframe;
-use crate::strategy::config::Config;
+use crate::identity::signal_id;
 use crate::strategy::types::{Direction, Signal};
 use rust_decimal::prelude::ToPrimitive;
-use sha2::{Digest, Sha256};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::Duration;
 use tokio::sync::mpsc;
 use tonic::transport::{Channel, Endpoint};
+
+pub use crate::identity::{config_version, now_ms};
 
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 const RPC_TIMEOUT: Duration = Duration::from_secs(10);
@@ -58,64 +59,14 @@ impl EngineClient {
     }
 }
 
-pub fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_millis() as i64)
-        .unwrap_or(0)
-}
-
 /// Delivery-queue TTL for a signal after it is dequeued. This is not signal freshness; the
 /// underlying candle signal may be older.
 pub fn signal_ttl_ms(timeframe: Timeframe) -> i64 {
     (timeframe.millis() / 10).clamp(60_000, 3_600_000)
 }
 
-pub fn config_version(cfg: &Config) -> String {
-    format!(
-        "rsi-v1|w={}|rsi={}:{}|pdt={}|sma={}:{}|atr={}:{}:{}:{}:{}:{}",
-        cfg.window,
-        cfg.rsi_period,
-        cfg.rsi_order,
-        cfg.price_diff_threshold,
-        cfg.sma_enabled,
-        cfg.sma_period,
-        cfg.atr_period,
-        cfg.atr_sl_multiplier,
-        cfg.atr_tp_multiplier,
-        cfg.atr_pct_high,
-        cfg.atr_high_adjust,
-        cfg.atr_sl_max_pct,
-    )
-}
-
 fn price_f64(value: rust_decimal::Decimal) -> Option<f64> {
     value.to_f64()
-}
-
-fn signal_id(signal: &Signal, config_version: &str) -> String {
-    const SEP: u8 = 0;
-    let mut hasher = Sha256::new();
-    hasher.update(b"analyzer-signal-v1");
-    hasher.update([SEP]);
-    hasher.update(signal.ticker.as_bytes());
-    hasher.update([SEP]);
-    hasher.update([match signal.action {
-        Direction::Long => b'B',
-        Direction::Short => b'S',
-    }]);
-    hasher.update([SEP]);
-    hasher.update(signal.divergence_kind.as_str().as_bytes());
-    hasher.update([SEP]);
-    hasher.update(signal.divergence_open_time_ms.to_be_bytes());
-    hasher.update([SEP]);
-    hasher.update(config_version.as_bytes());
-    let digest = hasher.finalize();
-    let mut id = String::from("v1:");
-    for byte in digest {
-        id.push_str(&format!("{byte:02x}"));
-    }
-    id
 }
 
 /// Map a core signal to the wire message.
