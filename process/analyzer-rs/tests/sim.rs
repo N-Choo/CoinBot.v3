@@ -22,6 +22,7 @@ fn candle(i: usize, open: i64, high: i64, low: i64, close: i64) -> Candle {
 fn signal(index: usize, side: Direction, entry: i64, sl: i64, tp: i64) -> SimSignal {
     SimSignal {
         candle_index: index,
+        signal_id: format!("sig-{index}-{entry}"),
         signal: Signal {
             ticker: "TEST-USDT".into(),
             action: side,
@@ -414,4 +415,64 @@ fn win_rate_counts_breakeven_trades_in_the_denominator() {
     assert_eq!(summary.losses, 1);
     assert_eq!(summary.breakeven, 1);
     assert_eq!(summary.win_rate, expected_win_rate);
+}
+
+#[test]
+fn trades_and_positions_carry_signal_id() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 101, 106, 100, 105),
+        candle(2, 105, 106, 104, 105),
+    ];
+    let mut long = signal(0, Direction::Long, 100, 98, 104);
+    long.signal_id = "sig-a".into();
+    let mut open = signal(1, Direction::Long, 105, 95, 120);
+    open.signal_id = "sig-b".into();
+    let outcome = simulate(&candles, &[long, open], 1000, 0);
+    assert_eq!(outcome.trades[0].signal_id, "sig-a");
+    assert_eq!(outcome.open_positions[0].signal_id, "sig-b");
+}
+
+#[test]
+fn account_series_is_consistent_at_every_step() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 101, 106, 100, 105),
+        candle(2, 105, 106, 104, 105),
+    ];
+    let mut first = signal(0, Direction::Long, 100, 98, 104);
+    first.signal_id = "sig-a".into();
+    let mut second = signal(1, Direction::Long, 105, 95, 120);
+    second.signal_id = "sig-b".into();
+    let outcome = simulate(&candles, &[first, second], 1000, 0);
+    assert_eq!(outcome.account.len(), 3);
+    for step in &outcome.account {
+        assert_eq!(
+            step.equity,
+            step.available_fund + step.reserved + step.unrealized
+        );
+    }
+    let last = outcome.account.last().unwrap();
+    assert_eq!(last.open.len(), outcome.open_positions.len());
+}
+
+#[test]
+fn exit_classification_and_avg_risk_reward() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 101, 106, 100, 105), // TP
+        candle(2, 105, 106, 94, 95),   // next entry opens here
+        candle(3, 95, 100, 90, 92),    // SL
+    ];
+    let mut a = signal(0, Direction::Long, 100, 98, 104);
+    a.signal_id = "sig-a".into();
+    let mut b = signal(2, Direction::Long, 95, 90, 120);
+    b.signal_id = "sig-b".into();
+    let outcome = simulate(&candles, &[a, b], 1000, 0);
+    let summary = summarize(Decimal::from(1000), &outcome, Decimal::from(92), 3, 4);
+    assert_eq!(summary.tp_hits, 1);
+    assert_eq!(summary.sl_hits, 1);
+    assert_eq!(summary.other_exits, 0);
+    assert!(summary.avg_risk_reward.is_some());
 }

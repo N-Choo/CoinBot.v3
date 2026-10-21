@@ -247,6 +247,7 @@ mod tests {
     fn open_position_unrealized_marks_at_the_last_close() {
         let long = Position {
             side: Direction::Long,
+            signal_id: "sig-long".into(),
             signal_entry: Decimal::from(100),
             fill: Decimal::from(100),
             e: Decimal::from(500),
@@ -284,6 +285,7 @@ mod tests {
         let sim = SimOutcome {
             trades: vec![ClosedTrade {
                 side: Direction::Long,
+                signal_id: "sig-a".into(),
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 exit: Decimal::ONE,
@@ -297,6 +299,7 @@ mod tests {
             }],
             open_positions: vec![Position {
                 side: Direction::Short,
+                signal_id: "sig-b".into(),
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 e: Decimal::ONE,

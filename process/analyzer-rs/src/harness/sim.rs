@@ -5,11 +5,29 @@ use rust_decimal::Decimal;
 pub struct SimSignal {
     pub candle_index: usize,
     pub signal: Signal,
+    pub signal_id: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct OpenStep {
+    pub signal_id: String,
+    pub unrealized: Decimal,
+}
+
+#[derive(Debug, Clone)]
+pub struct AccountStep {
+    pub index: usize,
+    pub available_fund: Decimal,
+    pub reserved: Decimal,
+    pub unrealized: Decimal,
+    pub equity: Decimal,
+    pub open: Vec<OpenStep>,
 }
 
 #[derive(Debug, Clone)]
 pub struct Position {
     pub side: Direction,
+    pub signal_id: String,
     pub signal_entry: Decimal,
     pub fill: Decimal,
     pub e: Decimal,
@@ -21,6 +39,7 @@ pub struct Position {
 #[derive(Debug, Clone)]
 pub struct ClosedTrade {
     pub side: Direction,
+    pub signal_id: String,
     pub signal_entry: Decimal,
     pub fill: Decimal,
     pub exit: Decimal,
@@ -37,6 +56,7 @@ pub struct ClosedTrade {
 pub struct SimOutcome {
     pub trades: Vec<ClosedTrade>,
     pub open_positions: Vec<Position>,
+    pub account: Vec<AccountStep>,
     pub available_fund: Decimal,
     pub skipped_funds: usize,
     pub unfilled_at_end: usize,
@@ -55,6 +75,7 @@ pub fn simulate(
     let mut available = init_fund;
     let mut positions: Vec<Position> = Vec::new();
     let mut trades: Vec<ClosedTrade> = Vec::new();
+    let mut account: Vec<AccountStep> = Vec::new();
     let mut skipped_funds = 0usize;
     let mut invalid_levels = 0usize;
 
@@ -82,6 +103,7 @@ pub fn simulate(
                 available -= budget;
                 positions.push(Position {
                     side: signal.action,
+                    signal_id: sim_signal.signal_id.clone(),
                     signal_entry: signal.entry_price,
                     fill: candle.open,
                     e: budget,
@@ -108,6 +130,7 @@ pub fn simulate(
                     available += position.e + pnl;
                     trades.push(ClosedTrade {
                         side: position.side,
+                        signal_id: position.signal_id.clone(),
                         signal_entry: position.signal_entry,
                         fill: position.fill,
                         exit,
@@ -133,6 +156,34 @@ pub fn simulate(
             }
         }
         positions = still_open;
+
+        // 3. Record account state after this candle's fills/exits.
+        let close = candle.close;
+        let mut reserved = Decimal::ZERO;
+        let mut unrealized = Decimal::ZERO;
+        let mut open = Vec::with_capacity(positions.len());
+        for position in &positions {
+            reserved += position.e;
+            let ret = (close - position.fill) / position.fill;
+            let ret = match position.side {
+                Direction::Long => ret,
+                Direction::Short => -ret,
+            };
+            let value = position.e * ret;
+            unrealized += value;
+            open.push(OpenStep {
+                signal_id: position.signal_id.clone(),
+                unrealized: value,
+            });
+        }
+        account.push(AccountStep {
+            index,
+            available_fund: available,
+            reserved,
+            unrealized,
+            equity: available + reserved + unrealized,
+            open,
+        });
     }
 
     let unfilled_at_end = signals
@@ -143,6 +194,7 @@ pub fn simulate(
     SimOutcome {
         trades,
         open_positions: positions,
+        account,
         available_fund: available,
         skipped_funds,
         unfilled_at_end,

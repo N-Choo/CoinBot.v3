@@ -44,6 +44,7 @@ fn run(symbol: &str, fixture_name: &str, cfg: &Config) -> Run {
         .iter()
         .map(|signal| SimSignal {
             candle_index: signal.candle_index,
+            signal_id: signal.signal_id.clone(),
             signal: signal.signal.clone(),
         })
         .collect();
