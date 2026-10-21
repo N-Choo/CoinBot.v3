@@ -25,17 +25,12 @@ pub fn neg(a: Decimal) -> Result<Decimal> {
 }
 
 pub fn abs(a: Decimal) -> Result<Decimal> {
-    if a < Decimal::ZERO {
-        neg(a)
-    } else {
-        Ok(a)
-    }
+    Ok(a.abs())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rust_decimal::Decimal;
 
     #[test]
     fn add_and_sub_work() {
@@ -50,13 +45,29 @@ mod tests {
     }
 
     #[test]
+    fn mul_and_div_success_paths_work() {
+        assert_eq!(
+            mul(Decimal::from(2), Decimal::from(3)).unwrap(),
+            Decimal::from(6)
+        );
+        assert_eq!(
+            div(Decimal::from(6), Decimal::from(3)).unwrap(),
+            Decimal::from(2)
+        );
+    }
+
+    #[test]
     fn div_by_zero_is_an_error() {
         assert_eq!(div(Decimal::ONE, Decimal::ZERO), Err(Error::DivByZero));
     }
 
     #[test]
-    fn overflow_is_an_error() {
+    fn overflow_is_an_error_on_every_operation() {
+        let tiny = Decimal::new(1, 28);
         assert_eq!(add(Decimal::MAX, Decimal::ONE), Err(Error::Overflow));
+        assert_eq!(sub(Decimal::MIN, Decimal::ONE), Err(Error::Overflow));
+        assert_eq!(mul(Decimal::MAX, Decimal::from(2)), Err(Error::Overflow));
+        assert_eq!(div(Decimal::MAX, tiny), Err(Error::Overflow));
     }
 
     #[test]
@@ -64,5 +75,14 @@ mod tests {
         assert_eq!(neg(Decimal::from(5)).unwrap(), Decimal::from(-5));
         assert_eq!(abs(Decimal::from(-5)).unwrap(), Decimal::from(5));
         assert_eq!(abs(Decimal::from(5)).unwrap(), Decimal::from(5));
+    }
+
+    #[test]
+    fn abs_normalizes_negative_zero() {
+        let mut zero = Decimal::ZERO;
+        zero.set_sign_negative(true);
+        let result = abs(zero).unwrap();
+        assert!(!result.is_sign_negative());
+        assert_eq!(result, Decimal::ZERO);
     }
 }
