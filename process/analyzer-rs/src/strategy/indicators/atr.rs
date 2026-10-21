@@ -3,6 +3,12 @@ use crate::strategy::error::{Error, Result};
 use crate::strategy::indicators::{ewm, Series};
 use crate::strategy::types::Candle;
 
+/// Average True Range.
+///
+/// True range is `max(high - low, |high - prev_close|, |low - prev_close|)`. The first bar has no
+/// previous close, so its true range is simply `high - low`. True range is then smoothed with the
+/// same `ewm(alpha = 1/period, adjust = False)` used by the Python oracle (Wilder-style RMA),
+/// seeded at the first bar.
 pub fn atr(candles: &[Candle], period: usize) -> Result<Series> {
     if period == 0 {
         return Err(Error::ConfigInvalid("atr period must be >= 1".into()));
@@ -91,5 +97,61 @@ mod tests {
     #[test]
     fn zero_period_is_rejected() {
         assert!(atr(&[candle("2", "1", "1.5")], 0).is_err());
+    }
+
+    #[test]
+    fn empty_input_is_empty() {
+        let out = atr(&[], 3).unwrap();
+        assert!(out.is_empty());
+    }
+
+    #[test]
+    fn single_candle_is_high_minus_low_regardless_of_period() {
+        // The first bar has no previous close, so TR is just high - low and the EWM seeds with it.
+        for period in [1, 3, 50] {
+            let out = atr(&[candle("11", "9", "10")], period).unwrap();
+            assert_eq!(out, vec![Some(Decimal::from(2))], "period={period}");
+        }
+    }
+
+    #[test]
+    fn period_longer_than_series_still_uses_all_bars() {
+        // EWM seeds at the first bar regardless of period, so no bars are suppressed.
+        let candles = vec![candle("11", "9", "10"), candle("13", "11", "12")];
+        let out = atr(&candles, 10).unwrap();
+        // TR is [2, 3]; alpha = 1/10 gives 0.1 * 3 + 0.9 * 2 = 2.1.
+        assert_eq!(out, vec![Some(Decimal::from(2)), Some(d("2.1"))]);
+    }
+
+    #[test]
+    fn flat_series_is_zero() {
+        let candles = vec![
+            candle("5", "5", "5"),
+            candle("5", "5", "5"),
+            candle("5", "5", "5"),
+        ];
+        let out = atr(&candles, 3).unwrap();
+        for v in out.iter().flatten() {
+            assert_eq!(*v, Decimal::ZERO);
+        }
+    }
+
+    #[test]
+    fn period_one_uses_the_raw_true_range() {
+        // alpha = 1 makes the EWM the raw true range.
+        let candles = vec![
+            candle("11", "9", "10"),
+            candle("13", "10", "11"),
+            candle("12", "11", "11.5"),
+        ];
+        let out = atr(&candles, 1).unwrap();
+        assert_eq!(
+            out,
+            vec![
+                Some(Decimal::from(2)),
+                Some(Decimal::from(3)),
+                Some(Decimal::from(1))
+            ]
+        );
     }
 }

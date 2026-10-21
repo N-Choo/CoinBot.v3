@@ -1,4 +1,5 @@
-// Fixture fields are staged for the Task 13 signal parity test.
+// This module is compiled into each integration-test binary separately, so fields read by only
+// one binary (for example `signals` in signal_parity) look dead to the other.
 #![allow(dead_code)]
 
 use analyzer_rs::strategy::config::{decimal_from_str, Config};
@@ -149,14 +150,6 @@ pub fn close_enough(actual: Decimal, expected: Decimal, tolerance: f64) -> bool 
     diff <= scale * tolerance
 }
 
-pub fn assert_close(actual: Decimal, expected: &str, tolerance: f64) {
-    let expected = decimal_from_str(expected).unwrap();
-    assert!(
-        close_enough(actual, expected, tolerance),
-        "got {actual}, want {expected}"
-    );
-}
-
 pub fn assert_opt_close_at(
     actual: Option<Decimal>,
     expected: Option<&str>,
@@ -174,10 +167,6 @@ pub fn assert_opt_close_at(
         }
         (a, e) => panic!("{label}: got {a:?}, want {e:?}"),
     }
-}
-
-pub fn assert_opt_close(actual: Option<Decimal>, expected: Option<&str>, tolerance: f64) {
-    assert_opt_close_at(actual, expected, tolerance, "");
 }
 
 #[cfg(test)]
