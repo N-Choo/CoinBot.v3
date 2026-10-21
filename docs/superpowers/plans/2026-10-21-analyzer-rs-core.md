@@ -612,6 +612,13 @@ Expected: compile error (`Window` not defined).
 
 - [ ] **Step 3: Implement the window**
 
+Add to `src/strategy/error.rs`:
+
+```rust
+#[error("window capacity must be at least 1")]
+InvalidWindowCapacity,
+```
+
 `src/strategy/window.rs`:
 
 ```rust
@@ -633,6 +640,9 @@ impl Window {
     }
 
     pub fn push_closed(&mut self, candle: Candle) -> Result<()> {
+        if self.capacity == 0 {
+            return Err(Error::InvalidWindowCapacity);
+        }
         if let Some(last) = self.candles.last() {
             if candle.open_time_ms == last.open_time_ms {
                 return Err(Error::DuplicateCandle(candle.open_time_ms));
