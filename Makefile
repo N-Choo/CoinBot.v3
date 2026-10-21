@@ -56,7 +56,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test strategy-check frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test analyzer-rs-check strategy-check frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check

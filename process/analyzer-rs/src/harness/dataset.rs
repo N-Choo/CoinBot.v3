@@ -144,7 +144,7 @@ pub fn fetch_dataset(
     max_gap_candles: i64,
     base_url: &str,
 ) -> Result<Dataset, DatasetError> {
-    let candles = fetch_klines(base_url, symbol, timeframe, window + limit)?;
+    let candles = fetch_klines(base_url, symbol, timeframe, window + limit, Some(as_of_ms))?;
     validate(
         symbol,
         candles,

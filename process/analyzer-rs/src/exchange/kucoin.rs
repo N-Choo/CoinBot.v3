@@ -66,20 +66,28 @@ pub fn parse_klines(raw: &str) -> Result<Vec<Candle>, ExchangeError> {
     Ok(candles)
 }
 
+/// Returns `(start_s, end_s)` for the KuCoin kline request. A fixed `as_of_ms`
+/// moves the cutoff backwards; otherwise the current clock is used.
+pub fn kline_window(as_of_ms: Option<i64>, now_s: i64, span_s: i64) -> (i64, i64) {
+    let end_s = as_of_ms.map(|ms| ms / 1_000).unwrap_or(now_s);
+    (end_s - span_s, end_s)
+}
+
 pub fn fetch_klines(
     base_url: &str,
     symbol: &str,
     timeframe: Timeframe,
     limit: usize,
+    as_of_ms: Option<i64>,
 ) -> Result<Vec<Candle>, ExchangeError> {
     let now_s = chrono::Utc::now().timestamp();
     let span_s = ((limit as i64) * timeframe.millis() / 1_000) + 120;
-    let start_s = now_s - span_s;
+    let (start_s, end_s) = kline_window(as_of_ms, now_s, span_s);
     let response = ureq::get(&format!("{base_url}/api/v1/market/candles"))
         .query("type", timeframe.as_kucoin())
         .query("symbol", symbol)
         .query("startAt", &start_s.to_string())
-        .query("endAt", &now_s.to_string())
+        .query("endAt", &end_s.to_string())
         .timeout(Duration::from_secs(30))
         .call();
     let response = match response {

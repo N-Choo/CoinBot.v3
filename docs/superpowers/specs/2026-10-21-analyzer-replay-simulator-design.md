@@ -1,6 +1,6 @@
 # Analyzer-RS Terminal Replay Simulator — Design
 
-- **Status:** Design revised per review; awaiting written-spec approval
+- **Status:** Implemented; reviewed
 - **Date:** 2026-10-21
 - **Scope:** A standalone, self-contained HTML simulator for the analyzer-rs RSI-divergence
   strategy, with one tab per symbol, live-parity signal generation, and an engine-mirroring trade
@@ -307,21 +307,19 @@ The report labels results **gross simulated performance, excluding trading costs
       "sma": ["82850", null],
       "events": [
         {"i": 99, "kind": "warmup", "seeded_keys": 1},
-        {"i": 118, "kind": "signal", "action": "BUY", "reason": "regular_bullish_divergence",
-         "signal_entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112,
-         "divergence_open_time_ms": 1759000000000, "age": 6,
-         "signal_id": "v1:9f2c7a1b4e8d3f6a2c5b9e0d7f1a4c8b3e6d9f2a5c8b1e4d7f0a3c6b9e2d5f8a"},
-        {"i": 119, "kind": "suppressed", "reason": "duplicate", "divergence_index": 112},
-        {"i": 119, "kind": "entry", "side": "BUY", "signal_entry": "87272", "fill": "87120",
-         "sl": "85963", "tp": "90065", "E": "500", "risk_reward": "2.23"},
-        {"i": 132, "kind": "exit", "side": "BUY", "fill": "90065", "pnl": "16.90", "reason": "TP"}
+        {"i": 118, "kind": "signal", "signal_index": 0},
+        {"i": 119, "kind": "suppressed", "reason": "duplicate"}
       ],
-      "signals": [{"i": 118, "action": "BUY", "reason": "regular_bullish_divergence",
-                   "signal_entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112}],
-      "trades": [{"entry_index": 119, "exit_index": 132, "side": "BUY", "signal_entry": "87272",
+      "signals": [{"candle_index": 118, "signal_id": "v1:9f2c7a1b4e8d3f6a2c5b9e0d7f1a4c8b3e6d9f2a5c8b1e4d7f0a3c6b9e2d5f8a",
+                   "action": "Long", "reason": "regular_bullish_divergence", "confidence": "0.6",
+                   "signal_entry": "87272", "sl": "85963", "tp": "90065", "divergence_index": 112,
+                   "divergence_kind": "regular_bullish",
+                   "divergence_open_time_ms": 1759000000000,
+                   "signal_candle_open_time_ms": 1760000000000, "age": 6}],
+      "trades": [{"entry_index": 119, "exit_index": 132, "side": "Long", "signal_entry": "87272",
                   "fill": "87120", "exit": "90065", "E": "500", "pnl": "16.90", "pnl_pct": "3.38",
                   "risk_reward": "2.23", "reason": "TP"}],
-      "open_positions": [{"entry_index": 190, "side": "SELL", "signal_entry": "91240",
+      "open_positions": [{"entry_index": 190, "side": "Short", "signal_entry": "91240",
                           "fill": "91300", "E": "500", "tp": "88420", "sl": "92590",
                           "unrealized": "-4.10"}],
       "provenance": {
@@ -349,7 +347,11 @@ The report labels results **gross simulated performance, excluding trading costs
 }
 ```
 
-Decimal values are serialized as strings. JSON is embedded with `</` escaped to `<\/`.
+Decimal values are serialized as strings. Signal actions and position/trade sides use `Long`/`Short`;
+candle positions use `candle_index`. Events are only `warmup`, `signal`, and `suppressed`; the UI
+derives entry/exit rows from `trades` and `open_positions`. The embedded payload (`const REPLAY`)
+is the source of truth for the report: the UI does not recompute signals or trade data. Every `<`
+in the embedded JSON is escaped as `\u003c`.
 
 `generated_at` is metadata: replay and trade data are deterministic; byte-identical output requires
 the same `--generated-at`.
@@ -400,7 +402,8 @@ analyzer-replay \
 - `--init-fund` default from `BENCHMARK_INIT_FUND` (1000).
 - `--out` default `process/analyzer-rs/out/replay.html` (gitignored).
 - `--data SYMBOL=path.csv` repeatable; when present for a symbol, no network is used for it.
-- `--as-of` fixes the closed-candle cutoff for deterministic runs.
+- `--as-of` sets the network fetch cutoff (`endAt`) and the closed-candle filter; default now.
+  A fixed value makes runs deterministic.
 - `--max-gap-candles N` fails a symbol whose largest missing-candle gap exceeds `N` intervals
   (default `0` = no limit).
 - `--generated-at` fixes the report timestamp for byte-identical output.

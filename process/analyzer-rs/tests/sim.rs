@@ -321,3 +321,97 @@ fn max_drawdown_percentage_uses_the_peak_at_the_worst_drop() {
     assert_eq!(summary.max_drawdown, d(50));
     assert_eq!(summary.max_drawdown_pct, d(4));
 }
+
+#[test]
+fn loss_is_capped_at_the_committed_fund() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 250, 260, 240, 250),
+    ];
+    let outcome = simulate(
+        &candles,
+        &[signal(0, Direction::Short, 100, 200, 50)],
+        1000,
+        0,
+    );
+    assert_eq!(outcome.trades.len(), 1);
+    assert_eq!(outcome.trades[0].reason, "gap_sl");
+    assert_eq!(outcome.trades[0].e, d(500));
+    // A short filled at 100 and exited at 250 would lose 750; the engine caps it at E.
+    assert_eq!(outcome.trades[0].pnl, d(-500));
+}
+
+#[test]
+fn signal_on_the_final_candle_is_unfilled_at_end() {
+    let candles = vec![candle(0, 100, 101, 99, 100), candle(1, 100, 101, 99, 100)];
+    let outcome = simulate(
+        &candles,
+        &[signal(1, Direction::Long, 100, 98, 104)],
+        1000,
+        0,
+    );
+    assert!(outcome.trades.is_empty());
+    assert!(outcome.open_positions.is_empty());
+    assert_eq!(outcome.unfilled_at_end, 1);
+}
+
+#[test]
+fn risk_reward_uses_the_fill_and_is_none_after_a_gap() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        candle(2, 100, 111, 99, 110),
+    ];
+    let normal = simulate(
+        &candles,
+        &[signal(0, Direction::Long, 100, 95, 110)],
+        1000,
+        0,
+    );
+    assert_eq!(normal.trades[0].risk_reward, Some(d(2)));
+
+    let candles = vec![candle(0, 100, 101, 99, 100), candle(1, 106, 107, 105, 106)];
+    let gapped = simulate(
+        &candles,
+        &[signal(0, Direction::Long, 100, 98, 104)],
+        1000,
+        0,
+    );
+    assert_eq!(gapped.trades[0].reason, "gap_tp");
+    assert_eq!(gapped.trades[0].risk_reward, None);
+}
+
+#[test]
+fn win_rate_counts_breakeven_trades_in_the_denominator() {
+    use analyzer_rs::harness::stats::summarize;
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100), // fill win
+        candle(2, 100, 111, 99, 110), // win TP 110
+        candle(3, 100, 101, 99, 100), // fill loss
+        candle(4, 100, 101, 94, 95),  // loss SL 95
+        candle(5, 100, 101, 99, 100), // fill breakeven and gap TP at 100
+    ];
+    let outcome = simulate(
+        &candles,
+        &[
+            signal(0, Direction::Long, 100, 95, 110),
+            signal(2, Direction::Long, 100, 95, 120),
+            signal(4, Direction::Long, 99, 98, 100),
+        ],
+        1000,
+        0,
+    );
+    assert_eq!(outcome.trades.len(), 3);
+    assert_eq!(outcome.trades[0].pnl, d(50));
+    assert_eq!(outcome.trades[1].pnl, d(-25));
+    assert_eq!(outcome.trades[2].pnl, Decimal::ZERO);
+
+    let summary = summarize(Decimal::from(1000), &outcome, d(100), 5, 6);
+    let expected_win_rate = Decimal::from(1) / Decimal::from(3) * Decimal::from(100);
+    assert_eq!(summary.wins, 1);
+    assert_eq!(summary.losses, 1);
+    assert_eq!(summary.breakeven, 1);
+    assert_eq!(summary.win_rate, expected_win_rate);
+}

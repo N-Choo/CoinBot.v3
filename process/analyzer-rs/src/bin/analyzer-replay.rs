@@ -32,7 +32,7 @@ struct Cli {
     /// Offline CSV: SYMBOL=path (repeatable).
     #[arg(long = "data")]
     data: Vec<String>,
-    /// Reference time in ms; defaults to now so only closed candles replay.
+    /// Reference time in ms; defaults to now. Sets the fetch cutoff and closed-candle filter.
     #[arg(long)]
     as_of: Option<i64>,
     /// Override the report generation timestamp (RFC 3339).
@@ -141,6 +141,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
         None => None,
     };
+    let settle_ms = match env_string("ANALYZER_CANDLE_SETTLE_MS") {
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            format!("invalid ANALYZER_CANDLE_SETTLE_MS={value:?}: expected milliseconds")
+        })?,
+        None => 5_000,
+    };
 
     let parsed_data = parse_data_entries(&cli.data)?;
     let data_symbols: Vec<String> = parsed_data
@@ -159,7 +165,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path,
                 timeframe,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
                 strategy.window,
                 cli.limit,
@@ -172,7 +178,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cli.limit,
                 strategy.window,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
                 &base_url,
             )

@@ -42,7 +42,13 @@ pub fn process_batch(
 }
 
 fn fetch_blocking(cfg: &LiveConfig, symbol: &str, limit: usize) -> Result<Vec<Candle>, LiveError> {
-    Ok(fetch_klines(&cfg.base_url, symbol, cfg.timeframe, limit)?)
+    Ok(fetch_klines(
+        &cfg.base_url,
+        symbol,
+        cfg.timeframe,
+        limit,
+        None,
+    )?)
 }
 
 pub async fn warm_driver(

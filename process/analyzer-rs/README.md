@@ -86,12 +86,14 @@ Options:
   (it is not capped by `--limit`); `provenance.effective_range` reports the actual count.
 - `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`. It must be `> 0`; an invalid
   `BENCHMARK_INIT_FUND` is an error rather than a silent default.
-- `--as-of` is the reference time in milliseconds. It defaults to now, so only closed candles are
-  replayed; pass a fixed timestamp for deterministic runs.
+- `--as-of` is the reference time in milliseconds. It defaults to now. For network runs it sets
+  the fetch cutoff (`endAt`); for offline runs it is the closed-candle filter. Pass a fixed
+  timestamp for deterministic runs.
 - `--generated-at` overrides the report timestamp.
 - `--max-gap-candles` (default 0, must be `>= 0`) rejects datasets with larger gaps.
 - `--out` defaults to `process/analyzer-rs/out/replay.html`.
 
 The remaining strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `PRICE_DIFF_THRESHOLD`,
 `ANALYZER_WINDOW_CANDLES`) and `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` come from the same `.env`
-as the live client; see `.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint.
+as the live client; see `.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint and
+`ANALYZER_CANDLE_SETTLE_MS` controls the closed-candle boundary (default `5000`).

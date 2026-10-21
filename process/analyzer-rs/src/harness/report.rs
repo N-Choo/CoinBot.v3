@@ -1,9 +1,10 @@
 use crate::harness::dataset::Provenance;
 use crate::harness::replay::{Replay, ReplayEvent};
-use crate::harness::sim::SimOutcome;
+use crate::harness::sim::{Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
+use rust_decimal::Decimal;
 use serde_json::{json, Value};
 use std::path::Path;
 
@@ -24,6 +25,12 @@ pub fn build_payload(
     let symbols: Vec<Value> = inputs
         .iter()
         .map(|input| {
+            let last_close = input
+                .replay
+                .candles
+                .last()
+                .map(|candle| candle.close)
+                .unwrap_or_default();
             json!({
                 "symbol": input.symbol,
                 "candles": input.replay.candles.iter().map(|c| json!({
@@ -41,11 +48,14 @@ pub fn build_payload(
                     "signal_id": s.signal_id,
                     "action": direction_str(s.signal.action),
                     "reason": s.signal.reason,
+                    "confidence": s.signal.confidence.to_string(),
                     "signal_entry": s.signal.entry_price.to_string(),
                     "sl": s.signal.sl_price.to_string(),
                     "tp": s.signal.tp_price.to_string(),
                     "divergence_index": s.signal.divergence_index,
+                    "divergence_kind": s.signal.divergence_kind.as_str(),
                     "divergence_open_time_ms": s.signal.divergence_open_time_ms,
+                    "signal_candle_open_time_ms": s.signal.signal_candle_open_time_ms,
                     "age": s.signal.divergence_age_candles,
                 })).collect::<Vec<_>>(),
                 "trades": input.sim.trades.iter().map(|t| json!({
@@ -69,6 +79,7 @@ pub fn build_payload(
                     "E": p.e.to_string(),
                     "sl": p.sl.to_string(),
                     "tp": p.tp.to_string(),
+                    "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
@@ -108,6 +119,15 @@ fn direction_str(direction: Direction) -> &'static str {
         Direction::Long => "Long",
         Direction::Short => "Short",
     }
+}
+
+fn position_unrealized(position: &Position, last_close: Decimal) -> Decimal {
+    let ret = (last_close - position.fill) / position.fill;
+    let ret = match position.side {
+        Direction::Long => ret,
+        Direction::Short => -ret,
+    };
+    position.e * ret
 }
 
 fn event_json(event: &ReplayEvent) -> Value {
@@ -221,6 +241,32 @@ mod tests {
 
         let absent = summary_json(&summary(None, false), 0);
         assert_eq!(absent["profit_factor"], "null");
+    }
+
+    #[test]
+    fn open_position_unrealized_marks_at_the_last_close() {
+        let long = Position {
+            side: Direction::Long,
+            signal_entry: Decimal::from(100),
+            fill: Decimal::from(100),
+            e: Decimal::from(500),
+            sl: Decimal::from(90),
+            tp: Decimal::from(120),
+            entry_index: 0,
+        };
+        assert_eq!(
+            position_unrealized(&long, Decimal::from(90)),
+            Decimal::from(-50)
+        );
+
+        let short = Position {
+            side: Direction::Short,
+            ..long
+        };
+        assert_eq!(
+            position_unrealized(&short, Decimal::from(90)),
+            Decimal::from(50)
+        );
     }
 
     #[test]

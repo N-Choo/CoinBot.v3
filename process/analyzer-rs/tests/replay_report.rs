@@ -132,11 +132,19 @@ fn payload_has_two_symbols_and_report_fields() {
             symbol["open_positions"].as_array().unwrap().len(),
             run.sim.open_positions.len()
         );
+        for signal in symbol["signals"].as_array().unwrap() {
+            assert!(matches!(signal["action"].as_str(), Some("Long" | "Short")));
+            assert!(signal["candle_index"].is_u64());
+            assert!(signal["confidence"].is_string());
+            assert!(signal["divergence_kind"].is_string());
+            assert!(signal["signal_candle_open_time_ms"].is_i64());
+        }
         for trade in symbol["trades"].as_array().unwrap() {
             assert!(matches!(trade["side"].as_str(), Some("Long" | "Short")));
         }
         for position in symbol["open_positions"].as_array().unwrap() {
             assert!(matches!(position["side"].as_str(), Some("Long" | "Short")));
+            assert!(position["unrealized"].is_string());
         }
 
         let sha = symbol["provenance"]["content_sha256"].as_str().unwrap();

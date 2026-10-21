@@ -871,7 +871,7 @@ pub fn fetch_dataset(
     max_gap_candles: i64,
     base_url: &str,
 ) -> Result<Dataset, DatasetError> {
-    let candles = fetch_klines(base_url, symbol, timeframe, window + limit)?;
+    let candles = fetch_klines(base_url, symbol, timeframe, window + limit, Some(as_of_ms))?;
     validate(
         symbol,
         candles,
@@ -885,6 +885,33 @@ pub fn fetch_dataset(
         limit,
     )
 }
+
+`src/exchange/kucoin.rs`: move the request window behind a pure helper so `--as-of` controls the
+network cutoff:
+
+```rust
+/// Returns `(start_s, end_s)` for the KuCoin kline request.
+pub fn kline_window(as_of_ms: Option<i64>, now_s: i64, span_s: i64) -> (i64, i64) {
+    let end_s = as_of_ms.map(|ms| ms / 1_000).unwrap_or(now_s);
+    (end_s - span_s, end_s)
+}
+
+pub fn fetch_klines(
+    base_url: &str,
+    symbol: &str,
+    timeframe: Timeframe,
+    limit: usize,
+    as_of_ms: Option<i64>,
+) -> Result<Vec<Candle>, ExchangeError> {
+    let now_s = chrono::Utc::now().timestamp();
+    let span_s = ((limit as i64) * timeframe.millis() / 1_000) + 120;
+    let (start_s, end_s) = kline_window(as_of_ms, now_s, span_s);
+    // ... send startAt=start_s and endAt=end_s ...
+}
+```
+
+Live callers pass `None`; `fetch_dataset` passes `Some(as_of_ms)`. Add unit tests in
+`tests/exchange.rs` for a fixed cutoff, the live clock, and an `as_of` older than the span.
 
 #[allow(clippy::too_many_arguments)]
 fn validate(
@@ -2383,7 +2410,7 @@ struct Cli {
     /// Offline CSV: SYMBOL=path (repeatable).
     #[arg(long = "data")]
     data: Vec<String>,
-    /// Reference time in ms; defaults to now so only closed candles replay.
+    /// Reference time in ms; defaults to now. Sets the fetch cutoff and closed-candle filter.
     #[arg(long)]
     as_of: Option<i64>,
     /// Override the report generation timestamp (RFC 3339).
@@ -2498,6 +2525,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
         None => None,
     };
+    let settle_ms = match env_string("ANALYZER_CANDLE_SETTLE_MS") {
+        Some(value) => value.parse::<i64>().map_err(|_| {
+            format!("invalid ANALYZER_CANDLE_SETTLE_MS={value:?}: expected milliseconds")
+        })?,
+        None => 5_000,
+    };
 
     let parsed_data = parse_data_entries(&cli.data)?;
     let data_symbols: Vec<String> = parsed_data.iter().map(|(symbol, _)| symbol.clone()).collect();
@@ -2513,7 +2546,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 path,
                 timeframe,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
                 strategy.window,
                 cli.limit,
@@ -2526,7 +2559,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 cli.limit,
                 strategy.window,
                 as_of,
-                5_000,
+                settle_ms,
                 cli.max_gap_candles,
                 &base_url,
             )
@@ -2619,9 +2652,11 @@ Extend `analyzer-rs-check` and `analyzer-rs-test` with the harness gate:
 	cargo test -p analyzer-rs --features harness
 ```
 
-Add `process/analyzer-rs/out/` to the root `.gitignore`.
+Add `process/analyzer-rs/out/` to the root `.gitignore`, add `BENCHMARK_TICKERS` /
+`BENCHMARK_INIT_FUND` to `process/analyzer-rs/.env.example`, and add `analyzer-rs-check` to the
+`make ci` prerequisites.
 
-README: document the CLI, the `.env` settings, the offline `--data` mode, and the label that results exclude fees and are not a profitability claim. Note that offline `--data` replays every closed row (not capped by `--limit`) and that `provenance.effective_range` reports the actual count.
+README: document the CLI, the `.env` settings, the offline `--data` mode, and the label that results exclude fees and are not a profitability claim. Note that offline `--data` replays every closed row (not capped by `--limit`) and that `provenance.effective_range` reports the actual count. Document that `--as-of` controls the network fetch cutoff and the offline closed-candle filter, and that `ANALYZER_CANDLE_SETTLE_MS` moves the closed-candle boundary.
 
 - [ ] **Step 4: Run the acceptance commands**
 
