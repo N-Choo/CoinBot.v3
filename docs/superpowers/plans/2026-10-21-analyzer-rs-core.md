@@ -1942,14 +1942,6 @@ def main() -> None:
     args = parser.parse_args()
 
     frame = fetch_klines(args.symbol, timeframe=args.timeframe, limit=args.limit)
-    # `fetch_klines` builds a naive local Timestamp via datetime.fromtimestamp; `.to_pydatetime()`
-    # then `.timestamp()` recovers the original epoch instant (astype("int64") would treat the
-    # naive wall time as UTC and add the host offset).
-    frame = frame.assign(
-        open_time_ms=frame["Timestamp"].map(
-            lambda value: int(value.to_pydatetime().timestamp() * 1_000)
-        )
-    )
     frame = frame[["open_time_ms", "Open", "High", "Low", "Close", "Volume"]]
     Path(args.out).parent.mkdir(parents=True, exist_ok=True)
     frame.to_csv(args.out, index=False)
