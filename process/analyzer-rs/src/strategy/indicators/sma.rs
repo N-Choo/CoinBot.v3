@@ -65,4 +65,18 @@ mod tests {
     fn zero_period_is_rejected() {
         assert!(sma(&[Some(d(1))], 0).is_err());
     }
+
+    #[test]
+    fn a_none_leaving_the_window_restores_the_average() {
+        let values = vec![Some(d(1)), None, Some(d(3)), Some(d(4))];
+        let out = sma(&values, 2).unwrap();
+        assert_eq!(out, vec![None, None, None, Some(Decimal::new(35, 1))]);
+    }
+
+    #[test]
+    fn shorter_than_period_is_all_none() {
+        let values = vec![Some(d(1)), Some(d(2))];
+        let out = sma(&values, 3).unwrap();
+        assert_eq!(out, vec![None, None]);
+    }
 }
