@@ -109,13 +109,23 @@ Expected: compile error (`identity` module missing).
 
 - [ ] **Step 3: Add the shared modules**
 
-`Cargo.toml`: move `sha2 = "0.10"` from optional to a normal dependency and keep `dotenvy` optional (used by both `live` and `harness`):
+`Cargo.toml`: make `sha2` **and `dotenvy` normal dependencies** (the shared `config_env` module is compiled unconditionally, so it cannot rely on an optional dependency). Add `harness` and `clap`:
 
 ```toml
+[features]
+default = []
+exchange = ["dep:ureq", "dep:serde_json", "dep:chrono"]
+live = ["exchange", "dep:tokio", "dep:chrono"]
+grpc = ["live", "dep:tonic", "dep:prost"]
+harness = ["exchange", "dep:clap"]
+
+[dependencies]
 sha2 = "0.10"
+dotenvy = { workspace = true }
+clap = { version = "4", features = ["derive"], optional = true }
 ```
 
-Add `harness = ["exchange", "dep:clap", "dep:dotenvy"]` and `clap = { version = "4", features = ["derive"], optional = true }`. Remove `dep:sha2` from the `grpc` feature (sha2 is now a normal dependency).
+Remove `dep:dotenvy` from `live` and `dep:sha2` from `grpc`; both are now always available.
 
 `src/lib.rs`:
 
@@ -311,17 +321,34 @@ use crate::identity::signal_id;
 
 Remove the local `Sha256`/`Digest` imports if unused. `to_proto_signal` keeps calling `signal_id(signal, config_version)`.
 
-- [ ] **Step 5: Run the tests**
+- [ ] **Step 5: Capture the live baseline, then run the tests**
+
+Before changing code, capture the live baseline so the extraction is provably behavior-preserving:
+
+```bash
+cargo test -p analyzer-rs --features grpc 2>&1 | tee /tmp/analyzer-rs-live-before.txt
+cargo test -p analyzer-rs --features grpc --test signal_parity 2>&1 | tee /tmp/analyzer-rs-parity-before.txt
+```
+
+After the extraction:
 
 ```bash
 cargo fmt -p analyzer-rs
 cargo test -p analyzer-rs --test identity
 cargo test -p analyzer-rs
-cargo test -p analyzer-rs --features grpc
+cargo test -p analyzer-rs --features grpc 2>&1 | tee /tmp/analyzer-rs-live-after.txt
+cargo test -p analyzer-rs --features grpc --test signal_parity 2>&1 | tee /tmp/analyzer-rs-parity-after.txt
 cargo clippy -p analyzer-rs --features grpc --all-targets --no-deps -- -D warnings
 ```
 
-Expected: all pass; the existing live/grpc tests prove no behavior change.
+Then diff the summaries:
+
+```bash
+diff <(grep -E 'test result|running [0-9]+ tests' /tmp/analyzer-rs-live-before.txt)      <(grep -E 'test result|running [0-9]+ tests' /tmp/analyzer-rs-live-after.txt)
+diff <(grep -E 'test result' /tmp/analyzer-rs-parity-before.txt)      <(grep -E 'test result' /tmp/analyzer-rs-parity-after.txt)
+```
+
+Expected: no diff; the live-feature and signal-parity suites still pass with the same counts. The harness test alone is not sufficient evidence that live behavior is unchanged.
 
 - [ ] **Step 6: Commit**
 
@@ -1507,7 +1534,12 @@ pub struct PayloadInput<'a> {
     pub provenance: &'a Provenance,
 }
 
-pub fn build_payload(inputs: &[PayloadInput<'_>], config: &Config, generated_at: String) -> Value {
+pub fn build_payload(
+    inputs: &[PayloadInput<'_>],
+    config: &Config,
+    generated_at: String,
+    failures: Vec<Value>,
+) -> Value {
     let symbols: Vec<Value> = inputs
         .iter()
         .map(|input| {
@@ -1584,7 +1616,7 @@ pub fn build_payload(inputs: &[PayloadInput<'_>], config: &Config, generated_at:
             "atr_sl_max_pct": config.atr_sl_max_pct.to_string(),
         },
         "symbols": symbols,
-        "failures": [],
+        "failures": failures,
     })
 }
 
@@ -1876,12 +1908,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             provenance,
         })
         .collect();
-    let mut payload = build_payload(&payload_inputs, &strategy, generated_at);
+    let mut payload = build_payload(&payload_inputs, &strategy, generated_at, failures);
     payload["config"]["timeframe"] = serde_json::json!(timeframe.as_kucoin());
     payload["config"]["limit"] = serde_json::json!(cli.limit);
     payload["config"]["init_fund"] = serde_json::json!(init_fund.to_string());
     payload["config"]["as_of_ms"] = serde_json::json!(as_of);
-    payload["failures"] = serde_json::Value::Array(failures);
     write_report(&payload, &cli.out)?;
     println!("wrote {}", cli.out.display());
     Ok(())
@@ -1930,5 +1961,7 @@ git commit -m "feat(analyzer-rs): add analyzer-replay CLI and report target"
 ## Self-review
 
 - **Spec coverage:** config/identity extraction (Task 1), dataset validation/provenance (Task 2), replay events/signals and parity (Task 3), simulator with direction-aware execution and stats (Task 4), payload + HTML (Task 5), CLI/acceptance (Task 6). All spec sections map to a task.
-- **Placeholder scan:** the payload `config.timeframe`/`limit`/`init_fund` placeholders in Task 5 are explicitly filled by the CLI in Task 6; the report test in Task 5 is completed in the implementation step. No `TBD`/`TODO`.
+- **Placeholder scan:** the payload `config.timeframe`/`limit`/`init_fund` values are filled by the CLI in Task 6; the Task 5 report tests are final test-first assertions (multi-symbol, escaping, determinism, failures). No `TBD`/`TODO`.
+- **Dependency consistency:** `sha2` and `dotenvy` are normal dependencies because `identity` and `config_env` are unconditional modules; `clap` is harness-only.
+- **Live regression:** Task 1 captures the live/grpc and signal-parity results before and after the extraction and diffs the summaries.
 - **Type consistency:** `Config`, `Signal`, `Candle`, `ReplayEvent`, `ReplaySignal`, `SimSignal`, `SimSummary`, `Provenance`, `PayloadInput` are defined before use; `simulate(candles, signals, init_fund, window)` and `summarize(...)` signatures are consistent between Tasks 4–6.
