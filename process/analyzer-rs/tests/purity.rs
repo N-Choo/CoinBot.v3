@@ -1,18 +1,19 @@
-//! `syn`-based purity test for the deterministic core (CI hardening). The Makefile grep is only a
-//! fast pre-filter; this parses every `src/strategy/**/*.rs` with `syn` and fails if any `f32`/`f64`
-//! **token** appears. Because it works on tokens, it catches evasions the old `grep -vE '//'`
-//! pre-filter missed (a real `f64` on a line that also has a trailing comment), while an `f64`
-//! mentioned in a comment or a string literal is **not** a token and is **not** flagged.
+//! Token-level purity gate for the deterministic core. This parses every `src/strategy/**/*.rs`
+//! with `syn` and fails if any floating-point construct appears: an `f32`/`f64` type identifier or
+//! any float literal (`1.0`, `1e10`, `1.`, `1.0f64`, ...). The crate is `Decimal`-only, so floats
+//! are forbidden even when a literal has no explicit type suffix.
 //!
-//! This test is not gated behind the `harness` feature: it runs under `--no-default-features` too.
+//! Because the check works on tokens, an `f64` mentioned in a comment or a string literal is not a
+//! token and is not flagged. The test has no feature gate and runs under `--no-default-features`.
 
 use std::path::{Path, PathBuf};
 
 /// Scan a Rust source string for `f32`/`f64` tokens, returning one description per hit.
 ///
 /// `syn::parse_file` rejects invalid Rust (and, like any Rust lexer, drops comments); the source is
-/// then tokenized with `proc-macro2` so identifiers and float-literal suffixes are inspected at the
-/// token level. A string literal is a single `Literal` token and is skipped.
+/// then tokenized with `proc-macro2` so identifiers and literals are inspected at the token level.
+/// Literals are re-parsed with `syn` so every `syn::Lit::Float` is caught regardless of suffix; a
+/// string literal is a single `Literal` token and is not a float.
 fn scan_source(src: &str) -> Result<Vec<String>, String> {
     syn::parse_file(src).map_err(|e| format!("failed to parse Rust source: {e}"))?;
     let tokens: proc_macro2::TokenStream = src
@@ -35,14 +36,9 @@ fn scan_tokens(tokens: proc_macro2::TokenStream, hits: &mut Vec<String>) {
             }
             TokenTree::Literal(lit) => {
                 let s = lit.to_string();
-                // String / char / byte / raw literals are not float types.
-                let stringy = s.starts_with('"')
-                    || s.starts_with('\'')
-                    || s.starts_with("b\"")
-                    || s.starts_with("br")
-                    || s.starts_with("r\"")
-                    || s.starts_with("r#");
-                if !stringy && (s.ends_with("f32") || s.ends_with("f64")) {
+                // Parse the token as a `syn::Lit` so unsuffixed floats (`1.0`, `1e10`, `1.`) are
+                // caught too: text-suffix matching would miss them because they are still `f64`.
+                if matches!(syn::parse_str::<syn::Lit>(&s), Ok(syn::Lit::Float(_))) {
                     hits.push(format!(
                         "float literal `{s}` at line {}",
                         lit.span().start().line
@@ -124,5 +120,35 @@ fn f() -> u8 { let _x = 1.0f64; 0 }
     assert!(
         !scan_source(literal).unwrap().is_empty(),
         "an f64 literal suffix must be flagged"
+    );
+}
+
+#[test]
+fn scanner_flags_float_literals_by_type_not_suffix() {
+    // Every float literal is `f64` (or `f32`), even without an explicit suffix.
+    for lit in ["1.0", "1e10", "1.", "1.0f32", "1.0f64", "1.0_f64"] {
+        let src = format!("fn f() {{ let _x = {lit}; }}");
+        let hits = scan_source(&src).unwrap();
+        assert!(!hits.is_empty(), "`{lit}` must be flagged as a float");
+    }
+
+    // Integer literals that merely contain the characters `f64`, and non-literal mentions of
+    // floats, are not floats and must not be flagged.
+    for lit in ["0x1f64", "1u64", "42"] {
+        let src = format!("fn f() {{ let _x = {lit}; }}");
+        let hits = scan_source(&src).unwrap();
+        assert!(hits.is_empty(), "`{lit}` must not be flagged: {hits:?}");
+    }
+
+    let mentions = r#"
+// this comment mentions 1.0f64 and f32
+fn f() {
+    let _ = "1.0f64";
+    let _ = 'f';
+}
+"#;
+    assert!(
+        scan_source(mentions).unwrap().is_empty(),
+        "comments and string/char literals mentioning floats must not be flagged"
     );
 }
