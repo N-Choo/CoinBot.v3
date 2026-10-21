@@ -268,6 +268,39 @@ mod tests {
         assert_eq!(parse_optional_usize_str("X", "  ").unwrap(), None);
         assert_eq!(parse_optional_usize_str("X", " 7 ").unwrap(), Some(7));
     }
+
+    #[test]
+    fn env_string_trims_and_treats_empty_as_unset() {
+        std::env::set_var("ANALYZER_TEST_TRIMMED", " 42 ");
+        std::env::set_var("ANALYZER_TEST_EMPTY", "   ");
+        assert_eq!(env_string("ANALYZER_TEST_TRIMMED"), Some("42".into()));
+        assert_eq!(env_string("ANALYZER_TEST_EMPTY"), None);
+        std::env::remove_var("ANALYZER_TEST_TRIMMED");
+        std::env::remove_var("ANALYZER_TEST_EMPTY");
+    }
+
+    #[test]
+    fn parse_uses_trimmed_env_and_empty_falls_back() {
+        std::env::set_var("ANALYZER_TEST_INT", " 14 ");
+        std::env::set_var("ANALYZER_TEST_INT_EMPTY", " ");
+        assert_eq!(parse("ANALYZER_TEST_INT", 8usize).unwrap(), 14);
+        assert_eq!(parse("ANALYZER_TEST_INT_EMPTY", 8usize).unwrap(), 8);
+        std::env::remove_var("ANALYZER_TEST_INT");
+        std::env::remove_var("ANALYZER_TEST_INT_EMPTY");
+    }
+
+    #[test]
+    fn decimal_and_bool_env_are_trimmed() {
+        std::env::set_var("ANALYZER_TEST_DEC", " 1.5 ");
+        std::env::set_var("ANALYZER_TEST_BOOL", " ON ");
+        assert_eq!(
+            parse_decimal("ANALYZER_TEST_DEC", Decimal::ZERO).unwrap(),
+            Decimal::new(15, 1)
+        );
+        assert!(parse_bool("ANALYZER_TEST_BOOL", false).unwrap());
+        std::env::remove_var("ANALYZER_TEST_DEC");
+        std::env::remove_var("ANALYZER_TEST_BOOL");
+    }
 }
 ```
 
