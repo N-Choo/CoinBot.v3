@@ -28,7 +28,7 @@ button,select,input{font-family:var(--mono)}
 .mono{font-family:var(--mono)} .disp{font-family:var(--disp);letter-spacing:.02em}
 .muted{color:var(--muted)} .dim{color:var(--dim)} .up{color:var(--up)} .down{color:var(--down)} .or{color:var(--orange)} .teal{color:var(--teal)} .blue{color:var(--blue)}
 .wrap{max-width:1480px;margin:0 auto;padding:0 16px}
-header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgba(29,205,159,.05),transparent)}
+header{position:sticky;top:0;z-index:100;border-bottom:1px solid var(--line);background:var(--bg) linear-gradient(180deg,rgba(29,205,159,.05),transparent)}
 .bar{display:flex;align-items:center;gap:20px;height:52px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:700;letter-spacing:.14em;font-size:15px}
 .brand .sq{width:9px;height:9px;background:var(--teal);box-shadow:0 0 10px var(--teal)}
@@ -40,7 +40,7 @@ header{border-bottom:1px solid var(--line);background:linear-gradient(180deg,rgb
 .dot.warn{background:var(--orange);box-shadow:0 0 8px var(--orange)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .banner{padding:7px 16px;border-bottom:1px solid var(--line2);background:rgba(29,205,159,.055);color:var(--teal);font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center}
-.tabs{display:flex;gap:6px;flex-wrap:wrap;padding:10px 0 0}
+.tabs{position:sticky;top:82px;z-index:90;display:flex;gap:6px;flex-wrap:wrap;padding:10px 0 8px;background:var(--bg);border-bottom:1px solid var(--line)}
 .tab{background:transparent;border:1px solid var(--line2);color:var(--muted);font-size:11px;letter-spacing:.1em;padding:7px 12px;cursor:pointer;transition:.15s;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tab:hover{border-color:var(--teal);color:var(--teal)}
 .tab.on{background:var(--teal);border-color:var(--teal);color:#04110d;font-weight:700}
@@ -105,8 +105,9 @@ tr:hover td{background:rgba(29,205,159,.04)}
 td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 .empty{padding:18px 12px;color:var(--muted);font-size:11px;text-align:center;letter-spacing:.06em}
 .foot{display:flex;justify-content:space-between;gap:12px;padding:9px 13px;border-top:1px solid var(--line2);color:var(--muted);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
-.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);letter-spacing:.06em}
-.legend i{display:inline-block;width:7px;height:7px;margin-right:5px;vertical-align:0}
+.legend{display:flex;gap:14px;flex-wrap:wrap;font-size:10px;color:var(--muted);letter-spacing:.06em;padding:8px 12px;border-top:1px solid var(--line2)}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend i{font-style:normal;font-size:12px;line-height:1}
 .deck{display:grid;grid-template-columns:minmax(0,1fr) 360px;gap:12px;margin-top:12px}
 .maincol{display:flex;flex-direction:column;gap:12px;min-width:0}
 .ledgercard{grid-column:1/-1}
@@ -123,6 +124,13 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 .labelbar{padding:9px 13px;border-top:1px solid var(--line2);color:var(--orange);font-size:10px;letter-spacing:.1em;text-transform:uppercase}
 .prov{padding:10px 13px;border-top:1px solid var(--line2);color:var(--muted);font-size:10px;line-height:1.7;word-break:break-all}
 .prov b{color:var(--text);font-weight:600}
+.table-wrap{overflow-x:auto;max-width:100%}
+.posbar{display:inline-flex;align-items:center;gap:6px}
+.bar-track{position:relative;width:70px;height:6px;background:var(--line2);border-radius:3px;overflow:hidden}
+.bar-fill{position:absolute;top:0;left:0;height:100%;background:var(--teal)}
+.bar-fill.sl{background:var(--down)}
+.bar-marker{position:absolute;top:-2px;width:5px;height:10px;background:var(--text);border-radius:1px;transform:translateX(-50%)}
+.bar-label{font-size:9px;color:var(--muted);letter-spacing:.06em;text-transform:uppercase}
 @media (max-width:1050px){.deck{grid-template-columns:1fr}.ledgercard{grid-column:auto}}
 @media (max-width:900px){.market{flex-direction:column;align-items:stretch}.mprice,.ms,.picker{border-right:0;border-bottom:1px solid var(--line2)}}
 </style>
@@ -181,6 +189,12 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           </select>
           <div class="scrub"><span>window</span><input id="scrub" type="range" min="0" max="0" value="0" disabled /></div>
         </div>
+        <div class="legend">
+          <span><i style="color:var(--teal)">▲</i> signal</span>
+          <span><i style="color:var(--text)">●</i> fill</span>
+          <span><i style="color:var(--text)">×</i> exit</span>
+          <span><i style="color:var(--muted)">┄</i> planned TP/SL (from the signal)</span>
+        </div>
       </div>
     </div>
 
@@ -198,10 +212,12 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 
     <div class="card ledgercard">
       <div class="ph"><h3>Trade ledger</h3><span class="hint">signal entry → next candle open fill · exits at TP/SL · fees excluded</span></div>
-      <table>
-        <thead><tr><th>Entry</th><th>Side</th><th>Signal Entry</th><th>Fill</th><th>SL</th><th>TP</th><th>R:R</th><th>Exit</th><th>Exit Price</th><th>PnL</th><th>Result</th></tr></thead>
-        <tbody id="ledger"></tbody>
-      </table>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Entry</th><th>Side</th><th>Signal Entry</th><th>Fill</th><th>SL</th><th>TP</th><th>R:R</th><th>Exit</th><th>Exit Price</th><th>PnL</th><th>Result</th></tr></thead>
+          <tbody id="ledger"></tbody>
+        </table>
+      </div>
     </div>
 
     <div class="card ledgercard">
@@ -485,6 +501,13 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     hi += pad;
     const xFor = (i) => m.l + ((i - start) / Math.max(1, view.length - 1)) * plotW;
     const yFor = (v) => m.t + (1 - (v - lo) / (hi - lo)) * plotH;
+    const labels = [];
+    function queueLabel(price, text, color, fromIndex, toIndex) {
+      const from = Math.max(fromIndex, start);
+      const to = Math.min(toIndex, step);
+      if (to < from || !Number.isFinite(price)) return;
+      labels.push({ y: yFor(price), text, color, price });
+    }
 
     ctx.clearRect(0, 0, w, h);
     ctx.font = "10px ui-monospace, monospace";
@@ -590,29 +613,38 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       ctx.stroke();
     }
 
-    function levels(tab, side, sl, tp, fromIndex, toIndex, color) {
+    function levels(tab, side, sl, tp, fromIndex, toIndex) {
       if (!Number.isFinite(sl) || !Number.isFinite(tp)) return;
       const from = Math.max(fromIndex, start);
       const to = Math.min(toIndex, step);
       if (to < from) return;
-      ctx.strokeStyle = color;
       ctx.globalAlpha = 0.55;
       ctx.setLineDash([3, 4]);
+
+      ctx.strokeStyle = "#1dcd9f";
       ctx.beginPath();
       ctx.moveTo(xFor(from), yFor(tp));
       ctx.lineTo(xFor(to), yFor(tp));
+      ctx.stroke();
+
+      ctx.strokeStyle = "#ff4d4d";
+      ctx.beginPath();
       ctx.moveTo(xFor(from), yFor(sl));
       ctx.lineTo(xFor(to), yFor(sl));
       ctx.stroke();
+
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
+
+      queueLabel(tp, "TP " + fmtPrice(tp), "#1dcd9f", fromIndex, toIndex);
+      queueLabel(sl, "SL " + fmtPrice(sl), "#ff4d4d", fromIndex, toIndex);
     }
 
     for (const trade of tab.trades) {
       if (trade.entryIndex > step) continue;
       const signal = signalForTrade(tab, trade);
       const color = trade.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
-      if (signal) levels(tab, trade.side, signal.sl, signal.tp, trade.entryIndex, trade.exitIndex, color);
+      if (signal) levels(tab, trade.side, signal.sl, signal.tp, trade.entryIndex, trade.exitIndex);
       if (trade.entryIndex >= start) {
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -629,11 +661,49 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     for (const position of tab.openPositions) {
       if (position.entryIndex > step) continue;
       const color = position.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
-      levels(tab, position.side, position.sl, position.tp, position.entryIndex, step, color);
+      levels(tab, position.side, position.sl, position.tp, position.entryIndex, step);
       if (position.entryIndex >= start) {
         ctx.fillStyle = color;
         ctx.beginPath();
         ctx.arc(xFor(position.entryIndex), yFor(position.fill), 3.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    // Right-edge TP/SL labels: stagger to avoid overlap and clamp to the plot.
+    labels.sort((a, b) => a.y - b.y);
+    const placed = [];
+    const plotTop = m.t + 8;
+    const plotBottom = h - m.b - 8;
+    for (const label of labels) {
+      let y = label.y;
+      let attempts = 0;
+      while (placed.some((p) => Math.abs(p - y) < 14) && attempts < 20) {
+        y -= 16;
+        attempts++;
+      }
+      if (attempts >= 20) y = label.y;
+      placed.push(y);
+
+      const clamped = Math.max(plotTop, Math.min(plotBottom, y));
+      ctx.fillStyle = label.color;
+      ctx.textAlign = "right";
+      ctx.fillText(label.text, w - m.r - 4, clamped);
+
+      if (clamped !== label.y) {
+        ctx.fillStyle = label.color;
+        ctx.beginPath();
+        const ax = w - m.r - 14;
+        if (label.y < plotTop) {
+          ctx.moveTo(ax - 3, clamped + 6);
+          ctx.lineTo(ax, clamped);
+          ctx.lineTo(ax + 3, clamped + 6);
+        } else {
+          ctx.moveTo(ax - 3, clamped - 6);
+          ctx.lineTo(ax, clamped);
+          ctx.lineTo(ax + 3, clamped - 6);
+        }
+        ctx.closePath();
         ctx.fill();
       }
     }
@@ -858,6 +928,27 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       : '<tr><td colspan="11"><div class="empty">No trades yet.</div></td></tr>';
   }
 
+  function positionBar(side, price, sl, tp) {
+    if (!Number.isFinite(sl) || !Number.isFinite(tp)) {
+      return '<span class="bar-track"><span class="bar-fill" style="width:0"></span></span><span class="bar-label">—</span>';
+    }
+    const beyondTp = isBeyond(side, price, tp, "tp");
+    const beyondSl = isBeyond(side, price, sl, "sl");
+    if (beyondTp) {
+      const marker = side === "BUY" ? "100%" : "0%";
+      return '<span class="bar-track"><span class="bar-fill" style="width:100%"></span><span class="bar-marker" style="left:' + marker + '"></span></span><span class="bar-label">beyond TP</span>';
+    }
+    if (beyondSl) {
+      const marker = side === "BUY" ? "0%" : "100%";
+      return '<span class="bar-track"><span class="bar-fill sl" style="width:100%"></span><span class="bar-marker" style="left:' + marker + '"></span></span><span class="bar-label">beyond SL</span>';
+    }
+    const lo = Math.min(sl, tp);
+    const hi = Math.max(sl, tp);
+    const t = (price - lo) / (hi - lo);
+    const pct = Math.max(0, Math.min(100, t * 100));
+    return '<span class="bar-track"><span class="bar-fill" style="width:' + pct + '%"></span><span class="bar-marker" style="left:' + pct + '%"></span></span>';
+  }
+
   function renderOpenPositions() {
     const host = el("openPositions");
     const tab = current();
@@ -880,6 +971,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           " (" + distanceText(item.side, price, item.sl, "sl") + ")" +
           " · TP " + fmtPrice(item.tp) +
           " (" + distanceText(item.side, price, item.tp, "tp") + ")" +
+          ' · <span class="posbar">' + positionBar(item.side, price, item.sl, item.tp) + '</span>' +
           ' · <span class="' + (item.unrealized >= 0 ? "up" : "down") + '">' + fmtSigned(item.unrealized) + "</span></span>"
         );
       })
