@@ -328,10 +328,13 @@ fn ledger_header_includes_sl_tp_rr() {
     let cfg = Config::default();
     let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
     let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
-    let out = std::env::temp_dir().join("analyzer-rs-ledger-header.html");
+    let dir = temp_dir("ledger-header");
+    let out = dir.join("replay.html");
     write_report(&payload, &out).unwrap();
     let html = std::fs::read_to_string(&out).unwrap();
     for needle in ["SL", "TP", "R:R", "Exit Price"] {
         assert!(html.contains(needle), "ledger header must mention {needle}");
     }
+
+    std::fs::remove_dir_all(dir).unwrap();
 }

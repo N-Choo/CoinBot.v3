@@ -228,10 +228,6 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   const el = (id) => document.getElementById(id);
 
   function num(value) { return Number(value); }
-  function finite(value) {
-    const n = Number(value);
-    return Number.isFinite(n);
-  }
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replaceAll("&", "&amp;")
@@ -303,12 +299,12 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           side: sideOf(o.side),
           fill: num(o.fill),
           e: num(o.e),
+          entryIndex: o.entry_index == null ? null : num(o.entry_index),
           sl: num(o.sl),
           tp: num(o.tp),
           unrealized: num(o.unrealized),
         })),
       })),
-      byId: new Map(),
       summary: symbol.summary || {},
       provenance: symbol.provenance || {},
     }));
@@ -795,6 +791,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           '</span><span class="badge ' + (position.side === "BUY" ? "buy" : "sell") + '">' + position.side +
           '</span></div><div class="what">Entry filled at next open</div>' +
           '<div class="meta">signal ' + fmtPrice(position.signalEntry) + ' → fill ' + fmtPrice(position.fill) +
+          ' · SL ' + fmtPrice(position.sl) + ' · TP ' + fmtPrice(position.tp) +
           ' · E ' + fmtPrice(position.e) + ' · open at end</div></div>',
       });
     }
@@ -842,7 +839,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
         const signal = tab.byId.get(open.signalId);
         const rr = trade && Number.isFinite(trade.rr) ? fmtNumber(trade.rr) : "—";
         rows.push(
-          "<tr><td>" + fmtDate(tab.candles[account.i].t) +
+          "<tr><td>" + fmtDate(open.entryIndex == null ? null : tab.candles[open.entryIndex].t) +
           '</td><td><span class="side ' + (open.side === "BUY" ? "up" : "down") + '">' + open.side +
           "</span></td><td>" + fmtPrice(signal ? signal.entry : null) +
           "</td><td>" + fmtPrice(open.fill) +
