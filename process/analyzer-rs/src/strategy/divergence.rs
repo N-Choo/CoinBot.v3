@@ -89,49 +89,33 @@ pub fn detect(candles: &[Candle], cfg: &Config) -> Result<Divergences> {
 }
 
 pub fn match_extrema(price: &[usize], rsi_idx: &[usize], order: usize) -> Vec<(usize, usize)> {
-    let n = price.len();
-    let m = rsi_idx.len();
-
-    // A purely greedy nearest-neighbour match can consume an RSI extremum that a later price
-    // extremum needs, leaving both unmatched. Plan the maximum-cardinality one-to-one matching
-    // over the remaining extrema first, so every greedy choice below preserves it.
-    // `dp[i][j]` is the maximum number of matches using only `price[i..]` and `rsi_idx[j..]`.
-    let mut dp = vec![vec![0usize; m + 1]; n + 1];
-    for i in (0..n).rev() {
-        for j in (0..m).rev() {
-            let mut best = dp[i + 1][j].max(dp[i][j + 1]);
-            if price[i].abs_diff(rsi_idx[j]) <= order {
-                best = best.max(1 + dp[i + 1][j + 1]);
-            }
-            dp[i][j] = best;
-        }
-    }
-
     let mut matches = Vec::new();
-    let mut i = 0;
-    let mut next_rsi = 0;
-    let mut remaining = dp[0][0];
-    while i < n && next_rsi < m && remaining > 0 {
-        // Prefer the nearest RSI extremum that still leaves a maximum-cardinality completion;
-        // ties keep the earliest RSI extremum.
-        let mut best: Option<(usize, usize)> = None; // (distance, rsi position)
-        for (j, &r_idx) in rsi_idx.iter().enumerate().skip(next_rsi) {
-            let distance = price[i].abs_diff(r_idx);
-            if distance <= order
-                && 1 + dp[i + 1][j + 1] == remaining
-                && best.is_none_or(|(best_distance, _)| distance < best_distance)
-            {
-                best = Some((distance, j));
+    let mut used = vec![false; rsi_idx.len()];
+    let mut prev_rsi: Option<usize> = None;
+
+    for &p_idx in price {
+        let mut best_distance = usize::MAX;
+        let mut best_slot: Option<usize> = None;
+        for (slot, &r_idx) in rsi_idx.iter().enumerate() {
+            if used[slot] {
+                continue;
+            }
+            if let Some(prev) = prev_rsi {
+                if r_idx <= prev {
+                    continue;
+                }
+            }
+            let distance = p_idx.abs_diff(r_idx);
+            if distance <= order && distance < best_distance {
+                best_distance = distance;
+                best_slot = Some(slot);
             }
         }
-        if let Some((_, j)) = best {
-            matches.push((price[i], rsi_idx[j]));
-            remaining -= 1;
-            i += 1;
-            next_rsi = j + 1;
-        } else {
-            // No candidate preserves the optimal completion, so this price extremum is skipped.
-            i += 1;
+        if let Some(slot) = best_slot {
+            let r_idx = rsi_idx[slot];
+            used[slot] = true;
+            matches.push((p_idx, r_idx));
+            prev_rsi = Some(r_idx);
         }
     }
     matches
@@ -142,10 +126,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn matches_extrema_one_to_one_and_in_order() {
+    fn matches_extrema_greedily_consumes_the_nearest() {
+        // Price 9 is left unmatched: price 6 greedily consumed RSI 7, the only remaining
+        // extremum near it.
         assert_eq!(
             match_extrema(&[2, 6, 9], &[1, 4, 7], 5),
-            vec![(2, 1), (6, 4), (9, 7)]
+            vec![(2, 1), (6, 7)]
+        );
+    }
+
+    #[test]
+    fn matches_identical_extrema_in_order() {
+        assert_eq!(
+            match_extrema(&[1, 4, 7], &[1, 4, 7], 5),
+            vec![(1, 1), (4, 4), (7, 7)]
         );
     }
 
