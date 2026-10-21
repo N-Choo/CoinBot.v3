@@ -53,11 +53,11 @@ gRPC live path. Python remains the behavioral oracle until parity is proven.
   (host-local time) and `benchmark/replay.py` formats dates with `strftime`. This is a legacy quirk, not
   a requirement (see decision 18).
 
-### 0.2 Prerequisites to verify before implementation (not yet verified)
+### 0.2 Engine assumptions and prerequisites to verify
 
 | # | Prerequisite | Status / if false |
 |---|---|---|
-| P1 | The trade engine's `Publish` handler dedups by `signal_id` durably and returns an unambiguous ack for duplicates | **FALSE today.** `process/trade-engine/src/grpc_handler.rs` keeps `seen` in an in-process `HashSet` (`Arc<Mutex<HashSet<String>>>`); it is lost on restart and has no cross-process guarantee. Implement a durable dedup table before enabling live publishing, or downgrade delivery to at-most-once with a persisted key. |
+| P1 | The trade engine's `Publish` handler dedups by `signal_id` durably and returns an unambiguous ack for duplicates | **Not required (accepted limitation).** The engine is left unchanged. Its `seen` set is in-process only (`Arc<Mutex<HashSet<String>>>`), so a retry after an engine restart can duplicate a trade. The analyzer therefore uses best-effort, at-most-once-across-restarts delivery (§7.3) and accepts lost signals. |
 | P2 | The engine honors `expires_at_ms` and rejects expired signals | **TRUE today.** `reject_reason` rejects when `expires_at_ms != 0 && expires_at_ms < chrono::Utc::now()...` (strict `<`, local wall clock). The analyzer still enforces expiry locally; document the shared boundary and the engine's clock source. |
 | P3 | A price-scale source exists per symbol (KuCoin `priceIncrement` from `/api/v2/symbols`, or an engine-side value) | Fall back to a per-symbol config table; fail-fast at startup if a symbol has no scale. |
 | P4 | KuCoin kline interval alignment (especially `1day`, `1week`, `1month`) is captured by the boundary fixture in §8 | Boundary function is corrected before live is enabled. |
@@ -78,7 +78,7 @@ gRPC live path. Python remains the behavioral oracle until parity is proven.
 - A **realistic replay** that drives the same signal-generation code as live, candle by candle, using
   the same rolling window and no future data.
 - A **live path** that runs one tokio task per active symbol and publishes signals to the trade engine
-  over gRPC with at-least-once delivery.
+  over gRPC with at-most-once delivery (one send attempt, no restart replay; lost signals accepted).
 - The existing text ledger and the self-contained HTML replay report are preserved.
 
 ### 1.2 Non-goals
@@ -119,7 +119,7 @@ gRPC live path. Python remains the behavioral oracle until parity is proven.
 | 18 | Dates are UTC by default; `--tz local` is an opt-in for Python-identical ledgers | Removes host-timezone dependence from tests and ops. |
 | 19 | Optional `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES`, off by default (parity); every signal reports its divergence age | Python can fire on very old divergences; operators decide whether to cap. |
 | 20 | Price rounding to the symbol scale happens only in the publisher, after the parity boundary | Parity compares unrounded values. |
-| 21 | Delivery is at-least-once: the cursor, emitted key, and a durable outbox entry are committed atomically; the outbox entry is cleared only after ack, expiry, or terminal rejection | Crash-safe; the engine dedups by `signal_id` (prerequisite P1). |
+| 21 | Delivery is **at-most-once**: cursor + emitted key are committed before the first send attempt, and the analyzer never retries or resends. Lost signals are accepted and counted | The engine is out of scope and its dedup is in-process only; duplicate trades are worse than a missed signal. |
 | 22 | Quarantine applies only to symbol-specific failures; transient/exchange-wide failures back off and trip a global circuit breaker | An exchange outage must not quarantine every symbol. |
 
 ---
@@ -167,7 +167,7 @@ process/analyzer-rs/
 │       ├── schedule.rs         # next boundary + jitter + miss-retry schedule
 │       ├── symbol_task.rs
 │       ├── supervisor.rs       # activation, task lifecycle, quarantine
-│       ├── state_store.rs      # cursor + emitted keys + outbox + quarantine
+│       ├── state_store.rs      # cursor + emitted keys + quarantine
 │       ├── writer.rs           # dedicated blocking-write task
 │       ├── publisher.rs        # Publisher trait, LogOnlyPublisher, metrics hooks
 │       └── grpc.rs             # GrpcPublisher + activation client (feature grpc)
@@ -181,7 +181,7 @@ process/analyzer-rs/
     ├── driver_seeding.rs  repaint.rs  intervals.rs
     ├── sim.rs  ledger_snapshot.rs  report_snapshot.rs
     ├── live_loop.rs  delivery.rs  purity.rs
-    ├── state_recovery.rs  outbox.rs  rounding.rs
+    ├── state_recovery.rs  delivery.rs  rounding.rs
     ├── config_validation.rs  clock.rs  pagination.rs
 ```
 
@@ -576,15 +576,14 @@ Warm restart must resume from the persisted cursor and must never skip the candl
 and the newest closed candle.
 
 Persisted per symbol: `schema_version`, `config_version`, `cursor_open_time_ms`, emitted keys,
-watermark, outbox entries, `quarantined_until`, and the last error classification.
+watermark, `quarantined_until`, and the last error classification.
 
 1. Load and validate the state file. If the schema version, `config_version`, or file contents are
    incompatible, **do not silently cold start**: fail-stop that symbol with `state_incompatible` and
-   alert. If the file is readable but the schema/config differs, pending outbox entries are still
-   loaded and delivered if unexpired, because they belong to the old config. If the file is corrupt or
-   truncated, the outbox cannot be recovered from it; fail-stop and alert with operator guidance. An
-   operator must run the explicit `--reset-state SYMBOL` recovery (which clears the window, emitted
-   keys, and watermark, then cold-starts) or repair the file.
+   alert. An operator must run the explicit `--reset-state SYMBOL` recovery (which clears the window,
+   emitted keys, and watermark, then cold-starts) or repair the file. There are no pending signals to
+   recover because delivery is at-most-once; any signal committed before the crash is intentionally
+   abandoned.
 2. Fetch the `W` closed candles ending at `cursor_open_time_ms` (inclusive), paginating as needed. If
    the exchange can no longer serve history back to the cursor, fail-stop the symbol with
    `history_unavailable` rather than inventing a state.
@@ -593,7 +592,6 @@ watermark, outbox entries, `quarantined_until`, and the last error classificatio
    re-emit, or apply warm-up suppression to historical candles.
 4. Process every closed candle after the cursor in chronological order through `driver.push_closed`.
    The catch-up policy (§ below) applies only to signals generated from these candles.
-5. Resume outbox delivery immediately and independently of candle processing.
 
 A cold start is allowed only when no state file exists. A corrupt or truncated state file is treated
 as `state_incompatible` (fail-stop plus alert), not as a licence to reset.
@@ -644,7 +642,7 @@ loop {
   `ANALYZER_MAX_CATCHUP_CANDLES` (default 2) of the newest closed candle. Older signals are logged as
   `stale_catchup`, counted, and still recorded in `emitted`/watermark so they are never replayed later.
   A restart after a week of downtime therefore cannot publish week-old signals.
-- **Persistence:** every processed batch commits state (cursor, emitted keys, watermark, outbox; §7.3)
+- **Persistence:** every processed batch commits state (cursor, emitted keys, watermark; §7.3)
   through the dedicated writer task, and appends the input candles to the JSONL stream.
 
 ### 7.3 Publisher and delivery
@@ -666,9 +664,9 @@ A single publisher task owns the gRPC client behind a `Publisher` trait (`GrpcPu
 - A SHA-256 collision is treated as terminal: if a `signal_id` already maps to a different canonical
   payload (stored payload hash), log `signal_id_collision`, reject locally, and alert. Version changes
   bump the `v1` prefix.
-- On a `config_version` change, pending unexpired outbox entries from the old config are delivered
-  (they are already-valid signals, logged as `legacy_config`); the candle window, emitted keys, and
-  watermark are then reset by the explicit recovery path (§7.2.1), never reused under the new config.
+- On a `config_version` change, the candle window, emitted keys, and watermark are reset by the
+  explicit recovery path (§7.2.1), never reused under the new config. There is no pending-signal
+  migration because delivery is at-most-once.
 
 **Pipeline and ordering**
 
@@ -678,7 +676,7 @@ A single publisher task owns the gRPC client behind a `Publisher` trait (`GrpcPu
   runs up to `ANALYZER_PUBLISH_CONCURRENCY` (default 4) publishes concurrently in a `JoinSet`.
 - **Per-symbol ordering:** at most one publish is in flight for a given symbol at a time; a per-symbol
   FIFO queue prevents a newer candle's signal overtaking an older one. Different symbols publish
-  concurrently. One stuck retry therefore cannot stall other symbols.
+  concurrently. One slow publish therefore cannot stall other symbols.
 - **Rounding:** the publisher snaps entry/SL/TP to the symbol's price increment (P3) just before
   building the wire message, reusing the `strategy-analyzer` `snap_to_increment` Floor/Ceil/Nearest
   semantics. The core values are never rounded. Direction is safety-first:
@@ -695,56 +693,43 @@ A single publisher task owns the gRPC client behind a `Publisher` trait (`GrpcPu
   divergence candle is not the trigger time: Python can fire on an old divergence at a current close,
   and the engine would reject an old trigger as stale.
 
-**Outbox state machine**
+**Delivery guarantee: at-most-once**
 
-The outbox is per symbol and persists only `Pending` entries; `InFlight`, `Acked`, `Expired`, and
-`Rejected` are runtime states. Entry key is `signal_id`; the entry stores the wire payload, payload
-hash, `enqueued_at_ms`, `expires_at_ms`, and attempt count.
+The trade engine is left unchanged. Its dedup is in-process only, so the analyzer deliberately uses
+at-most-once delivery: **one send attempt per signal, no retry after a transport/ack failure, and no
+resend after a restart.** Lost signals are accepted and counted.
 
-| From | Event | To | Persistence |
-|---|---|---|---|
-| — | symbol task commits a new signal with the cursor | `Pending` | same atomic state write |
-| `Pending` | publisher picks it up | `InFlight` | memory only |
-| `InFlight` | ack for the same `signal_id` | `Acked` | remove in the ack commit |
-| `InFlight` | deadline reached / local expiry | `Expired` | remove, count `signals_expired_total` |
-| `InFlight` | engine returns `accepted=false` | `Rejected` | remove, count, log reason |
-| `InFlight` | transport error | `Pending` after backoff | no write needed |
-| any | restart | non-expired `Pending` entries resend | loaded from state |
+- The symbol task commits `cursor + emitted key` **before** handing the signal to the publisher. If the
+  process crashes after that commit but before or during the send, the signal is lost on restart (the
+  cursor advanced and the divergence key is already marked emitted). This is accepted.
+- The publisher sends once per signal, with per-symbol FIFO ordering and cross-symbol concurrency. Any
+  outcome (ack, `accepted=false`, transport error, timeout) is terminal for that signal; nothing is
+  retried. Failures increment `signals_dropped_total` and are logged.
+- An ack is informational: `accepted=false` (duplicate/expired/rejected) is logged and counted; the
+  analyzer does not retry either way.
+- **No durable outbox.** The state file stores the cursor, emitted keys, watermark, and quarantine
+  only. There is no pending-signal replay and no `Pending`/`InFlight`/`Abandoned` state machine.
+- **Writer failure:** if the cursor/emitted commit fails, the symbol task does not send and does not
+  advance its cursor; the commit is retried with backoff. Persistent failure past
+  `ANALYZER_WRITER_FAILURE_LIMIT` (default 5) fail-stops the symbol and alerts.
+- **Capacity:** signals travel over a bounded in-memory `mpsc` (`ANALYZER_PUBLISH_QUEUE_CAP`, default
+  256) with an awaited send. A full queue applies backpressure by pausing candle fetching. In-memory
+  queued signals are lost if the process dies; this is accepted.
+- **Expiry:** `expires_at_ms = enqueue_time + ANALYZER_SIGNAL_TTL_MS`, `clamp(interval / 10, 60s, 1h)`.
+  A signal whose deadline has passed before the send is dropped and counted. The engine also rejects
+  expired signals (P2, strict `<` on its wall clock).
 
-- **Ack correlation is by `signal_id` only.** A late ack after a timeout removes the entry if it is
-  still present; a duplicate ack for an already-removed entry is ignored. An ack for a different
-  payload with the same `signal_id` is the collision case above.
-- **Writer failure:** a failed state commit is retried with backoff; the symbol task does not advance
-  its cursor and does not clear the entry. If commits keep failing past
-  `ANALYZER_WRITER_FAILURE_LIMIT` (default 5), the symbol fail-stops and the supervisor alerts. A
-  post-ack commit failure is safe: the entry remains `Pending` and is resent with the same
-  `signal_id`; the engine dedups (P1).
-- **Capacity:** `ANALYZER_MAX_OUTBOX_PER_SYMBOL` (default 100) and `ANALYZER_MAX_OUTBOX_TOTAL`
-  (default 1000). When a symbol reaches its per-symbol limit it pauses candle fetching (awaited
-  backpressure) until entries drain or expire; when the global limit is reached the breaker pauses all
-  fetches. Pending entries are never dropped by capacity, only by expiry or terminal rejection.
+**Crash ordering**
 
-**Deadline and TTL**
+- Crash **before** the cursor/emitted commit: the candle is reprocessed after restart, the deterministic
+  generator reproduces the same signal, and it may be sent once.
+- Crash **after** the commit but before/during the send: the signal is lost and never resent.
+- Crash after the engine executes but before the ack is observed: the analyzer considers it sent; the
+  engine's in-process dedup prevents a duplicate only while that engine process lives.
 
-- `expires_at_ms = enqueue_time + ANALYZER_SIGNAL_TTL_MS`. The default scales with the timeframe:
-  `clamp(interval / 10, 60s, 1h)`, i.e. 1h for `1day` and 90s for `15min`. A flat 60s was unsuitable
-  for daily candles.
-- Each publish retries with backoff until ack, deadline, or shutdown. Expiry is checked in the
-  publisher and again by the engine (P2, strict `<` on the engine's wall clock).
-
-**Crash-safe ordering (at-least-once)**
-
-1. The state commit that advances the cursor and records the emitted key also writes the signal into a
-   durable `Pending` outbox entry in the same atomic file write (write temp, fsync, rename).
-2. The signal is then sent to the publisher. The symbol task does not block on the ack.
-3. On ack, expiry, or terminal rejection, a second commit removes the outbox entry.
-4. On restart, non-expired `Pending` entries are re-sent with the same `signal_id`; expired ones are
-   dropped and counted.
-
-Crash after commit but before ack: the outbox resends and the engine dedups (P1, once durable).
-Crash before commit: the candle is reprocessed, the deterministic generator reproduces the same
-signal and the same `signal_id`, and the engine dedups. No ordering of crash and ack can lose a
-signal, and none can create a distinct duplicate. Until P1 is fixed, live publishing is blocked.
+No analyzer-side path can create a duplicate through retry. Engine-side duplicates remain possible if
+an engine restart forgets its in-process `seen` set; that is an accepted limitation, not an analyzer
+retry.
 
 
 ### 7.4 Live semantics versus Python
@@ -759,8 +744,8 @@ signal, and none can create a distinct duplicate. Until P1 is fixed, live publis
 - **Warm-up:** signals present in the warm-up window are seeded as already seen, not published, so a
   restart does not replay historical setups.
 - **Transport:** gRPC replaces Redis. The analyzer becomes an `EngineService` client like
-  `strategy-analyzer`. The engine's transport is reused, but its in-process dedup is **not** sufficient
-  for at-least-once delivery; durable `signal_id` dedup (P1) must land before live publishing.
+  `strategy-analyzer`. The engine is unchanged; its in-process dedup is best-effort and delivery is
+  at-most-once by design.
 
 ---
 
@@ -824,15 +809,14 @@ invalid value or inconsistent combination (§4.5, §11).
 | `ANALYZER_MAX_CATCHUP_CANDLES` | `2` | Publish only signals this recent after downtime |
 | `ANALYZER_SIGNAL_TTL_MS` | derived | `clamp(interval/10, 60s, 1h)` |
 | `ANALYZER_PUBLISH_CONCURRENCY` | `4` | In-flight publishes |
-| `ANALYZER_MAX_OUTBOX_PER_SYMBOL` | `100` | Per-symbol outbox cap (backpressure, no drops) |
-| `ANALYZER_MAX_OUTBOX_TOTAL` | `1000` | Global outbox cap |
+| `ANALYZER_PUBLISH_QUEUE_CAP` | `256` | Bounded in-memory publisher queue (backpressure) |
 | `ANALYZER_WRITER_FAILURE_LIMIT` | `5` | Consecutive state-write failures before fail-stop |
 | `ANALYZER_CLOCK_REFRESH_MS` | `300000` | Exchange clock re-sync interval |
 | `ANALYZER_CLOCK_MAX_AGE_MS` | `900000` | Pause publishing when the last sync is older |
 | `ANALYZER_QUARANTINE_COOLDOWN_MS` | derived | `clamp(3*interval, 1h, 24h)`; symbol-specific failures only |
 | `ANALYZER_BREAKER_FAILURES` / `ANALYZER_BREAKER_PROBE_MS` | `5` / `30000` | Global circuit breaker |
 | `ANALYZER_SHUTDOWN_TIMEOUT_MS` | `10000` | Graceful shutdown before abort |
-| `ANALYZER_STATE_DIR` | `data/analyzer/state` | Per-symbol state and outbox |
+| `ANALYZER_STATE_DIR` | `data/analyzer/state` | Per-symbol cursor/dedup/quarantine state |
 | `ANALYZER_STREAM_DIR` | `data/analyzer/stream` | Recorded JSONL input streams |
 | `ANALYZER_HEARTBEAT_PATH` | `data/analyzer/heartbeat` | Touched by the supervisor for the healthcheck |
 | `ANALYZER_HEARTBEAT_INTERVAL_MS` | `10000` | Heartbeat write interval |
@@ -866,7 +850,7 @@ each rule.
 | Timing | `ANALYZER_CANDLE_SETTLE_MS >= 0`; `ANALYZER_BOUNDARY_JITTER_MS >= 0` and `< interval`; `ANALYZER_SIGNAL_TTL_MS > 0`; `ANALYZER_MAX_CATCHUP_CANDLES >= 0` |
 | Delivery | `ANALYZER_PUBLISH_CONCURRENCY` in `1..=64`; `ANALYZER_MAX_RETRIES >= 0`; `0 < base <= max`; `ANALYZER_RATE_LIMIT_MIN_INTERVAL_MS > 0` |
 | Resilience | `ANALYZER_BREAKER_FAILURES > 0`; `ANALYZER_BREAKER_PROBE_MS > 0`; `ANALYZER_SHUTDOWN_TIMEOUT_MS > 0`; `ANALYZER_WRITER_FAILURE_LIMIT > 0` |
-| Outbox | `1 <= ANALYZER_MAX_OUTBOX_PER_SYMBOL <= ANALYZER_MAX_OUTBOX_TOTAL` |
+| Publish queue | `1 <= ANALYZER_PUBLISH_QUEUE_CAP <= 65536` |
 | Clock | `ANALYZER_CLOCK_REFRESH_MS > 0`; `ANALYZER_CLOCK_MAX_AGE_MS >= ANALYZER_CLOCK_REFRESH_MS` |
 | Paths | state/stream/heartbeat directories are writable at startup; fail-fast otherwise |
 | Compatibility | `config_version` and state `schema_version` are computed, logged, and compared on load |
@@ -911,7 +895,7 @@ config (including `W`) used to produce them.
 | Replay equivalence | recorded live JSONL replayed through the driver reproduces the same signals |
 | Simulator | next-open, SL-first, gap fills/skips, fees, loss cap, concurrency, and the accounting invariants |
 | HTML | payload snapshot **and** a full report rendered from representative data with every event type |
-| Live | fake market + fake gRPC; activation add/remove, circuit breaker, quarantine cooldown, retry/expiry, backpressure, outbox restart, writer failure |
+| Live | fake market + fake gRPC; activation add/remove, circuit breaker, quarantine cooldown, expiry/drop counting, backpressure, writer failure |
 | Purity | `strategy/` has no float tokens, no bare `Decimal` arithmetic, no hash-map iteration |
 
 **Numeric comparison rules**
@@ -991,15 +975,15 @@ make benchmark-web-rs       # analyzer-backtest web
 | Risk | Mitigation |
 |---|---|
 | scipy `find_peaks` semantics differ (plateaus, distance ties) | Port the algorithm (Appendix A.1); pin the oracle's `scipy`/`pandas`/`numpy` versions; test exact peak indices on adversarial fixtures. |
-| Engine dedup is in-process only (P1 false today) | Durable `signal_id` dedup in the engine, with restart and concurrent-duplicate tests, before live publishing. |
+| Engine dedup is in-process only; a restart can duplicate a trade | Delivery is at-most-once from the analyzer: one send, no restart replay. A transport failure may lose a signal and is counted. Engine-side duplicates after an engine restart are an accepted limitation. |
 | Warm restart skips candles or re-emits old ones | §7.2.1 restores the cursor/window/dedup state and processes every intervening candle; tests cover restart-and-catch-up. |
 | Corrupt/incompatible state silently resets | Fail-stop with alert; explicit `--reset-state` only; tests for truncated/checksum-mismatched files. |
 | Decimal vs pandas `f64` differences flip a strict comparison | Dual-oracle triage (§10.3); operation-order matching; `1e-9` gate. |
 | `W` changes signal behavior | `W` is part of `config_version` and `signal_id`; baseline 100; the oracle regenerates for any configured `W`. |
 | Dynamic `W > 1500` exceeds KuCoin's per-request limit | Paginate warm-up and `fetch-data`; multi-page tests. |
 | More positions than a real account would take | Replay mirrors the trade engine's `init_fund/2` funding rule; flagged in the report. |
-| Repeated signals for one divergence or repaint | Emitted set plus `<=` watermark; stable `signal_id`; engine dedup (P1). |
-| Outbox growth during a long engine outage | Per-symbol and global caps pause fetching (backpressure); entries expire by TTL; no pending entry is dropped by capacity. |
+| Repeated signals for one divergence or repaint | Emitted set plus `<=` watermark; stable `signal_id`. |
+| Publish-queue saturation during an engine outage | Bounded in-memory queue pauses fetching (backpressure); queued signals are lost on process death by design. |
 | Blocking fsync/write on tokio workers | Dedicated writer task with a bounded queue. |
 | Quarantine respawn loop | Persist `quarantined_until`; reconcile honors it. |
 | Exchange outage quarantines every symbol | Failure classification plus global circuit breaker (decision 22). |
@@ -1011,7 +995,7 @@ Resolved decisions (formerly open questions):
 
 | # | Decision |
 |---|---|
-| OQ-1 | Outbox is capped per symbol (100) and globally (1000); hitting a cap pauses fetching (backpressure) and never drops pending entries. |
+| OQ-1 | No durable outbox. A bounded in-memory publish queue (`ANALYZER_PUBLISH_QUEUE_CAP`, default 256) applies backpressure and drops nothing in-process; signals are lost if the process dies. |
 | OQ-2 | `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` stays unset during migration (parity); enabling it in production is an operator decision documented in the runbook. |
 | OQ-3 | Entry gap is `skipped_gap` (conservative). A fill-and-exit-at-open alternative is not implemented in v1. |
 | OQ-4 | v1 replays one account per symbol, matching the Python benchmark. A shared portfolio account is deferred until portfolio-level estimates are needed. |
@@ -1026,13 +1010,11 @@ Resolved decisions (formerly open questions):
    backtests side by side and diff **signals** per candle.
 3. **Shadow live** — run `analyzer-serve` with `ANALYZER_SHADOW_MODE=true` (`LogOnlyPublisher`) next to
    Python; compare emitted signals on the same active symbols until zero signal drift.
-4. **Engine idempotency gate** — implement and verify durable `signal_id` dedup in the trade engine
-   (P1), including restart and simultaneous-duplicate tests, before any Rust publishing.
-5. **Cut over live** — switch the trade engine's analyzer to `analyzer-serve` over gRPC; keep Python
-   stopped but deployed for one release.
-6. **Remove Python** — delete `process/analyzer`, its Dockerfile/requirements, Python test targets, and
+4. **Cut over live** — no trade-engine change is required. Delivery is at-most-once; a future engine
+   release with durable dedup can revisit the guarantee in a separate spec.
+5. **Remove Python** — delete `process/analyzer`, its Dockerfile/requirements, Python test targets, and
    `.env` entries that only Python used. Tag the last Python commit for reference.
-7. **Docs** — update `process/analyzer-rs/README.md`, the root README, Makefile help, and CI.
+6. **Docs** — update `process/analyzer-rs/README.md`, the root README, Makefile help, and CI.
 
 ### 12.1 Shadow comparison and cutover evidence
 
@@ -1051,7 +1033,7 @@ signal-candle timestamp; prices within `1e-9`. The evidence package must include
   **200 compared candles per symbol**, whichever is longer;
 - at least one analyzer restart, one exchange outage/backoff, one engine-unavailable period, and one
   missed-candle/gap case;
-- the observed outbox, expiry, quarantine, and breaker metrics for the same period;
+- the observed drop/expiry, quarantine, and breaker metrics for the same period;
 - replay-equivalence passing on a recorded live stream;
 - a dry-run of the rollback procedure.
 
@@ -1073,21 +1055,20 @@ analyzers publishing signals; Python is either log-only or stopped during shadow
 - Replay equivalence passes: a recorded live stream replayed through the driver produces identical
   signals.
 - Warm restart resumes from the cursor, rebuilds the window, processes every intervening candle, and
-  delivers pending outbox entries; corrupt/incompatible state fail-stops rather than silently
+  does not resend signals after a restart; corrupt/incompatible state fail-stops rather than silently
   resetting.
 - `signal_id` is stable across restarts and builds for identical inputs, changes when `config_version`
   or `W` changes, and the canonical encoding has golden-vector tests.
 - Clock failure/jump, pagination overlap/conflict, year/leap/month boundaries, and duplicate rows are
   covered by tests.
-- The outbox state machine, per-symbol ordering, writer-failure retry, duplicate/late acks, and
-  capacity backpressure are covered by tests.
+- At-most-once behavior, per-symbol ordering, writer-failure retry, dropped-signal counting, and
+  queue backpressure are covered by tests.
 - Rounded levels are directionally safe and invalid rounded levels are rejected.
 - The replay accounting invariants hold, including the short-PnL convention and end-of-data marks.
 - Config validation rejects every invalid value/combination in §9.1.
-- `analyzer-serve` reconciles active symbols, emits each divergence once, delivers at-least-once over
-  gRPC, survives fetch failures, honors quarantine cooldowns, and does not publish stale catch-up
-  signals.
-- P1 is resolved durably in the engine before live publishing is enabled.
+- `analyzer-serve` reconciles active symbols, emits each divergence once, delivers at-most-once over
+  gRPC (one attempt, no restart resend), survives fetch failures, honors quarantine cooldowns, and does
+  not publish stale catch-up signals.
 - Python `process/analyzer` is removed only after the shadow evidence in §12.1 passes and the
   README/Makefile/CI reference the Rust crate.
 
@@ -1104,11 +1085,11 @@ analyzers publishing signals; Python is either log-only or stopped during shadow
   fetch since startup; writer task healthy.
 - **Metrics:** `symbols_active`, `symbols_quarantined`, `candles_processed_total`, `signals_emitted_total`,
   `signals_published_total`, `signals_duplicate_total`, `signals_expired_total`,
-  `signals_rejected_total`, `signals_stale_catchup_total`, `outbox_depth` (per symbol and total),
+  `signals_rejected_total`, `signals_stale_catchup_total`, `signals_dropped_total`, `publish_queue_depth`,
   `breaker_open`, `clock_offset_ms`, `clock_unsynced`, `fetch_failures_total`,
   `state_write_failures_total`, `grpc_publish_latency_ms`, `cursor_lag_candles`.
 - **Alerts:** cursor lag above 2 candles for more than one interval; breaker open longer than
-  `ANALYZER_BREAKER_PROBE_MS * 3`; outbox depth above 80% of a cap; any `state_write_failures_total`;
+  `ANALYZER_BREAKER_PROBE_MS * 3`; publish queue above 80% of its cap; any `state_write_failures_total`;
   any `signal_id_collision`; readiness false for more than 2 minutes.
 
 ### 14.2 Persistent state integrity
@@ -1117,8 +1098,7 @@ analyzers publishing signals; Python is either log-only or stopped during shadow
   temp → fsync(file) → rename → fsync(dir).
 - Corrupt, truncated, checksum-mismatched, or incompatible state is **fail-stop with alert**
   (`state_incompatible`); it is not silently reset. Recovery is an explicit `--reset-state SYMBOL`,
-  which clears the window/dedup state and cold-starts; pending outbox entries are still delivered
-  when readable.
+  which clears the window/dedup state and cold-starts; abandoned in-flight signals are not recovered.
 - Disk-full, permission, and fsync failures stop the symbol's cursor advance and surface
   `state_write_failures_total`; persistent failure fail-stops the symbol. The state directory must be
   writable at startup.
@@ -1139,11 +1119,11 @@ analyzers publishing signals; Python is either log-only or stopped during shadow
   is migrated by adding the new variables with defaults; the Python `.env` names are reused.
 - Mutual exclusion: only one publisher. Python is stopped or `ANALYZER_SHADOW_MODE=true` (log-only)
   before Rust publishes. State directories are distinct.
-- Rollback: stop Rust, restart Python with its existing `.env`. Rust state/outbox is left intact for a
-  later retry; already-delivered signals remain governed by the engine's dedup. Document that rollback
-  after a Rust publish may mean a signal was acted on and Python will not resend it.
-- The runbook covers: cold start, warm restart, explicit state reset, outbox saturation, breaker open,
-  quarantine, clock unsync, and rollback.
+- Rollback: stop Rust, restart Python with its existing `.env`. Rust state is left intact for a later
+  start; there is no in-flight signal to recover (at-most-once). Document that rollback after a Rust
+  publish may mean a signal was acted on and Python will not resend it.
+- The runbook covers: cold start, warm restart, explicit state reset, publish-queue saturation, breaker
+  open, quarantine, clock unsync, and rollback.
 
 
 ---
