@@ -199,7 +199,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     <div class="card ledgercard">
       <div class="ph"><h3>Trade ledger</h3><span class="hint">signal entry → next candle open fill · exits at TP/SL · fees excluded</span></div>
       <table>
-        <thead><tr><th>Entry</th><th>Side</th><th>Signal entry</th><th>Fill</th><th>Exit</th><th>Exit price</th><th>PnL</th><th>Result</th></tr></thead>
+        <thead><tr><th>Entry</th><th>Side</th><th>Signal Entry</th><th>Fill</th><th>SL</th><th>TP</th><th>R:R</th><th>Exit</th><th>Exit Price</th><th>PnL</th><th>Result</th></tr></thead>
         <tbody id="ledger"></tbody>
       </table>
     </div>
@@ -242,7 +242,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   }
   function sideOf(value) { return value === "Long" ? "BUY" : "SELL"; }
   function buildTabs(payload) {
-    return (payload.symbols || []).map((symbol) => ({
+    const tabs = (payload.symbols || []).map((symbol) => ({
       symbol: symbol.symbol,
       candles: (symbol.candles || []).map((c, i) => ({
         i: i,
@@ -258,6 +258,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       signals: (symbol.signals || []).map((s) => ({
         i: s.candle_index,
         id: s.signal_id,
+        signalId: s.signal_id,
         side: sideOf(s.action),
         reason: s.reason,
         entry: num(s.signal_entry),
@@ -271,6 +272,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
         entryIndex: t.entry_index,
         exitIndex: t.exit_index,
         side: sideOf(t.side),
+        signalId: t.signal_id,
         signalEntry: num(t.signal_entry),
         fill: num(t.fill),
         exit: num(t.exit),
@@ -283,15 +285,37 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       openPositions: (symbol.open_positions || []).map((p) => ({
         entryIndex: p.entry_index,
         side: sideOf(p.side),
+        signalId: p.signal_id,
         signalEntry: num(p.signal_entry),
         fill: num(p.fill),
         e: num(p.E),
         sl: num(p.sl),
         tp: num(p.tp),
       })),
+      account: (symbol.account || []).map((a) => ({
+        i: a.i,
+        available: num(a.available_fund),
+        reserved: num(a.reserved),
+        unrealized: num(a.unrealized),
+        equity: num(a.equity),
+        open: (a.open || []).map((o) => ({
+          signalId: o.signal_id,
+          side: sideOf(o.side),
+          fill: num(o.fill),
+          e: num(o.e),
+          sl: num(o.sl),
+          tp: num(o.tp),
+          unrealized: num(o.unrealized),
+        })),
+      })),
+      byId: new Map(),
       summary: symbol.summary || {},
       provenance: symbol.provenance || {},
     }));
+    tabs.forEach((tab) => {
+      tab.byId = new Map((tab.signals || []).map((s) => [s.signalId, s]));
+    });
+    return tabs;
   }
 
   function windowFor(tab) {
@@ -368,11 +392,29 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     if (cls !== undefined) node.className = cls;
   }
   function signalForTrade(tab, trade) {
-    return (
-      tab.signals.find(
-        (signal) => signal.i + 1 === trade.entryIndex && signal.side === trade.side
-      ) || null
-    );
+    return tab.byId.get(trade.signalId) || null;
+  }
+  function accountAtStep(tab, step) {
+    const window = windowFor(tab);
+    const idx = step - window;
+    if (idx < 0 || idx >= tab.account.length) return null;
+    return tab.account[idx];
+  }
+  function isBeyond(side, price, level, kind) {
+    if (!Number.isFinite(price) || !Number.isFinite(level)) return false;
+    if (kind === "tp") {
+      return side === "BUY" ? price >= level : price <= level;
+    }
+    return side === "BUY" ? price <= level : price >= level;
+  }
+  function distanceText(side, price, level, kind) {
+    if (!Number.isFinite(level)) return "—";
+    if (isBeyond(side, price, level, kind)) {
+      return "beyond " + kind.toUpperCase();
+    }
+    const pct = Math.abs((price - level) / price) * 100;
+    const label = price > level ? "above" : "below";
+    return pct.toFixed(2) + "% " + label;
   }
   function renderTabs() {
     const host = el("tabs");
@@ -719,6 +761,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 
     for (const trade of tab.trades) {
       if (trade.entryIndex > step) continue;
+      const signal = tab.byId.get(trade.signalId);
       items.push({
         i: trade.entryIndex,
         html:
@@ -726,6 +769,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           '</span><span class="badge ' + (trade.side === "BUY" ? "buy" : "sell") + '">' + trade.side +
           '</span></div><div class="what">Entry filled at next open</div>' +
           '<div class="meta">signal ' + fmtPrice(trade.signalEntry) + ' → fill ' + fmtPrice(trade.fill) +
+          ' · SL ' + fmtPrice(signal ? signal.sl : null) +
+          ' · TP ' + fmtPrice(signal ? signal.tp : null) +
           ' · E ' + fmtPrice(trade.e) + '</div></div>',
       });
       if (trade.exitIndex <= step) {
@@ -761,37 +806,6 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     host.scrollTop = host.scrollHeight;
   }
 
-  function openAtStep(tab, step) {
-    const open = [];
-    for (const trade of tab.trades) {
-      if (trade.entryIndex <= step && trade.exitIndex > step) {
-        open.push({ kind: "trade", trade: trade, entryIndex: trade.entryIndex, side: trade.side, signalEntry: trade.signalEntry, fill: trade.fill });
-      }
-    }
-    for (const position of tab.openPositions) {
-      if (position.entryIndex <= step) {
-        open.push({
-          kind: "position",
-          position: position,
-          entryIndex: position.entryIndex,
-          side: position.side,
-          signalEntry: position.signalEntry,
-          fill: position.fill,
-          sl: position.sl,
-          tp: position.tp,
-        });
-      }
-    }
-    return open;
-  }
-
-  function pnlAtStep(tab, step, trade) {
-    const mark = tab.candles[step].c;
-    return trade.side === "BUY"
-      ? trade.e * (mark / trade.fill - 1)
-      : trade.e * (trade.fill - mark) / trade.fill;
-  }
-
   function renderLedger() {
     const body = el("ledger");
     const tab = current();
@@ -799,41 +813,52 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     const step = currentStep();
     const rows = [];
 
+    // Closed trades: use the originating signal for SL/TP and the trade for R:R.
     for (const trade of tab.trades) {
-      if (trade.entryIndex > step) continue;
-      const open = trade.exitIndex > step;
-      const pnl = open ? pnlAtStep(tab, step, trade) : trade.pnl;
+      if (trade.entryIndex > step || trade.exitIndex > step) continue;
+      const signal = tab.byId.get(trade.signalId);
+      const rr = Number.isFinite(trade.rr) ? fmtNumber(trade.rr) : "—";
       rows.push(
         "<tr><td>" + fmtDate(tab.candles[trade.entryIndex].t) +
         '</td><td><span class="side ' + (trade.side === "BUY" ? "up" : "down") + '">' + trade.side +
         "</span></td><td>" + fmtPrice(trade.signalEntry) +
         "</td><td>" + fmtPrice(trade.fill) +
-        "</td><td>" + (open ? "open" : fmtDate(tab.candles[trade.exitIndex].t)) +
-        "</td><td>" + (open ? fmtPrice(tab.candles[step].c) : fmtPrice(trade.exit)) +
-        '</td><td class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) +
-        '</td><td><span class="badge ' + (open ? "neutral" : pnl >= 0 ? "buy" : "sell") + '">' +
-        (open ? "open" : escapeHtml(trade.reason)) + "</span></td></tr>"
+        "</td><td>" + fmtPrice(signal ? signal.sl : null) +
+        "</td><td>" + fmtPrice(signal ? signal.tp : null) +
+        "</td><td>" + rr +
+        "</td><td>" + fmtDate(tab.candles[trade.exitIndex].t) +
+        "</td><td>" + fmtPrice(trade.exit) +
+        '</td><td class="' + (trade.pnl >= 0 ? "up" : "down") + '">' + fmtSigned(trade.pnl) +
+        '</td><td><span class="badge ' + (trade.pnl >= 0 ? "buy" : "sell") + '">' +
+        escapeHtml(trade.reason) + "</span></td></tr>"
       );
     }
-    for (const position of tab.openPositions) {
-      if (position.entryIndex > step) continue;
-      const pnl = position.side === "BUY"
-        ? position.e * (tab.candles[step].c / position.fill - 1)
-        : position.e * (position.fill - tab.candles[step].c) / position.fill;
-      rows.push(
-        "<tr><td>" + fmtDate(tab.candles[position.entryIndex].t) +
-        '</td><td><span class="side ' + (position.side === "BUY" ? "up" : "down") + '">' + position.side +
-        "</span></td><td>" + fmtPrice(position.signalEntry) +
-        "</td><td>" + fmtPrice(position.fill) +
-        "</td><td>open</td><td>" + fmtPrice(tab.candles[step].c) +
-        '</td><td class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) +
-        '</td><td><span class="badge neutral">open</span></td></tr>'
-      );
+
+    // Open rows: read per-step account state; do not recompute from prices.
+    const account = accountAtStep(tab, step);
+    if (account) {
+      for (const open of account.open) {
+        const trade = tab.trades.find((t) => t.signalId === open.signalId && t.exitIndex > step);
+        const signal = tab.byId.get(open.signalId);
+        const rr = trade && Number.isFinite(trade.rr) ? fmtNumber(trade.rr) : "—";
+        rows.push(
+          "<tr><td>" + fmtDate(tab.candles[account.i].t) +
+          '</td><td><span class="side ' + (open.side === "BUY" ? "up" : "down") + '">' + open.side +
+          "</span></td><td>" + fmtPrice(signal ? signal.entry : null) +
+          "</td><td>" + fmtPrice(open.fill) +
+          "</td><td>" + fmtPrice(open.sl) +
+          "</td><td>" + fmtPrice(open.tp) +
+          "</td><td>" + rr +
+          "</td><td>Open</td><td>—" +
+          '</td><td class="' + (open.unrealized >= 0 ? "up" : "down") + '">' + fmtSigned(open.unrealized) +
+          '</td><td><span class="badge neutral">Open</span></td></tr>'
+        );
+      }
     }
 
     body.innerHTML = rows.length
       ? rows.join("")
-      : '<tr><td colspan="8"><div class="empty">No trades yet.</div></td></tr>';
+      : '<tr><td colspan="11"><div class="empty">No trades yet.</div></td></tr>';
   }
 
   function renderOpenPositions() {
@@ -841,31 +866,24 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     const tab = current();
     if (!host || !tab) return;
     const step = currentStep();
-    const open = openAtStep(tab, step);
+    const candle = tab.candles[step];
+    const account = accountAtStep(tab, step);
+    const open = account ? account.open : [];
     if (!open.length) {
       host.innerHTML = '<span class="pill">no open positions</span>';
       return;
     }
+    const price = candle ? candle.c : NaN;
     host.innerHTML = open
       .map((item) => {
-        let sl = item.sl;
-        let tp = item.tp;
-        if (item.kind === "trade") {
-          const signal = signalForTrade(tab, item.trade);
-          sl = signal ? signal.sl : null;
-          tp = signal ? signal.tp : null;
-        }
-        const pnl = item.kind === "trade"
-          ? pnlAtStep(tab, step, item.trade)
-          : item.side === "BUY"
-            ? item.position.e * (tab.candles[step].c / item.fill - 1)
-            : item.position.e * (item.fill - tab.candles[step].c) / item.fill;
         return (
-          '<span class="pill"><b>' + item.side + "</b> signal " + fmtPrice(item.signalEntry) +
-          " · fill " + fmtPrice(item.fill) +
-          (Number.isFinite(sl) ? " · SL " + fmtPrice(sl) : "") +
-          (Number.isFinite(tp) ? " · TP " + fmtPrice(tp) : "") +
-          ' · <span class="' + (pnl >= 0 ? "up" : "down") + '">' + fmtSigned(pnl) + "</span></span>"
+          '<span class="pill"><b>' + item.side +
+          "</b> fill " + fmtPrice(item.fill) +
+          " · SL " + fmtPrice(item.sl) +
+          " (" + distanceText(item.side, price, item.sl, "sl") + ")" +
+          " · TP " + fmtPrice(item.tp) +
+          " (" + distanceText(item.side, price, item.tp, "tp") + ")" +
+          ' · <span class="' + (item.unrealized >= 0 ? "up" : "down") + '">' + fmtSigned(item.unrealized) + "</span></span>"
         );
       })
       .join("");
@@ -881,17 +899,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     const candle = tab.candles[step];
     const signals = tab.signals.filter((signal) => signal.i <= step);
     const closed = tab.trades.filter((trade) => trade.entryIndex <= step && trade.exitIndex <= step);
-    const open = openAtStep(tab, step);
+    const account = accountAtStep(tab, step);
     const realized = closed.reduce((sum, trade) => sum + trade.pnl, 0);
-    let unrealized = 0;
-    for (const item of open) {
-      unrealized += item.kind === "trade"
-        ? pnlAtStep(tab, step, item.trade)
-        : item.side === "BUY"
-          ? item.position.e * (candle.c / item.fill - 1)
-          : item.position.e * (item.fill - candle.c) / item.fill;
-    }
-    const equity = Number(tab.summary.init_fund || 0) + realized + unrealized;
 
     setText("marketSymbol", tab.symbol);
     setText("statPrice", fmtPrice(candle.c));
@@ -899,10 +908,10 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     setText("statRsi", tab.rsi[step] === null || !Number.isFinite(tab.rsi[step]) ? "--" : tab.rsi[step].toFixed(1));
     setText("statSignals", String(signals.length));
     setText("statTrades", closed.length + "/" + (tab.trades.filter((trade) => trade.entryIndex <= step).length + tab.openPositions.filter((position) => position.entryIndex <= step).length));
-    setText("statEquity", equity.toFixed(2));
+    setText("statEquity", account && Number.isFinite(account.equity) ? fmtNumber(account.equity) : "—");
     setText("statPnl", fmtSigned(realized), "v " + (realized >= 0 ? "up" : "down"));
     setText("statLast", fmtPrice(candle.c));
-    setText("statOpen", String(open.length));
+    setText("statOpen", account ? String(account.open.length) : "0");
     setText("scrubLabel", "candle " + (step + 1) + " / " + tab.candles.length);
     setText("configTimeframe", CONFIG.timeframe || "—");
     setText("configGenerated", REPLAY.generated_at || "—");
@@ -932,6 +941,10 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       ["Invalid levels", String(summary.invalid_levels)],
       ["Gaps", String(summary.gaps)],
       ["Avg win / loss", fmtNumber(summary.avg_win) + " / " + fmtNumber(summary.avg_loss)],
+      ["TP hits", String(summary.tp_hits)],
+      ["SL hits", String(summary.sl_hits)],
+      ["other exits", String(summary.other_exits)],
+      ["avg planned R:R", summary.avg_risk_reward == null ? "—" : fmtNumber(summary.avg_risk_reward)],
     ];
     return cells;
   }

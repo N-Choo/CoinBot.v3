@@ -1,6 +1,6 @@
 use crate::harness::dataset::Provenance;
-use crate::harness::replay::{Replay, ReplayEvent};
-use crate::harness::sim::{unrealized_pnl, Position, SimOutcome};
+use crate::harness::replay::{Replay, ReplayEvent, ReplaySignal};
+use crate::harness::sim::{unrealized_pnl, AccountStep, Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
@@ -83,17 +83,7 @@ pub fn build_payload(
                     "tp": p.tp.to_string(),
                     "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
-                "account": input.sim.account.iter().map(|a| json!({
-                    "i": a.index,
-                    "available_fund": a.available_fund.to_string(),
-                    "reserved": a.reserved.to_string(),
-                    "unrealized": a.unrealized.to_string(),
-                    "equity": a.equity.to_string(),
-                    "open": a.open.iter().map(|o| json!({
-                        "signal_id": o.signal_id,
-                        "unrealized": o.unrealized.to_string(),
-                    })).collect::<Vec<_>>(),
-                })).collect::<Vec<_>>(),
+                "account": account_payload(&input.replay.signals, input.sim, &input.sim.account),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
             })
@@ -132,6 +122,65 @@ fn direction_str(direction: Direction) -> &'static str {
         Direction::Long => "Long",
         Direction::Short => "Short",
     }
+}
+
+/// Builds the per-step account payload, enriching each open position with the
+/// side, fill, size, SL, and TP needed by the read-only UI.
+fn account_payload(
+    signals: &[ReplaySignal],
+    sim: &SimOutcome,
+    account: &[AccountStep],
+) -> Vec<Value> {
+    let signals_by_id: std::collections::HashMap<&str, &ReplaySignal> =
+        signals.iter().map(|s| (s.signal_id.as_str(), s)).collect();
+
+    // Closed trades do not carry SL/TP, but they do carry the fill and size
+    // that were active while the position was open. Build a unified lookup for
+    // those fields so every account step can render its open rows without JS
+    // recomputation. SL/TP come from the originating signal.
+    let mut fills_by_id: std::collections::HashMap<&str, (&Decimal, &Decimal, Direction)> =
+        std::collections::HashMap::new();
+    for position in &sim.open_positions {
+        fills_by_id.insert(
+            position.signal_id.as_str(),
+            (&position.fill, &position.e, position.side),
+        );
+    }
+    for trade in &sim.trades {
+        fills_by_id.insert(
+            trade.signal_id.as_str(),
+            (&trade.fill, &trade.e, trade.side),
+        );
+    }
+
+    account
+        .iter()
+        .map(|a| {
+            json!({
+                "i": a.index,
+                "available_fund": a.available_fund.to_string(),
+                "reserved": a.reserved.to_string(),
+                "unrealized": a.unrealized.to_string(),
+                "equity": a.equity.to_string(),
+                "open": a.open.iter().map(|o| {
+                    let (fill, e, side) = fills_by_id
+                        .get(o.signal_id.as_str())
+                        .map(|(f, sz, s)| (Some(*f), Some(*sz), Some(*s)))
+                        .unwrap_or((None, None, None));
+                    let signal = signals_by_id.get(o.signal_id.as_str()).copied();
+                    json!({
+                        "signal_id": o.signal_id,
+                        "side": side.map(direction_str),
+                        "fill": fill.map(|v| v.to_string()),
+                        "e": e.map(|v| v.to_string()),
+                        "sl": signal.map(|s| s.signal.sl_price.to_string()),
+                        "tp": signal.map(|s| s.signal.tp_price.to_string()),
+                        "unrealized": o.unrealized.to_string(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
 }
 
 fn position_unrealized(position: &Position, last_close: Decimal) -> Decimal {
