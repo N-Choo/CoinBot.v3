@@ -207,3 +207,65 @@ def test_main_web_writes_report(monkeypatch, tmp_path):
     assert html.startswith("<!DOCTYPE html>")
     assert "TEST-USDT" in html
     assert "replay-data" in html
+
+
+def test_main_web_reports_all_failures(monkeypatch, tmp_path):
+    import analyzer.benchmark.main as bm
+
+    monkeypatch.setenv("BENCHMARK_TICKERS", "BTC-USDT,SOL-USDT")
+
+    def boom(*args, **kwargs):
+        raise ConnectionError("network down")
+
+    monkeypatch.setattr(bm, "fetch_klines", boom)
+
+    out = tmp_path / "replay.html"
+    bm.main(web=True, out=out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "BTC-USDT" in html
+    assert "SOL-USDT" in html
+    assert "network down" in html
+    assert "No tickers were replayed" in html
+
+
+def test_main_web_keeps_successful_ticker_when_another_fails(
+    monkeypatch, tmp_path
+):
+    import analyzer.benchmark.main as bm
+
+    monkeypatch.setenv("BENCHMARK_TICKERS", "BTC-USDT,SOL-USDT")
+    monkeypatch.setenv("SMA_ENABLED", "false")
+    monkeypatch.setenv("RSI_PERIOD", "1")
+    monkeypatch.setenv("ATR_PERIOD", "1")
+    monkeypatch.setenv("BENCHMARK_DAYS", "50")
+
+    n = 80
+    close = np.full(n, 100.0)
+    frame = pd.DataFrame(
+        {"Open": close, "High": close + 2, "Low": close - 2, "Close": close}
+    )
+
+    def fetch(symbol, **kwargs):
+        if symbol == "SOL-USDT":
+            raise ConnectionError("down")
+        return frame
+
+    monkeypatch.setattr(bm, "fetch_klines", fetch)
+    monkeypatch.setattr(bm, "generate_signals", lambda *a, **k: [])
+
+    out = tmp_path / "replay.html"
+    bm.main(web=True, out=out)
+
+    html = out.read_text(encoding="utf-8")
+    assert "BTC-USDT" in html
+    assert "SOL-USDT" in html
+
+
+def test_parse_args_rejects_out_without_web(capsys):
+    from analyzer.benchmark.main import _parse_args
+
+    with pytest.raises(SystemExit):
+        _parse_args(["--out", "replay.html"])
+
+    assert "--out requires --web" in capsys.readouterr().err

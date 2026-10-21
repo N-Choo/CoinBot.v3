@@ -252,7 +252,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         default=None,
         help="output path for --web (default: benchmark/out/benchmark.html)",
     )
-    return parser.parse_args(argv)
+    args = parser.parse_args(argv)
+    if args.out is not None and not args.web:
+        parser.error("--out requires --web")
+    return args
 
 
 def main(web: bool = False, out: Path | None = None) -> None:
@@ -288,12 +291,10 @@ def main(web: bool = False, out: Path | None = None) -> None:
     failures: list[dict[str, str]] = []
 
     # Warm-up floor plus a small margin so at least two candles are replayed.
-    min_len = (
-        _warmup(
-            cfg.rsi_period, cfg.atr_period, cfg.sma_period, cfg.sma_enabled
-        )
-        + 2
+    warmup = _warmup(
+        cfg.rsi_period, cfg.atr_period, cfg.sma_period, cfg.sma_enabled
     )
+    min_len = warmup + 2
 
     for ticker in cfg.benchmark_tickers:
         symbol = ticker.replace("/", "-")
@@ -366,12 +367,7 @@ def main(web: bool = False, out: Path | None = None) -> None:
                     open_positions=open_positions,
                     summary=summary,
                     config=config_dict(cfg),
-                    warmup=_warmup(
-                        cfg.rsi_period,
-                        cfg.atr_period,
-                        cfg.sma_period,
-                        cfg.sma_enabled,
-                    ),
+                    warmup=warmup,
                 )
             )
         else:
