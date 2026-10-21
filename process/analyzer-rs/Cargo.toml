@@ -33,6 +33,11 @@ name = "analyzer-serve"
 path = "src/bin/analyzer-serve.rs"
 required-features = ["live", "grpc"]
 
+[[bin]]
+name = "analyzer-replay"
+path = "src/bin/analyzer-replay.rs"
+required-features = ["harness"]
+
 [dev-dependencies]
 serde_json = "1"
 syn = { version = "2", features = ["full"] }

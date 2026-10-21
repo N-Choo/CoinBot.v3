@@ -55,3 +55,42 @@ GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
 LIVE_SYMBOLS=BTC-USDT KUCOIN_TIMEFRAME=15min \
 cargo run -p analyzer-rs --features grpc --bin analyzer-serve
 ```
+
+## Replay report
+
+`analyzer-replay` replays closed candles through the same signal engine and trade simulator used
+by the parity tests, then writes a self-contained HTML report (no external CSS, JS, or network
+references). Fees and slippage are excluded: the output is a signal/execution replay, not a
+profitability claim. The report carries that label in its banner.
+
+```bash
+# Online: fetch candles from KuCoin and use BENCHMARK_TICKERS
+make analyzer-replay ARGS='--timeframe 1day --limit 500'
+
+# Offline: repeated --data SYMBOL=path entries; symbols default to these entries
+cargo run -p analyzer-rs --features harness --bin analyzer-replay -- \
+  --timeframe 1day \
+  --data BTC-USDT=process/analyzer-rs/tests/fixtures/btc_usdt_1day.csv \
+  --data XRP-USDT=process/analyzer-rs/tests/fixtures/xrp_usdt_1day.csv \
+  --out /tmp/replay.html
+```
+
+Options:
+
+- `--symbol SYMBOL` (repeatable) selects symbols explicitly. When omitted, the symbols from the
+  `--data` entries are used; if there are none, `BENCHMARK_TICKERS` is used.
+- `--data SYMBOL=path` loads a CSV instead of calling KuCoin. Paths are resolved from the current
+  working directory.
+- `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `15min`.
+- `--limit` (default 500) is appended to the strategy warmup window when fetching.
+- `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`.
+- `--as-of` is the reference time in milliseconds. It defaults to now, so only closed candles are
+  replayed; pass a fixed timestamp for deterministic runs.
+- `--generated-at` overrides the report timestamp.
+- `--max-gap-candles` (default 0, must be `>= 0`) rejects datasets with larger gaps.
+- `--out` defaults to `process/analyzer-rs/out/replay.html`.
+
+The remaining strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `PRICE_DIFF_THRESHOLD`,
+`ANALYZER_WINDOW_CANDLES`) and `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES` come from the same `.env`
+as the live client; see `.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint.
+

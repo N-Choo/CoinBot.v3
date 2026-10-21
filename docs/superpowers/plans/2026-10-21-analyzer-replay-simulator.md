@@ -2375,11 +2375,12 @@ struct Cli {
     /// Offline CSV: SYMBOL=path (repeatable).
     #[arg(long = "data")]
     data: Vec<String>,
+    /// Reference time in ms; defaults to now so only closed candles replay.
     #[arg(long)]
     as_of: Option<i64>,
     #[arg(long)]
     generated_at: Option<String>,
-    #[arg(long, default_value_t = 0)]
+    #[arg(long, default_value_t = 0, allow_negative_numbers = true)]
     max_gap_candles: i64,
 }
 
@@ -2398,24 +2399,21 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .init_fund
         .or_else(|| std::env::var("BENCHMARK_INIT_FUND").ok().and_then(|v| v.parse().ok()))
         .unwrap_or(1000);
-    let as_of = cli.as_of.unwrap_or(i64::MAX);
+    let as_of = cli
+        .as_of
+        .unwrap_or_else(|| chrono::Utc::now().timestamp_millis());
+    if cli.max_gap_candles < 0 {
+        return Err(format!(
+            "--max-gap-candles must be >= 0 (got {})",
+            cli.max_gap_candles
+        )
+        .into());
+    }
     let base_url = std::env::var("KUCOIN_BASE_URL")
         .unwrap_or_else(|_| "https://api.kucoin.com".into());
     let max_age_candles = match std::env::var("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
         Ok(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
         Err(_) => None,
-    };
-
-    let symbols = if cli.symbols.is_empty() {
-        std::env::var("BENCHMARK_TICKERS")
-            .unwrap_or_default()
-            .split(',')
-            .map(str::trim)
-            .filter(|s| !s.is_empty())
-            .map(str::to_string)
-            .collect()
-    } else {
-        cli.symbols.clone()
     };
 
     let offline: std::collections::BTreeMap<String, PathBuf> = cli
@@ -2424,6 +2422,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .filter_map(|entry| entry.split_once('='))
         .map(|(symbol, path)| (symbol.to_string(), PathBuf::from(path)))
         .collect();
+
+    let symbols = if !cli.symbols.is_empty() {
+        cli.symbols.clone()
+    } else if !offline.is_empty() {
+        offline.keys().cloned().collect()
+    } else {
+        std::env::var("BENCHMARK_TICKERS")
+            .unwrap_or_default()
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect()
+    };
 
     let mut inputs = Vec::new();
     let mut failures = Vec::new();
