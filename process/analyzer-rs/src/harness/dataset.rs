@@ -69,6 +69,22 @@ pub fn load_csv(
 ) -> Result<Dataset, DatasetError> {
     let mut reader =
         csv::Reader::from_path(path).map_err(|error| DatasetError::Csv(error.to_string()))?;
+    let headers = reader
+        .headers()
+        .map_err(|error| DatasetError::Csv(error.to_string()))?
+        .clone();
+    let index = |name: &str| -> Result<usize, DatasetError> {
+        headers
+            .iter()
+            .position(|header| header.eq_ignore_ascii_case(name))
+            .ok_or_else(|| DatasetError::Csv(format!("missing column: {name}")))
+    };
+    let open_time_index = index("open_time_ms")?;
+    let open_index = index("open")?;
+    let high_index = index("high")?;
+    let low_index = index("low")?;
+    let close_index = index("close")?;
+    let volume_index = index("volume")?;
     let mut candles = Vec::new();
     for row in reader.records() {
         let row = row.map_err(|error| DatasetError::Csv(error.to_string()))?;
@@ -78,15 +94,15 @@ pub fn load_csv(
         };
         candles.push(Candle {
             open_time_ms: row
-                .get(0)
+                .get(open_time_index)
                 .unwrap_or_default()
                 .parse()
                 .map_err(|error| DatasetError::Csv(format!("timestamp: {error}")))?,
-            open: field(1)?,
-            high: field(2)?,
-            low: field(3)?,
-            close: field(4)?,
-            volume: field(5)?,
+            open: field(open_index)?,
+            high: field(high_index)?,
+            low: field(low_index)?,
+            close: field(close_index)?,
+            volume: field(volume_index)?,
         });
     }
     validate(
@@ -139,7 +155,6 @@ fn validate(
     fetched_at_ms: Option<i64>,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
-    candles.sort_by_key(|candle| candle.open_time_ms);
     for candle in &candles {
         if candle.open <= Decimal::ZERO
             || candle.high <= Decimal::ZERO

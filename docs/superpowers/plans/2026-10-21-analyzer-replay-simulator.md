@@ -489,7 +489,8 @@ fn rejects_a_timeframe_mismatch() {
             ("1700000900000", "101", "103", "100", "102"),
         ],
     );
-    let error = load_csv("TEST-USDT", &path, Timeframe::M15, i64::MAX, 0, 0, 0).unwrap_err();
+    // The rows are 15 minutes apart, so they cannot form a D1 series.
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap_err();
     assert!(matches!(error, DatasetError::TimeframeMismatch { .. }));
 }
 
@@ -520,6 +521,28 @@ fn counts_gaps_and_enforces_the_gap_limit() {
     assert_eq!(dataset.provenance.gaps, 2);
     let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 1, 0).unwrap_err();
     assert!(matches!(error, DatasetError::GapTooLarge { .. }));
+}
+
+#[test]
+fn loads_the_lowercase_synthetic_fixture() {
+    let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/synthetic_1day.csv");
+    let dataset = load_csv("SYNTH-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap();
+    assert_eq!(dataset.candles.len(), 400);
+    assert_eq!(dataset.provenance.gaps, 0);
+}
+
+#[test]
+fn rejects_a_reversed_csv() {
+    let path = write_csv(
+        "analyzer-rs-reversed.csv",
+        &[
+            ("1700086400000", "101", "103", "100", "102"),
+            ("1700000000000", "100", "102", "99", "101"),
+        ],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap_err();
+    assert!(matches!(error, DatasetError::OutOfOrder { .. }));
 }
 ```
 
@@ -618,8 +641,24 @@ pub fn load_csv(
     max_gap_candles: i64,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
-    let mut reader = csv::Reader::from_path(path)
-        .map_err(|error| DatasetError::Csv(error.to_string()))?;
+    let mut reader =
+        csv::Reader::from_path(path).map_err(|error| DatasetError::Csv(error.to_string()))?;
+    let headers = reader
+        .headers()
+        .map_err(|error| DatasetError::Csv(error.to_string()))?
+        .clone();
+    let index = |name: &str| -> Result<usize, DatasetError> {
+        headers
+            .iter()
+            .position(|header| header.eq_ignore_ascii_case(name))
+            .ok_or_else(|| DatasetError::Csv(format!("missing column: {name}")))
+    };
+    let open_time_index = index("open_time_ms")?;
+    let open_index = index("open")?;
+    let high_index = index("high")?;
+    let low_index = index("low")?;
+    let close_index = index("close")?;
+    let volume_index = index("volume")?;
     let mut candles = Vec::new();
     for row in reader.records() {
         let row = row.map_err(|error| DatasetError::Csv(error.to_string()))?;
@@ -629,15 +668,15 @@ pub fn load_csv(
         };
         candles.push(Candle {
             open_time_ms: row
-                .get(0)
+                .get(open_time_index)
                 .unwrap_or_default()
                 .parse()
                 .map_err(|error| DatasetError::Csv(format!("timestamp: {error}")))?,
-            open: field(1)?,
-            high: field(2)?,
-            low: field(3)?,
-            close: field(4)?,
-            volume: field(5)?,
+            open: field(open_index)?,
+            high: field(high_index)?,
+            low: field(low_index)?,
+            close: field(close_index)?,
+            volume: field(volume_index)?,
         });
     }
     validate(
@@ -690,7 +729,6 @@ fn validate(
     fetched_at_ms: Option<i64>,
     requested_limit: usize,
 ) -> Result<Dataset, DatasetError> {
-    candles.sort_by_key(|candle| candle.open_time_ms);
     for candle in &candles {
         if candle.open <= Decimal::ZERO
             || candle.high <= Decimal::ZERO

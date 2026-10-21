@@ -85,3 +85,25 @@ fn counts_gaps_and_enforces_the_gap_limit() {
     let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 1, 0).unwrap_err();
     assert!(matches!(error, DatasetError::GapTooLarge { .. }));
 }
+
+#[test]
+fn loads_the_lowercase_synthetic_fixture() {
+    let path =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synthetic_1day.csv");
+    let dataset = load_csv("SYNTH-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap();
+    assert_eq!(dataset.candles.len(), 400);
+    assert_eq!(dataset.provenance.gaps, 0);
+}
+
+#[test]
+fn rejects_a_reversed_csv() {
+    let path = write_csv(
+        "analyzer-rs-reversed.csv",
+        &[
+            ("1700086400000", "101", "103", "100", "102"),
+            ("1700000000000", "100", "102", "99", "101"),
+        ],
+    );
+    let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0).unwrap_err();
+    assert!(matches!(error, DatasetError::OutOfOrder { .. }));
+}
