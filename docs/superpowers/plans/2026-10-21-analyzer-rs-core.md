@@ -1973,9 +1973,8 @@ from pathlib import Path
 # scipy's find_peaks distance tie order comes from numpy's argsort. The SIMD argsort path is
 # CPU-dependent and not portable; pin the scalar path so tie behavior is reproducible and
 # matches the Rust port of NumPy's scalar argsort ordering.
-os.environ.setdefault(
-    "NPY_DISABLE_CPU_FEATURES",
-    "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX2 FMA3 F16C",
+os.environ["NPY_DISABLE_CPU_FEATURES"] = (
+    "AVX512F AVX512CD AVX512_SKX AVX512_CLX AVX512_CNL AVX512_ICL AVX2 FMA3 F16C"
 )
 
 import pandas as pd

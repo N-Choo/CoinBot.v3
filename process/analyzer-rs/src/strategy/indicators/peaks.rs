@@ -288,6 +288,32 @@ mod tests {
     }
 
     #[test]
+    fn numpy_aquicksort_matches_scalar_numpy_ties() {
+        let values = vals(&[2, 1, 3, 0, 0, 0, 2, 0, 1, 0, 0, 3, 3, 0, 1, 0, 3]);
+        let peaks: Vec<usize> = (0..values.len()).collect();
+        let mut order: Vec<usize> = (0..values.len()).collect();
+        numpy_aquicksort(&mut order, &peaks, &values);
+        assert_eq!(
+            order,
+            vec![3, 4, 5, 13, 7, 15, 9, 10, 8, 1, 14, 0, 6, 12, 2, 11, 16],
+            "scalar numpy quicksort argsort permutation"
+        );
+    }
+
+    #[test]
+    fn numpy_aheapsort_matches_scalar_numpy_ties() {
+        let values = vals(&[5, 5, 5, 1, 3, 3, 0, 2, 2]);
+        let peaks: Vec<usize> = (0..values.len()).collect();
+        let mut order: Vec<usize> = (0..values.len()).collect();
+        numpy_aheapsort(&mut order, &peaks, &values);
+        assert_eq!(
+            order,
+            vec![6, 3, 7, 8, 5, 4, 2, 1, 0],
+            "scalar numpy heapsort argsort permutation"
+        );
+    }
+
+    #[test]
     fn distance_filtering_matches_scalar_numpy_on_tied_random_arrays() {
         // Generated once with scipy.signal.find_peaks on the pinned scalar argsort path.
         let cases: &[(&[i64], usize, &[usize])] = &[
