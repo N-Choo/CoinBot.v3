@@ -53,6 +53,11 @@ name = "analyzer-execution"
 path = "src/bin/analyzer-execution.rs"
 required-features = ["harness"]
 
+[[bin]]
+name = "analyzer-confirm"
+path = "src/bin/analyzer-confirm.rs"
+required-features = ["harness"]
+
 [dev-dependencies]
 serde_json = "1"
 syn = { version = "2", features = ["full"] }
