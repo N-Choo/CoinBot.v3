@@ -3,3 +3,4 @@ pub mod replay;
 pub mod report;
 pub mod sim;
 pub mod stats;
+pub mod sweep;
