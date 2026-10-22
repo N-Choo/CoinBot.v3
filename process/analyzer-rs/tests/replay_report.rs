@@ -44,6 +44,7 @@ fn run(symbol: &str, fixture_name: &str, cfg: &Config) -> Run {
         .iter()
         .map(|signal| SimSignal {
             candle_index: signal.candle_index,
+            signal_id: signal.signal_id.clone(),
             signal: signal.signal.clone(),
         })
         .collect();
@@ -79,6 +80,10 @@ fn inputs(runs: &[Run]) -> Vec<PayloadInput<'_>> {
             provenance: &run.provenance,
         })
         .collect()
+}
+
+fn dec(s: &str) -> Decimal {
+    s.parse().unwrap()
 }
 
 fn temp_dir(label: &str) -> PathBuf {
@@ -280,5 +285,85 @@ fn report_escapes_every_angle_bracket() {
         "a raw case-insensitive closing script tag must not survive serialization"
     );
 
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn payload_includes_signal_ids_account_and_exit_counts() {
+    let cfg = Config::default();
+    let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
+    let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
+    let symbol = &payload["symbols"][0];
+    assert!(!symbol["account"].as_array().unwrap().is_empty());
+    assert!(symbol["trades"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|t| t["signal_id"].is_string()));
+    for step in symbol["account"].as_array().unwrap() {
+        let available = dec(step["available_fund"].as_str().unwrap());
+        let reserved = dec(step["reserved"].as_str().unwrap());
+        let unrealized = dec(step["unrealized"].as_str().unwrap());
+        let equity = dec(step["equity"].as_str().unwrap());
+        assert_eq!(equity, available + reserved + unrealized);
+        for open in step["open"].as_array().unwrap() {
+            assert!(open["signal_id"].is_string());
+            assert!(matches!(open["side"].as_str(), Some("Long" | "Short")));
+            assert!(open["fill"].is_string());
+            assert!(open["e"].is_string());
+            assert!(open["sl"].is_string());
+            assert!(open["tp"].is_string());
+            assert!(open["unrealized"].is_string());
+        }
+    }
+    assert!(symbol["summary"]["tp_hits"].is_number());
+    assert!(symbol["summary"]["sl_hits"].is_number());
+    assert!(symbol["summary"]["other_exits"].is_number());
+    let avg = &symbol["summary"]["avg_risk_reward"];
+    assert!(avg.is_string() || avg.is_null());
+}
+
+#[test]
+fn ledger_header_includes_sl_tp_rr() {
+    let cfg = Config::default();
+    let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
+    let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
+    let dir = temp_dir("ledger-header");
+    let out = dir.join("replay.html");
+    write_report(&payload, &out).unwrap();
+    let html = std::fs::read_to_string(&out).unwrap();
+    for needle in ["SL", "TP", "R:R", "Exit Price"] {
+        assert!(html.contains(needle), "ledger header must mention {needle}");
+    }
+
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn template_shows_levels_and_exit_counts() {
+    let cfg = Config::default();
+    let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
+    let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
+    let dir = temp_dir("levels-template");
+    let out = dir.join("replay.html");
+    write_report(&payload, &out).unwrap();
+    let html = std::fs::read_to_string(&out).unwrap();
+    for needle in [
+        "SL",
+        "TP",
+        "R:R",
+        "TP hits",
+        "SL hits",
+        "avg planned R:R",
+        "beyond TP",
+        "beyond SL",
+        "planned TP/SL",
+    ] {
+        assert!(html.contains(needle), "template must mention {needle}");
+    }
+    assert!(
+        html.contains("signal_id"),
+        "template must resolve signals by signal_id"
+    );
     std::fs::remove_dir_all(dir).unwrap();
 }

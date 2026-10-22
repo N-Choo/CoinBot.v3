@@ -1,11 +1,12 @@
 use crate::harness::dataset::Provenance;
-use crate::harness::replay::{Replay, ReplayEvent};
-use crate::harness::sim::{Position, SimOutcome};
+use crate::harness::replay::{Replay, ReplayEvent, ReplaySignal};
+use crate::harness::sim::{unrealized_pnl, Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
 use rust_decimal::Decimal;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::path::Path;
 
 pub struct PayloadInput<'a> {
@@ -62,6 +63,7 @@ pub fn build_payload(
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
                     "side": direction_str(t.side),
+                    "signal_id": t.signal_id,
                     "signal_entry": t.signal_entry.to_string(),
                     "fill": t.fill.to_string(),
                     "exit": t.exit.to_string(),
@@ -74,6 +76,7 @@ pub fn build_payload(
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
                     "entry_index": p.entry_index,
                     "side": direction_str(p.side),
+                    "signal_id": p.signal_id,
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
@@ -81,6 +84,7 @@ pub fn build_payload(
                     "tp": p.tp.to_string(),
                     "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
+                "account": account_payload(&input.replay.signals, input.sim),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
             })
@@ -121,13 +125,69 @@ fn direction_str(direction: Direction) -> &'static str {
     }
 }
 
+/// Builds the per-step account payload, enriching each open position with the
+/// side, fill, size, SL, and TP needed by the read-only UI.
+fn account_payload(signals: &[ReplaySignal], sim: &SimOutcome) -> Vec<Value> {
+    let signals_by_id: HashMap<&str, &ReplaySignal> =
+        signals.iter().map(|s| (s.signal_id.as_str(), s)).collect();
+
+    // Closed trades do not carry SL/TP, but they do carry the fill and size
+    // that were active while the position was open. Build a unified lookup for
+    // those fields so every account step can render its open rows without JS
+    // recomputation. SL/TP come from the originating signal.
+    let mut position_meta_by_id: HashMap<&str, (&Decimal, &Decimal, Direction, usize)> =
+        HashMap::new();
+    for position in &sim.open_positions {
+        position_meta_by_id.insert(
+            position.signal_id.as_str(),
+            (
+                &position.fill,
+                &position.e,
+                position.side,
+                position.entry_index,
+            ),
+        );
+    }
+    for trade in &sim.trades {
+        position_meta_by_id.insert(
+            trade.signal_id.as_str(),
+            (&trade.fill, &trade.e, trade.side, trade.entry_index),
+        );
+    }
+
+    sim.account
+        .iter()
+        .map(|a| {
+            json!({
+                "i": a.index,
+                "available_fund": a.available_fund.to_string(),
+                "reserved": a.reserved.to_string(),
+                "unrealized": a.unrealized.to_string(),
+                "equity": a.equity.to_string(),
+                "open": a.open.iter().map(|o| {
+                    let (fill, e, side, entry_index) = position_meta_by_id
+                        .get(o.signal_id.as_str())
+                        .map(|(f, sz, s, i)| (Some(*f), Some(*sz), Some(*s), Some(*i)))
+                        .unwrap_or((None, None, None, None));
+                    let signal = signals_by_id.get(o.signal_id.as_str()).copied();
+                    json!({
+                        "signal_id": o.signal_id,
+                        "side": side.map(direction_str),
+                        "fill": fill.map(|v| v.to_string()),
+                        "e": e.map(|v| v.to_string()),
+                        "entry_index": entry_index,
+                        "sl": signal.map(|s| s.signal.sl_price.to_string()),
+                        "tp": signal.map(|s| s.signal.tp_price.to_string()),
+                        "unrealized": o.unrealized.to_string(),
+                    })
+                }).collect::<Vec<_>>(),
+            })
+        })
+        .collect()
+}
+
 fn position_unrealized(position: &Position, last_close: Decimal) -> Decimal {
-    let ret = (last_close - position.fill) / position.fill;
-    let ret = match position.side {
-        Direction::Long => ret,
-        Direction::Short => -ret,
-    };
-    position.e * ret
+    unrealized_pnl(position.side, position.fill, last_close, position.e)
 }
 
 fn event_json(event: &ReplayEvent) -> Value {
@@ -180,6 +240,10 @@ fn summary_json(summary: &SimSummary, gaps: usize) -> Value {
         "unfilled_at_end": summary.unfilled_at_end,
         "invalid_levels": summary.invalid_levels,
         "gaps": gaps,
+        "tp_hits": summary.tp_hits,
+        "sl_hits": summary.sl_hits,
+        "other_exits": summary.other_exits,
+        "avg_risk_reward": summary.avg_risk_reward.map(|v| v.to_string()),
         "returns_label": "gross simulated, excluding fees and slippage",
     })
 }
@@ -247,6 +311,7 @@ mod tests {
     fn open_position_unrealized_marks_at_the_last_close() {
         let long = Position {
             side: Direction::Long,
+            signal_id: "sig-long".into(),
             signal_entry: Decimal::from(100),
             fill: Decimal::from(100),
             e: Decimal::from(500),
@@ -284,6 +349,7 @@ mod tests {
         let sim = SimOutcome {
             trades: vec![ClosedTrade {
                 side: Direction::Long,
+                signal_id: "sig-a".into(),
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 exit: Decimal::ONE,
@@ -297,6 +363,7 @@ mod tests {
             }],
             open_positions: vec![Position {
                 side: Direction::Short,
+                signal_id: "sig-b".into(),
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 e: Decimal::ONE,

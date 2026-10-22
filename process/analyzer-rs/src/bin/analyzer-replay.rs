@@ -197,6 +197,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             .iter()
             .map(|s| SimSignal {
                 candle_index: s.candle_index,
+                signal_id: s.signal_id.clone(),
                 signal: s.signal.clone(),
             })
             .collect();

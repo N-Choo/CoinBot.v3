@@ -63,32 +63,67 @@ by the parity tests, then writes a self-contained HTML report (no external CSS, 
 references). Fees and slippage are excluded: the output is a signal/execution replay, not a
 profitability claim. The report carries that label in its banner.
 
-```bash
-# Online: fetch candles from KuCoin and use BENCHMARK_TICKERS
-make analyzer-replay ARGS='--timeframe 1day --limit 500'
+By default, `analyzer-replay` fetches live candles from KuCoin. `--data SYMBOL=path` is the
+deterministic/offline override: for any symbol listed in `--data`, the local CSV is used instead
+of calling KuCoin, while missing symbols are still fetched live.
 
-# Offline: repeated --data SYMBOL=path entries; symbols default to these entries
+### Live KuCoin fetch
+
+```bash
 cargo run -p analyzer-rs --features harness --bin analyzer-replay -- \
-  --timeframe 1day \
-  --data BTC-USDT=process/analyzer-rs/tests/fixtures/btc_usdt_1day.csv \
-  --data XRP-USDT=process/analyzer-rs/tests/fixtures/xrp_usdt_1day.csv \
-  --out /tmp/replay.html
+  --symbol BTC-USDT --timeframe 15min --limit 500 \
+  --out process/analyzer-rs/out/replay.html
 ```
 
-Options:
+Or via Make:
+
+```bash
+make analyzer-replay ARGS='--symbol BTC-USDT --timeframe 15min --limit 500 --out process/analyzer-rs/out/replay.html'
+```
+
+### Offline / deterministic replay
+
+Use `--data` to bypass the network and get repeatable results from checked-in fixtures. Pair it
+with fixed `--as-of` and `--generated-at` values for fully reproducible reports.
+
+```bash
+cargo run -p analyzer-rs --features harness --bin analyzer-replay -- \
+  --timeframe 1day --as-of 1800000000000 \
+  --data BTC-USDT=tests/fixtures/btc_usdt_1day.csv \
+  --out /tmp/replay-btc.html
+```
+
+Run this from `process/analyzer-rs` so the relative fixture path resolves; if you run from the
+workspace root, use `process/analyzer-rs/tests/fixtures/btc_usdt_1day.csv` instead.
+
+### Exit policy
+
+- If at least one symbol succeeds, a report is written and the process exits `0`. Partial
+  failures are included in the report so the output still describes what happened.
+- If all symbols fail, the process exits non-zero, prints a clear error per symbol, and does
+  **not** write an empty report.
+
+### Reproducibility
+
+Live KuCoin fetches are not byte-reproducible: historical candles can be corrected by the
+exchange and fetch times differ. For repeatable results use fixed local fixtures with `--data`,
+`--as-of`, and `--generated-at`.
+
+### Options
 
 - `--symbol SYMBOL` (repeatable) selects symbols explicitly. When omitted, the symbols from the
   `--data` entries are used; if there are none, `BENCHMARK_TICKERS` is used.
-- `--data SYMBOL=path` loads a CSV instead of calling KuCoin. Paths are resolved from the current
-  working directory; entries are trimmed and deduplicated by symbol.
+- `--data SYMBOL=path` loads a CSV for that symbol instead of calling KuCoin. Paths are resolved
+  from the current working directory; entries are trimmed and deduplicated by symbol.
 - `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `15min`.
 - `--limit` (default 500) is the fetch request size. Offline `--data` replays every closed row
   (it is not capped by `--limit`); `provenance.effective_range` reports the actual count.
 - `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`. It must be `> 0`; an invalid
   `BENCHMARK_INIT_FUND` is an error rather than a silent default.
 - `--as-of` is the reference time in milliseconds. It defaults to now. For network runs it sets
-  the fetch cutoff (`endAt`); for offline runs it is the closed-candle filter. Pass a fixed
-  timestamp for deterministic runs.
+  the fetch cutoff (`endAt`); for all runs it filters candles by the closed-candle boundary.
+  The current still-forming candle is always excluded. Pass a fixed timestamp for deterministic
+  runs.
 - `--generated-at` overrides the report timestamp.
 - `--max-gap-candles` (default 0, must be `>= 0`) rejects datasets with larger gaps.
 - `--out` defaults to `process/analyzer-rs/out/replay.html`.
