@@ -81,12 +81,15 @@ pub fn verify(repo_root: &Path, lock: &FrozenLock) -> Result<(), String> {
 ### Task 2: Full-period evaluation + confirmation bin
 
 **Files:**
-- Modify `process/analyzer-rs/src/harness/sweep/execution.rs` (add `evaluate_full_period`)
+- Create `process/analyzer-rs/src/harness/sweep/confirmation.rs` (full-period evaluation; do **not** modify the frozen `execution.rs`)
+- Modify `process/analyzer-rs/src/harness/sweep/mod.rs` (`pub mod confirmation;`)
 - Create `process/analyzer-rs/src/bin/analyzer-confirm.rs`
 - Modify `process/analyzer-rs/Cargo.toml`
 - Test `process/analyzer-rs/tests/confirmation.rs`
 
-- [ ] **Step 1: `evaluate_full_period`**
+- [ ] **Step 1: `evaluate_full_period` in `confirmation.rs`**
+
+Import `crate::harness::sweep::execution::{simulate_execution, ExecModel, ExecPartition}`. Compute fill rates locally (the helper may be private):
 
 ```rust
 pub fn evaluate_full_period(
