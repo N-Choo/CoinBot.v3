@@ -5,7 +5,7 @@
 - **Scope:** Test whether limit/maker execution can turn the thin 4hour holdout gross edge into a positive net edge under realistic fill rules.
 - **Related:**
   - `docs/superpowers/specs/2026-10-22-analyzer-profitability-research-design.md`
-  - `out/cost-ladder/report.md`
+  - `process/analyzer-rs/experiments/cost-ladder/report.md`
 
 ## 1. Question
 
@@ -73,9 +73,9 @@ Signal at candle `i`; limit `L`:
 
 ## 8. Deliverables
 
-- `out/execution/execution.csv`
-- `out/execution/results.json`
-- `out/execution/report.md` with model definitions, validation/holdout tables, per-symbol tables, fill rates, and the decision.
+- `process/analyzer-rs/experiments/execution/execution.csv`
+- `process/analyzer-rs/experiments/execution/results.json`
+- `process/analyzer-rs/experiments/execution/report.md` with model definitions, validation/holdout tables, per-symbol tables, fill rates, and the decision.
 
 ## 9. Limitations
 

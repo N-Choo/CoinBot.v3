@@ -34,7 +34,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "out/execution")]
+    #[arg(long, default_value = "process/analyzer-rs/experiments/execution")]
     out_dir: PathBuf,
 
     /// Reference time in milliseconds.

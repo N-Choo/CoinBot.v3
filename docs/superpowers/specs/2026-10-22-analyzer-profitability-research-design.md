@@ -6,7 +6,7 @@
 - **Related:**
   - `docs/superpowers/specs/2026-10-22-analyzer-hyperparameter-screening-design.md`
   - `docs/superpowers/plans/2026-10-22-analyzer-hyperparameter-screening.md`
-  - `out/sweep/report.md`
+  - `process/analyzer-rs/experiments/sweep/report.md`
 
 ## 1. What the screening established
 
@@ -39,7 +39,7 @@
 - If break-even is below realistic execution costs (e.g., < ~10 bps/side after maker/limit modelling) → no viable path without execution changes.
 - If there is a positive gross edge with break-even comfortably above realistic costs → proceed to Experiment 2 and execution modelling.
 
-**Deliverables:** `out/cost-ladder/report.md`, `cost_ladder.csv`, `results.json`.
+**Deliverables:** `process/analyzer-rs/experiments/cost-ladder/report.md`, `cost_ladder.csv`, `results.json`.
 
 ### Experiment 2 — Excursion study and exit redesign
 

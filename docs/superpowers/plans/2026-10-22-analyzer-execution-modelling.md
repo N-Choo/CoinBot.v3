@@ -230,9 +230,9 @@ Tests:
 
 ### Task 3: Bin, report, run
 
-**Files:** `process/analyzer-rs/src/bin/analyzer-execution.rs`, `Cargo.toml`, `out/execution/*`.
+**Files:** `process/analyzer-rs/src/bin/analyzer-execution.rs`, `Cargo.toml`, `process/analyzer-rs/experiments/execution/*`.
 
-Flags: `--symbols` (BTC/ETH/SOL), `--data-dir` (default `data/sweep`), `--out-dir` (default `out/execution`), `--as-of` (1792661878840), `--settle-ms` (5000), `--init-fund` (1000), `--generated-at` (2026-10-22T00:00:00Z).
+Flags: `--symbols` (BTC/ETH/SOL), `--data-dir` (default `data/sweep`), `--out-dir` (default `process/analyzer-rs/experiments/execution`), `--as-of` (1792661878840), `--settle-ms` (5000), `--init-fund` (1000), `--generated-at` (2026-10-22T00:00:00Z).
 
 - Load 4h cache per symbol via `load_csv`.
 - `focused_candidates()` = `cost_ladder::frozen_candidates()` filtered to `baseline`, `joint-13`, `max_age=4`.
@@ -260,7 +260,7 @@ Run:
 ```bash
 cargo run -q -p analyzer-rs --features harness --bin analyzer-execution -- \
   --data-dir /home/blackh-t/Documents/git/CoinBot.v3/data/sweep \
-  --out-dir out/execution \
+  --out-dir process/analyzer-rs/experiments/execution \
   --as-of 1792661878840 \
   --generated-at 2026-10-22T00:00:00Z
 ```

@@ -40,7 +40,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "out/confirm")]
+    #[arg(long, default_value = "process/analyzer-rs/experiments/confirm")]
     out_dir: PathBuf,
 
     /// Refetch every symbol instead of reusing the cache.

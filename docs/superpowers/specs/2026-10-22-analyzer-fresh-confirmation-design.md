@@ -41,7 +41,7 @@ If any condition fails, the result is **confirmation failed** and no further tun
 ## 5. Artifacts
 
 - `freeze/confirmation-lock.json` (commit, hashes, config, model, dataset, decision rule).
-- `out/confirm/report.md`, `confirmation.csv`, `results.json`.
+- `process/analyzer-rs/experiments/confirm/report.md`, `confirmation.csv`, `results.json`.
 - The runner aborts if the frozen-file hash or the lock does not match.
 
 ## 6. Guardrails

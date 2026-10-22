@@ -116,7 +116,7 @@ Use the existing `fill_rates` helper (make it `pub(crate)` if private).
 - [ ] **Step 2: Bin**
 
 Flags:
-`--lock` (default `freeze/confirmation-lock.json`), `--data-dir` (default `data/confirm`), `--out-dir` (default `out/confirm`), `--refresh`, `--base-url` (default env), `--settle-ms` (5000), `--init-fund` (1000), `--generated-at` (optional).
+`--lock` (default `freeze/confirmation-lock.json`), `--data-dir` (default `data/confirm`), `--out-dir` (default `process/analyzer-rs/experiments/confirm`), `--refresh`, `--base-url` (default env), `--settle-ms` (5000), `--init-fund` (1000), `--generated-at` (optional).
 
 Flow:
 1. Load lock; `freeze::verify(repo_root, &lock)`; abort on mismatch.
@@ -159,7 +159,7 @@ required-features = ["harness"]
 cargo run -q -p analyzer-rs --features harness --bin analyzer-confirm -- \
   --lock freeze/confirmation-lock.json \
   --data-dir data/confirm \
-  --out-dir out/confirm \
+  --out-dir process/analyzer-rs/experiments/confirm \
   --refresh \
   --generated-at 2026-10-22T00:00:00Z
 ```

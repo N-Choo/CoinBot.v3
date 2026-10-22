@@ -55,7 +55,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "out/sweep")]
+    #[arg(long, default_value = "process/analyzer-rs/experiments/sweep")]
     out_dir: PathBuf,
 
     /// Deterministic candidate-sampling seed.

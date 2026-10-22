@@ -92,7 +92,7 @@ pub fn break_even_bps(points: &[(Decimal, Decimal)]) -> Option<Decimal> {
 - [ ] **Step 4: Binary**
 
 `analyzer-cost-ladder.rs`:
-- Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--data-dir` (default `data/sweep`), `--out-dir` (default `out/cost-ladder`), `--as-of` (default `1792661878840`), `--settle-ms` (default 5000), `--init-fund` (default 1000), `--generated-at` (default `2026-10-22T00:00:00Z`).
+- Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--data-dir` (default `data/sweep`), `--out-dir` (default `process/analyzer-rs/experiments/cost-ladder`), `--as-of` (default `1792661878840`), `--settle-ms` (default 5000), `--init-fund` (default 1000), `--generated-at` (default `2026-10-22T00:00:00Z`).
 - For each symbol: path `<data-dir>/<symbol>_4hour.csv`; `load_csv(symbol, path, Timeframe::H4, as_of, settle, 0, 100, 0)`.
 - `splits = chronological_splits(dataset.candles.len())`.
 - For each frozen candidate: `evaluate_config(&dataset, &candidate.to_config(), candidate.max_age, &splits, 100, init_fund, &scenarios, true)` (use the actual current signature from `evaluate.rs`; the last bool is `include_holdout`).
@@ -130,12 +130,12 @@ From the worktree (cache is in the main checkout):
 ```bash
 cargo run -q -p analyzer-rs --features harness --bin analyzer-cost-ladder -- \
   --data-dir /home/blackh-t/Documents/git/CoinBot.v3/data/sweep \
-  --out-dir out/cost-ladder \
+  --out-dir process/analyzer-rs/experiments/cost-ladder \
   --as-of 1792661878840 \
   --generated-at 2026-10-22T00:00:00Z
 ```
 
-Verify `out/cost-ladder/report.md` and `results.json`. Commit the artifacts.
+Verify `process/analyzer-rs/experiments/cost-ladder/report.md` and `results.json`. Commit the artifacts.
 
 - [ ] **Step 7: Report**
 
@@ -147,4 +147,4 @@ Return the break-even per config/partition, the 0 bps gross expectancy, the frac
 
 - Spec Experiment 1 coverage: configs, symbols, data, splits, cost levels, partitions, metrics, break-even, decision rule, artifacts.
 - No production defaults or `sim.rs` changes.
-- Outputs are additive under `out/cost-ladder/`.
+- Outputs are additive under `process/analyzer-rs/experiments/cost-ladder/`.

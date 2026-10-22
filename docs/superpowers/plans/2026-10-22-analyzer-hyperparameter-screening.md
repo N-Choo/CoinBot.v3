@@ -940,7 +940,7 @@ required-features = ["harness"]
 
 - [ ] **Step 2: Implement the CLI**
 
-Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--timeframes` (default `1hour,4hour`), `--months` (24), `--as-of` (now), `--generated-at` (optional RFC 3339 override for reproducible artifacts; defaults to now), `--data-dir` (`data/sweep`), `--out-dir` (`out/sweep`), `--seed` (20261022), `--fee-bps` (10), `--slip-bps` (5), `--stress-fee-bps` (20), `--stress-slip-bps` (10), `--init-fund` (1000), `--refresh`.
+Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--timeframes` (default `1hour,4hour`), `--months` (24), `--as-of` (now), `--generated-at` (optional RFC 3339 override for reproducible artifacts; defaults to now), `--data-dir` (`data/sweep`), `--out-dir` (`process/analyzer-rs/experiments/sweep`), `--seed` (20261022), `--fee-bps` (10), `--slip-bps` (5), `--stress-fee-bps` (20), `--stress-slip-bps` (10), `--init-fund` (1000), `--refresh`.
 
 Reproducible runs should pass `--generated-at` so `results.json`, `report.md`, and `leaderboard.csv` are byte-identical across reruns.
 
@@ -985,7 +985,7 @@ git commit -m "feat(analyzer-rs): analyzer-sweep CLI and smoke test"
 ### Task 9: Run the 60-configuration screening study
 
 **Files:**
-- Output: `data/sweep/*` (untracked), `out/sweep/leaderboard.csv`, `out/sweep/results.json`, `out/sweep/report.md`
+- Output: `data/sweep/*` (untracked), `process/analyzer-rs/experiments/sweep/leaderboard.csv`, `process/analyzer-rs/experiments/sweep/results.json`, `process/analyzer-rs/experiments/sweep/report.md`
 
 - [ ] **Step 1: Freeze `as_of`** and record it (e.g. the current UTC midnight).
 
@@ -994,7 +994,7 @@ git commit -m "feat(analyzer-rs): analyzer-sweep CLI and smoke test"
 - [ ] **Step 3: Run the sweep**
 
 ```bash
-make analyzer-sweep ARGS="--as-of <MS> --out-dir out/sweep"
+make analyzer-sweep ARGS="--as-of <MS> --out-dir process/analyzer-rs/experiments/sweep"
 ```
 
 - [ ] **Step 4: Validate artifacts**
@@ -1006,7 +1006,7 @@ make analyzer-sweep ARGS="--as-of <MS> --out-dir out/sweep"
 - [ ] **Step 5: Commit the report and results** (small, tracked)
 
 ```bash
-git add -f out/sweep/leaderboard.csv out/sweep/results.json out/sweep/report.md docs/superpowers/plans/2026-10-22-analyzer-hyperparameter-screening.md
+git add -f process/analyzer-rs/experiments/sweep/leaderboard.csv process/analyzer-rs/experiments/sweep/results.json process/analyzer-rs/experiments/sweep/report.md docs/superpowers/plans/2026-10-22-analyzer-hyperparameter-screening.md
 git commit -m "docs(sweep): initial 60-configuration screening results"
 ```
 

@@ -180,9 +180,9 @@ selecting the least-bad configuration. The holdout is scored once for the frozen
 ## 6. Deliverables
 
 - `data/sweep/<symbol>_<timeframe>.csv` + `.provenance.json` (cached, untracked).
-- `out/sweep/leaderboard.csv` — every attempted config with all metrics (base + stress).
-- `out/sweep/results.json` — full structured results (configs, splits, folds, provenance).
-- `out/sweep/report.md` — the human report: baseline vs candidates; exact configs and selection
+- `process/analyzer-rs/experiments/sweep/leaderboard.csv` — every attempted config with all metrics (base + stress).
+- `process/analyzer-rs/experiments/sweep/results.json` — full structured results (configs, splits, folds, provenance).
+- `process/analyzer-rs/experiments/sweep/report.md` — the human report: baseline vs candidates; exact configs and selection
   reasons; trades, net expectancy, profit factor, max drawdown, costs; walk-forward per timeframe
   and symbol; parameter sensitivity; data-quality issues; commands executed; recommendation
   (retain baseline / larger experiment / insufficient evidence).
