@@ -1,9 +1,9 @@
 #![cfg(feature = "grpc")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::live::grpc::{config_version, to_proto_signal};
-use analyzer_rs::strategy::config::Config;
-use analyzer_rs::strategy::types::{Direction, DivergenceKind, Signal};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::live::grpc::{config_version, to_proto_signal};
+use analyzer::strategy::config::Config;
+use analyzer::strategy::types::{Direction, DivergenceKind, Signal};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 

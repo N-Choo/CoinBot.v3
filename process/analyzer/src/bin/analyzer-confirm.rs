@@ -1,16 +1,14 @@
-use analyzer_rs::config_env::{env_string, load_dotenv};
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{Dataset, EffectiveRange, Provenance, RequestedRange};
-use analyzer_rs::harness::sweep::confirmation::{
-    decide, evaluate_full_period, pool_parts, Decision,
-};
-use analyzer_rs::harness::sweep::data::{
+use analyzer::config_env::{env_string, load_dotenv};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{Dataset, EffectiveRange, Provenance, RequestedRange};
+use analyzer::harness::sweep::confirmation::{decide, evaluate_full_period, pool_parts, Decision};
+use analyzer::harness::sweep::data::{
     fetch_range, load_with_cache, verify_dataset_quality, CachedCandles,
 };
-use analyzer_rs::harness::sweep::execution::{ExecModel, ExecPartition};
-use analyzer_rs::harness::sweep::freeze::{self, FrozenLock};
-use analyzer_rs::identity;
-use analyzer_rs::strategy::config::Config;
+use analyzer::harness::sweep::execution::{ExecModel, ExecPartition};
+use analyzer::harness::sweep::freeze::{self, FrozenLock};
+use analyzer::identity;
+use analyzer::strategy::config::Config;
 use clap::Parser;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -28,7 +26,7 @@ const DEFAULT_SETTLE_MS: i64 = 5_000;
 )]
 struct Cli {
     /// Frozen lock file; relative paths resolve against --repo-root.
-    #[arg(long, default_value = "freeze/confirmation-lock.json")]
+    #[arg(long, default_value = "process/analyzer/freeze/confirmation-lock.json")]
     lock: PathBuf,
 
     /// Repository root used to verify the frozen-file hash.
@@ -40,7 +38,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer-rs/experiments/confirm")]
+    #[arg(long, default_value = "process/analyzer/experiments/confirm")]
     out_dir: PathBuf,
 
     /// Refetch every symbol instead of reusing the cache.
@@ -542,10 +540,10 @@ fn write_markdown(path: &Path, results: &ConfirmationResults) -> Result<(), Stri
     writeln!(out, "| Slippage | {} bps |", results.model.slip_bps)
         .expect("writing to String cannot fail");
     match &results.model.entry {
-        analyzer_rs::harness::sweep::execution::EntryMode::Market => {
+        analyzer::harness::sweep::execution::EntryMode::Market => {
             writeln!(out, "| Entry | market |").expect("writing to String cannot fail");
         }
-        analyzer_rs::harness::sweep::execution::EntryMode::Limit {
+        analyzer::harness::sweep::execution::EntryMode::Limit {
             valid_candles,
             buffer_bps,
             offset_bps,
@@ -661,6 +659,7 @@ fn write_markdown(path: &Path, results: &ConfirmationResults) -> Result<(), Stri
 
 fn main() -> Result<(), String> {
     load_dotenv();
+    share::logger::init_logger();
     let cli = Cli::parse();
 
     if cli.init_fund <= 0 {

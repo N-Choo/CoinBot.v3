@@ -1,13 +1,13 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
-use analyzer_rs::harness::sim::{ClosedTrade, Position, SimOutcome};
-use analyzer_rs::harness::sweep::costs::CostScenario;
-use analyzer_rs::harness::sweep::evaluate::{evaluate_config, metrics_from_outcome};
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::sampling;
-use analyzer_rs::strategy::types::Direction;
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::load_csv;
+use analyzer::harness::sim::{ClosedTrade, Position, SimOutcome};
+use analyzer::harness::sweep::costs::CostScenario;
+use analyzer::harness::sweep::evaluate::{evaluate_config, metrics_from_outcome};
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::sampling;
+use analyzer::strategy::types::Direction;
 use rust_decimal::Decimal;
 use std::path::Path;
 

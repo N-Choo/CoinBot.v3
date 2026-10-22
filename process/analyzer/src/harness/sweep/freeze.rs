@@ -9,7 +9,7 @@ use std::path::Path;
 /// This makes the lock's config/model/dataset/decision rule tamper-evident even if the lock's own
 /// `signal_generator_sha256` is edited to match altered frozen files.
 pub const EXPECTED_LOCK_SHA256: &str =
-    "b4c6e24d0e0c298b3c713d93e937af5dbc869bc6dc964af0611ef8083c849063";
+    "cb12e992a0fcf3f5a6d44f4f2f1c47d2d6000c77230a9bf3a3c1d8871be92897";
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FrozenConfig {

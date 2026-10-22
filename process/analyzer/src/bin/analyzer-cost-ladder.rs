@@ -1,11 +1,11 @@
-use analyzer_rs::config_env::load_dotenv;
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, Dataset};
-use analyzer_rs::harness::sweep::cost_ladder::{break_even_bps, frozen_candidates, scenarios};
-use analyzer_rs::harness::sweep::costs::CostScenario;
-use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetrics};
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::sampling::Candidate;
+use analyzer::config_env::load_dotenv;
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, Dataset};
+use analyzer::harness::sweep::cost_ladder::{break_even_bps, frozen_candidates, scenarios};
+use analyzer::harness::sweep::costs::CostScenario;
+use analyzer::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetrics};
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::sampling::Candidate;
 use clap::Parser;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -32,7 +32,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer-rs/experiments/cost-ladder")]
+    #[arg(long, default_value = "process/analyzer/experiments/cost-ladder")]
     out_dir: PathBuf,
 
     /// Reference time in milliseconds.
@@ -1064,6 +1064,7 @@ fn print_summary(reports: &[CandidateReport]) {
 
 fn main() -> Result<(), String> {
     load_dotenv();
+    share::logger::init_logger();
     let cli = Cli::parse();
 
     let symbols = parse_list(&cli.symbols);

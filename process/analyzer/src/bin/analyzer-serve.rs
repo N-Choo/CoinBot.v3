@@ -1,8 +1,8 @@
-use analyzer_rs::live::config::{strategy_from_env, LiveConfig};
-use analyzer_rs::live::grpc::{config_version, run_publisher, signal_ttl_ms, EngineClient};
-use analyzer_rs::live::sink::Sink;
-use analyzer_rs::live::supervisor::run_supervisor;
-use analyzer_rs::live::symbol_task::run_symbol_once;
+use analyzer::live::config::{strategy_from_env, LiveConfig};
+use analyzer::live::grpc::{config_version, run_publisher, signal_ttl_ms, EngineClient};
+use analyzer::live::sink::Sink;
+use analyzer::live::supervisor::run_supervisor;
+use analyzer::live::symbol_task::run_symbol_once;
 use std::collections::BTreeSet;
 use std::time::Duration;
 use tokio::sync::{mpsc, watch};
@@ -27,7 +27,8 @@ async fn shutdown_signal() -> std::io::Result<()> {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    analyzer_rs::live::config::load_dotenv();
+    analyzer::live::config::load_dotenv();
+    share::logger::init_logger();
     let cfg = LiveConfig::from_env()?;
     let strategy = strategy_from_env()?;
     cfg.validate_strategy(&strategy)?;
@@ -39,7 +40,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(symbols) if !symbols.is_empty() => symbols,
             Ok(_) => cfg.symbols.clone(),
             Err(error) => {
-                eprintln!("activation poll failed: {error}; using LIVE_SYMBOLS");
+                log::warn!("activation poll failed: {error}; using LIVE_SYMBOLS");
                 cfg.symbols.clone()
             }
         };
@@ -52,9 +53,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         for symbol in symbols {
             match run_symbol_once(&cfg, &strategy, &symbol, &sink).await {
                 Ok((window, emitted)) => {
-                    println!("once symbol={symbol} window={window} emitted={emitted}")
+                    log::info!("once symbol={symbol} window={window} emitted={emitted}")
                 }
-                Err(error) => eprintln!("once failed symbol={symbol}: {error}"),
+                Err(error) => log::error!("once failed symbol={symbol}: {error}"),
             }
         }
         return Ok(());
@@ -80,9 +81,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // once it returns. Let the publisher drain the queued signals before aborting it.
     match tokio::time::timeout(PUBLISHER_DRAIN_TIMEOUT, &mut publisher).await {
         Ok(Ok(())) => {}
-        Ok(Err(error)) => eprintln!("publisher join failed: {error}"),
+        Ok(Err(error)) => log::error!("publisher join failed: {error}"),
         Err(_) => {
-            eprintln!("publisher did not drain within {PUBLISHER_DRAIN_TIMEOUT:?}; aborting");
+            log::warn!("publisher did not drain within {PUBLISHER_DRAIN_TIMEOUT:?}; aborting");
             publisher.abort();
             let _ = publisher.await;
         }

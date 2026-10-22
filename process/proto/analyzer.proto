@@ -25,7 +25,7 @@ message Ack {
 }
 
 // Trade-engine : Server
-// strategy-analyzer : Client
+// analyzer : Client
 service EngineService {
   rpc GetActiveSymbols(Empty) returns (Symbols);
   rpc Publish(Signal) returns (Ack);

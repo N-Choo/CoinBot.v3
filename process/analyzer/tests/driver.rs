@@ -1,7 +1,7 @@
 mod common;
 
-use analyzer_rs::driver::{CandleDriver, DriverEvent};
-use analyzer_rs::strategy::config::Config;
+use analyzer::driver::{CandleDriver, DriverEvent};
+use analyzer::strategy::config::Config;
 
 #[test]
 fn driver_warms_up_and_emits_only_new_divergences() {

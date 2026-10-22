@@ -1,15 +1,15 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
-use analyzer_rs::harness::replay::ReplaySignal;
-use analyzer_rs::harness::sim::{simulate, SimSignal};
-use analyzer_rs::harness::sweep::execution::{
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::load_csv;
+use analyzer::harness::replay::ReplaySignal;
+use analyzer::harness::sim::{simulate, SimSignal};
+use analyzer::harness::sweep::execution::{
     evaluate_execution_config, simulate_execution, EntryMode, ExecModel, ExecOutcome,
 };
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::sampling;
-use analyzer_rs::strategy::types::{Candle, Direction, DivergenceKind, Signal};
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::sampling;
+use analyzer::strategy::types::{Candle, Direction, DivergenceKind, Signal};
 use rust_decimal::Decimal;
 use std::path::Path;
 

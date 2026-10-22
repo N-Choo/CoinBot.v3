@@ -1,7 +1,7 @@
 mod common;
 
-use analyzer_rs::strategy::generator::signals;
-use analyzer_rs::strategy::types::Direction;
+use analyzer::strategy::generator::signals;
+use analyzer::strategy::types::Direction;
 use common::{assert_opt_close_at, load_fixture};
 
 const TOLERANCE: f64 = 1e-9;

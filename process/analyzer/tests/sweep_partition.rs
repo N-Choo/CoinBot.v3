@@ -1,6 +1,6 @@
 #![cfg(feature = "harness")]
-use analyzer_rs::harness::sweep::partition::{chronological_splits, slice_with_warmup};
-use analyzer_rs::strategy::types::Candle;
+use analyzer::harness::sweep::partition::{chronological_splits, slice_with_warmup};
+use analyzer::strategy::types::Candle;
 use rust_decimal::Decimal;
 
 fn candles(n: usize) -> Vec<Candle> {

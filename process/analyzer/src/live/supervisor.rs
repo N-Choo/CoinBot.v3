@@ -37,11 +37,11 @@ pub async fn run_supervisor(
                     Ok(symbols) if !symbols.is_empty() => normalize_symbols(symbols),
                     Ok(_) => fallback.clone(),
                     Err(error) => {
-                        eprintln!("activation poll failed: {error}");
+                        log::warn!("activation poll failed: {error}");
                         if set.is_empty() && stops.is_empty() {
                             fallback.clone()
                         } else {
-                            eprintln!("keeping the current symbol set");
+                            log::warn!("keeping the current symbol set");
                             continue;
                         }
                     }
@@ -68,7 +68,7 @@ pub async fn run_supervisor(
         let _ = stop.send(true);
     }
     shutdown_workers(&mut set).await;
-    println!("supervisor stopped");
+    log::info!("supervisor stopped");
 }
 
 fn normalize_symbols(symbols: impl IntoIterator<Item = String>) -> BTreeSet<String> {
@@ -108,13 +108,13 @@ fn reconcile(
             .spawn(async move {
                 if let Err(error) = run_symbol(cfg, strategy, spawned.clone(), sink, stop_rx).await
                 {
-                    eprintln!("symbol={spawned} stopped: {error}");
+                    log::error!("symbol={spawned} stopped: {error}");
                 }
             })
             .id();
         sym_of.insert(id, symbol.clone());
         stops.insert(symbol.clone(), stop_tx);
-        println!("symbol={symbol} activated");
+        log::info!("symbol={symbol} activated");
     }
 
     for symbol in gone {
@@ -122,7 +122,7 @@ fn reconcile(
             let _ = stop.send(true);
         }
         stopping.insert(symbol.clone());
-        println!("symbol={symbol} stopping");
+        log::info!("symbol={symbol} stopping");
     }
 }
 
@@ -167,18 +167,18 @@ fn reap(
         Err(error) => (error.id(), Some(error)),
     };
     let Some(symbol) = sym_of.remove(&id) else {
-        eprintln!("task {id:?} ended without a symbol mapping");
+        log::warn!("task {id:?} ended without a symbol mapping");
         return;
     };
     stops.remove(&symbol);
     stopping.remove(&symbol);
     failed_until.insert(symbol.clone(), now + REPLACEMENT_BACKOFF);
     match failure {
-        Some(error) => eprintln!(
+        Some(error) => log::error!(
             "symbol={symbol} task ended abnormally: {error}; retry in {}s",
             REPLACEMENT_BACKOFF.as_secs()
         ),
-        None => eprintln!(
+        None => log::warn!(
             "symbol={symbol} task ended; retry in {}s",
             REPLACEMENT_BACKOFF.as_secs()
         ),
@@ -191,7 +191,7 @@ async fn shutdown_workers(set: &mut JoinSet<()>) {
     })
     .await;
     if drained.is_err() {
-        eprintln!("worker shutdown timed out; aborting stragglers");
+        log::warn!("worker shutdown timed out; aborting stragglers");
         set.abort_all();
         while set.join_next().await.is_some() {}
     }

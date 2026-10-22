@@ -1,7 +1,7 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::harness::sim::{simulate, SimSignal};
-use analyzer_rs::strategy::types::{Candle, Direction, DivergenceKind, Signal};
+use analyzer::harness::sim::{simulate, SimSignal};
+use analyzer::strategy::types::{Candle, Direction, DivergenceKind, Signal};
 use rust_decimal::Decimal;
 
 fn d(value: i64) -> Decimal {
@@ -127,7 +127,7 @@ fn funds_limit_concurrent_positions_and_release_on_next_candle() {
 
 #[test]
 fn summary_stats_use_realized_pnl() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 101, 106, 100, 105),
@@ -241,7 +241,7 @@ fn released_funds_fill_the_next_signal_instead_of_skipping() {
 
 #[test]
 fn summary_reports_exact_risk_and_exposure_metrics() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 100, 101, 99, 100),
@@ -271,7 +271,7 @@ fn summary_reports_exact_risk_and_exposure_metrics() {
 
 #[test]
 fn exposure_counts_open_positions_from_last_index() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 100, 101, 99, 100),
@@ -296,7 +296,7 @@ fn exposure_counts_open_positions_from_last_index() {
 
 #[test]
 fn max_drawdown_percentage_uses_the_peak_at_the_worst_drop() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 100, 151, 99, 150), // win +250, peak 1250
@@ -385,7 +385,7 @@ fn risk_reward_uses_the_fill_and_is_none_after_a_gap() {
 
 #[test]
 fn win_rate_counts_breakeven_trades_in_the_denominator() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 100, 101, 99, 100), // fill win
@@ -479,7 +479,7 @@ fn account_series_with_nonzero_warmup_window() {
 
 #[test]
 fn exit_classification_and_avg_risk_reward() {
-    use analyzer_rs::harness::stats::summarize;
+    use analyzer::harness::stats::summarize;
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         candle(1, 101, 106, 100, 105), // TP

@@ -1,7 +1,7 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::harness::sweep::costs::{net_open_pnl, net_trade_pnl, CostScenario};
-use analyzer_rs::strategy::types::Direction;
+use analyzer::harness::sweep::costs::{net_open_pnl, net_trade_pnl, CostScenario};
+use analyzer::strategy::types::Direction;
 use rust_decimal::Decimal;
 
 fn d(value: i64) -> Decimal {

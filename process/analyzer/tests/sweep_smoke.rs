@@ -1,23 +1,23 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
-use analyzer_rs::harness::sweep::costs::CostScenario;
-use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool};
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
-use analyzer_rs::harness::sweep::report::{
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::load_csv;
+use analyzer::harness::sweep::costs::CostScenario;
+use analyzer::harness::sweep::evaluate::{evaluate_config, pool};
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
+use analyzer::harness::sweep::report::{
     write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
     DatasetSummary, SplitSummary, SweepResults,
 };
-use analyzer_rs::harness::sweep::sampling;
+use analyzer::harness::sweep::sampling;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 fn temp_dir() -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("analyzer-rs-sweep-smoke-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("analyzer-sweep-smoke-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).expect("temp dir");
     dir
@@ -158,8 +158,7 @@ fn baseline_sweep_writes_all_artifacts() {
         )],
         baseline_config: BaselineConfig::from_candidate(&baseline),
         baseline: baseline.clone(),
-        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
-            .to_string(),
+        baseline_source: "pinned study baseline; matches process/analyzer/.env values".to_string(),
         outcomes,
         selections,
         errors: Vec::new(),

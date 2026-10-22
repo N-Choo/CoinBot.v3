@@ -1,9 +1,9 @@
 mod common;
 
-use analyzer_rs::strategy::divergence::detect;
-use analyzer_rs::strategy::indicators::atr::atr;
-use analyzer_rs::strategy::indicators::rsi::rsi;
-use analyzer_rs::strategy::indicators::sma::sma;
+use analyzer::strategy::divergence::detect;
+use analyzer::strategy::indicators::atr::atr;
+use analyzer::strategy::indicators::rsi::rsi;
+use analyzer::strategy::indicators::sma::sma;
 use common::{assert_opt_close_at, load_fixture};
 
 const TOLERANCE: f64 = 1e-9;

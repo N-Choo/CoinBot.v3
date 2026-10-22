@@ -1,13 +1,13 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::driver::{CandleDriver, DriverEvent, SuppressReason};
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, Dataset};
-use analyzer_rs::harness::replay::{build_replay, ReplayEvent};
-use analyzer_rs::identity::{config_version, signal_id};
-use analyzer_rs::strategy::config::Config;
-use analyzer_rs::strategy::indicators::rsi::rsi;
-use analyzer_rs::strategy::types::Signal;
+use analyzer::driver::{CandleDriver, DriverEvent, SuppressReason};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, Dataset};
+use analyzer::harness::replay::{build_replay, ReplayEvent};
+use analyzer::identity::{config_version, signal_id};
+use analyzer::strategy::config::Config;
+use analyzer::strategy::indicators::rsi::rsi;
+use analyzer::strategy::types::Signal;
 
 fn fixture(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))

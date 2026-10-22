@@ -11,7 +11,7 @@ pub enum Sink {
 impl Sink {
     pub fn publish(&self, signal: Signal) {
         match self {
-            Sink::Log => println!(
+            Sink::Log => log::info!(
                 "SIGNAL symbol={} action={:?} entry={} sl={} tp={} reason={} age={}c",
                 signal.ticker,
                 signal.action,
@@ -23,7 +23,7 @@ impl Sink {
             ),
             Sink::Channel(tx) => {
                 if tx.try_send(signal).is_err() {
-                    eprintln!("signal queue full/closed; dropped");
+                    log::warn!("signal queue full/closed; dropped");
                 }
             }
             Sink::Collect(buffer) => buffer

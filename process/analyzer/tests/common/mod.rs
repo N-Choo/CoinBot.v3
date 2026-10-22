@@ -2,8 +2,8 @@
 // one binary (for example `signals` in signal_parity) look dead to the other.
 #![allow(dead_code)]
 
-use analyzer_rs::strategy::config::{decimal_from_str, Config};
-use analyzer_rs::strategy::types::Candle;
+use analyzer::strategy::config::{decimal_from_str, Config};
+use analyzer::strategy::types::Candle;
 use rust_decimal::Decimal;
 use serde::Deserialize;
 use std::path::PathBuf;

@@ -1088,15 +1088,15 @@ fn write_commands(out: &mut String, results: &SweepResults) {
         results.init_fund
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "cargo fmt -p analyzer-rs").expect("writing to String cannot fail");
-    writeln!(out, "cargo test -p analyzer-rs --features harness")
+    writeln!(out, "cargo fmt -p analyzer").expect("writing to String cannot fail");
+    writeln!(out, "cargo test -p analyzer --features harness")
         .expect("writing to String cannot fail");
     writeln!(
         out,
-        "cargo clippy -p analyzer-rs --features harness --all-targets --no-deps -- -D warnings"
+        "cargo clippy -p analyzer --features harness --all-targets --no-deps -- -D warnings"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "cargo build -p analyzer-rs --no-default-features")
+    writeln!(out, "cargo build -p analyzer --no-default-features")
         .expect("writing to String cannot fail");
     writeln!(out, "```").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");

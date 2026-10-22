@@ -96,7 +96,7 @@ pub async fn run_symbol(
     mut shutdown: watch::Receiver<bool>,
 ) -> Result<(), LiveError> {
     let (mut driver, mut cursor) = warm_driver(&cfg, &strategy, &symbol).await?;
-    println!(
+    log::info!(
         "warmed symbol={symbol} candles={} window={}",
         driver.window().len(),
         cfg.window
@@ -117,7 +117,7 @@ pub async fn run_symbol(
                     .map_err(|e| LiveError::Join(e.to_string()))?;
                 let candles = match result {
                     Ok(candles) => candles,
-                    Err(error) => { eprintln!("fetch failed symbol={symbol}: {error}"); continue; }
+                    Err(error) => { log::warn!("fetch failed symbol={symbol}: {error}"); continue; }
                 };
                 let now_ms = chrono::Utc::now().timestamp_millis();
                 let mut new_candles: Vec<Candle> = candles.into_iter()
@@ -130,11 +130,11 @@ pub async fn run_symbol(
                 if let Some(last) = new_candles.last() {
                     cursor = last.open_time_ms;
                 }
-                if emitted > 0 { println!("emitted {emitted} signal(s) symbol={symbol}"); }
+                if emitted > 0 { log::info!("emitted {emitted} signal(s) symbol={symbol}"); }
             }
         }
     }
-    println!("stopped symbol={symbol}");
+    log::info!("stopped symbol={symbol}");
     Ok(())
 }
 

@@ -1,7 +1,7 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, DatasetError};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, DatasetError};
 use rust_decimal::Decimal;
 
 fn write_csv(name: &str, rows: &[(&str, &str, &str, &str, &str)]) -> std::path::PathBuf {
@@ -17,7 +17,7 @@ fn write_csv(name: &str, rows: &[(&str, &str, &str, &str, &str)]) -> std::path::
 #[test]
 fn loads_and_hashes_a_valid_csv() {
     let path = write_csv(
-        "analyzer-rs-valid.csv",
+        "analyzer-valid.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700086400000", "101", "103", "100", "102"),
@@ -38,7 +38,7 @@ fn loads_and_hashes_a_valid_csv() {
 #[test]
 fn rejects_bad_ohlc() {
     let path = write_csv(
-        "analyzer-rs-bad-ohlc.csv",
+        "analyzer-bad-ohlc.csv",
         &[("1700000000000", "100", "99", "101", "100")],
     );
     let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
@@ -48,7 +48,7 @@ fn rejects_bad_ohlc() {
 #[test]
 fn rejects_a_timeframe_mismatch() {
     let path = write_csv(
-        "analyzer-rs-tf.csv",
+        "analyzer-tf.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700000900000", "101", "103", "100", "102"),
@@ -62,7 +62,7 @@ fn rejects_a_timeframe_mismatch() {
 #[test]
 fn counts_gaps_and_enforces_the_gap_limit() {
     let path = write_csv(
-        "analyzer-rs-gap.csv",
+        "analyzer-gap.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700000000000", "100", "102", "99", "101"),
@@ -75,7 +75,7 @@ fn counts_gaps_and_enforces_the_gap_limit() {
     ));
 
     let path = write_csv(
-        "analyzer-rs-gap2.csv",
+        "analyzer-gap2.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700259200000", "101", "103", "100", "102"),
@@ -99,7 +99,7 @@ fn loads_the_lowercase_synthetic_fixture() {
 #[test]
 fn rejects_a_reversed_csv() {
     let path = write_csv(
-        "analyzer-rs-reversed.csv",
+        "analyzer-reversed.csv",
         &[
             ("1700086400000", "101", "103", "100", "102"),
             ("1700000000000", "100", "102", "99", "101"),
@@ -113,7 +113,7 @@ fn rejects_a_reversed_csv() {
 fn drops_candles_at_the_close_boundary() {
     let third = 1700172800000i64;
     let path = write_csv(
-        "analyzer-rs-boundary.csv",
+        "analyzer-boundary.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700086400000", "101", "103", "100", "102"),
@@ -133,7 +133,7 @@ fn drops_candles_at_the_close_boundary() {
 #[test]
 fn enforces_the_warmup_window() {
     let path = write_csv(
-        "analyzer-rs-short.csv",
+        "analyzer-short.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700086400000", "101", "103", "100", "102"),
@@ -146,7 +146,7 @@ fn enforces_the_warmup_window() {
 
 #[test]
 fn reads_columns_by_header_name() {
-    let path = std::env::temp_dir().join("analyzer-rs-reordered.csv");
+    let path = std::env::temp_dir().join("analyzer-reordered.csv");
     std::fs::write(
         &path,
         "\u{feff} Volume ,High, open_time_ms , Low ,Close,Open\n\
@@ -167,14 +167,14 @@ fn reads_columns_by_header_name() {
 #[test]
 fn hashes_ignore_decimal_scale_but_not_values() {
     let scaled = write_csv(
-        "analyzer-rs-hash-scale-a.csv",
+        "analyzer-hash-scale-a.csv",
         &[
             ("1700000000000", "100.0", "102.00", "99.000", "101.0"),
             ("1700086400000", "101.00", "103.0", "100.000", "102.00"),
         ],
     );
     let plain = write_csv(
-        "analyzer-rs-hash-scale-b.csv",
+        "analyzer-hash-scale-b.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700086400000", "101", "103", "100", "102"),
@@ -188,7 +188,7 @@ fn hashes_ignore_decimal_scale_but_not_values() {
     );
 
     let changed = write_csv(
-        "analyzer-rs-hash-changed.csv",
+        "analyzer-hash-changed.csv",
         &[
             ("1700000000000", "100", "102", "99", "101"),
             ("1700086400000", "101", "103", "100", "102.5"),
@@ -204,7 +204,7 @@ fn hashes_ignore_decimal_scale_but_not_values() {
 #[test]
 fn rejects_non_positive_prices() {
     let path = write_csv(
-        "analyzer-rs-non-positive.csv",
+        "analyzer-non-positive.csv",
         &[("1700000000000", "0", "102", "99", "101")],
     );
     let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();
@@ -217,7 +217,7 @@ fn rejects_non_positive_prices() {
 #[test]
 fn rejects_low_above_high() {
     let path = write_csv(
-        "analyzer-rs-low-high.csv",
+        "analyzer-low-high.csv",
         &[("1700000000000", "100", "101", "102", "100")],
     );
     let error = load_csv("TEST-USDT", &path, Timeframe::D1, i64::MAX, 0, 0, 0, 0).unwrap_err();

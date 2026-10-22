@@ -1,11 +1,11 @@
 #![cfg(feature = "live")]
 
-use analyzer_rs::driver::CandleDriver;
-use analyzer_rs::live::config::{LiveConfig, LiveConfigError};
-use analyzer_rs::live::sink::Sink;
-use analyzer_rs::live::symbol_task::process_batch;
-use analyzer_rs::strategy::config::Config;
-use analyzer_rs::strategy::types::Signal;
+use analyzer::driver::CandleDriver;
+use analyzer::live::config::{LiveConfig, LiveConfigError};
+use analyzer::live::sink::Sink;
+use analyzer::live::symbol_task::process_batch;
+use analyzer::strategy::config::Config;
+use analyzer::strategy::types::Signal;
 
 mod common;
 

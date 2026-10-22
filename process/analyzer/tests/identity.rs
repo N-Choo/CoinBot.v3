@@ -1,6 +1,6 @@
-use analyzer_rs::identity::{config_version, signal_id};
-use analyzer_rs::strategy::config::Config;
-use analyzer_rs::strategy::types::{Direction, DivergenceKind, Signal};
+use analyzer::identity::{config_version, signal_id};
+use analyzer::strategy::config::Config;
+use analyzer::strategy::types::{Direction, DivergenceKind, Signal};
 use rust_decimal::Decimal;
 
 fn sample() -> Signal {

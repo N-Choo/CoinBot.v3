@@ -1,12 +1,12 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::harness::sweep::evaluate::PartitionMetrics;
-use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Selection, Thresholds};
-use analyzer_rs::harness::sweep::report::{
+use analyzer::harness::sweep::evaluate::PartitionMetrics;
+use analyzer::harness::sweep::ranking::{rank, CandidateOutcome, Selection, Thresholds};
+use analyzer::harness::sweep::report::{
     write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
     DatasetSummary, SweepResults,
 };
-use analyzer_rs::harness::sweep::sampling::{self, Candidate};
+use analyzer::harness::sweep::sampling::{self, Candidate};
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -438,8 +438,7 @@ fn sample_results() -> SweepResults {
         splits: Vec::new(),
         baseline_config: BaselineConfig::from_candidate(&sampling::baseline()),
         baseline: sampling::baseline(),
-        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
-            .to_string(),
+        baseline_source: "pinned study baseline; matches process/analyzer/.env values".to_string(),
         outcomes,
         selections,
         errors: Vec::new(),

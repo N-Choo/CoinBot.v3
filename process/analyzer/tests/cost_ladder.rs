@@ -1,6 +1,6 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::harness::sweep::cost_ladder::{break_even_bps, frozen_candidates, scenarios};
+use analyzer::harness::sweep::cost_ladder::{break_even_bps, frozen_candidates, scenarios};
 use rust_decimal::Decimal;
 
 fn d(value: i64, scale: u32) -> Decimal {

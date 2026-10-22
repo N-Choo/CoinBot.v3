@@ -1,11 +1,11 @@
 #![cfg(feature = "harness")]
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
-use analyzer_rs::harness::sweep::data::{
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::load_csv;
+use analyzer::harness::sweep::data::{
     cache_matches, dedup_and_sort, fetch_range_with, load_with_cache, missing_candles, provenance,
     read_cache, write_cache, write_provenance, DatasetProvenance,
 };
-use analyzer_rs::strategy::types::Candle;
+use analyzer::strategy::types::Candle;
 use rust_decimal::Decimal;
 
 fn c(t: i64) -> Candle {
@@ -20,10 +20,8 @@ fn c(t: i64) -> Candle {
 }
 
 fn temp_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!(
-        "analyzer-rs-sweep-data-{}-{name}",
-        std::process::id()
-    ));
+    let dir =
+        std::env::temp_dir().join(format!("analyzer-sweep-data-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     dir
 }

@@ -1,13 +1,11 @@
-use analyzer_rs::config_env::{
-    env_string, load_dotenv, parse_optional_usize_str, strategy_from_env,
-};
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{fetch_dataset, load_csv, Dataset};
-use analyzer_rs::harness::replay::build_replay;
-use analyzer_rs::harness::report::{build_payload, write_report, PayloadInput};
-use analyzer_rs::harness::sim::{simulate, SimSignal};
-use analyzer_rs::harness::stats::summarize;
-use analyzer_rs::identity;
+use analyzer::config_env::{env_string, load_dotenv, parse_optional_usize_str, strategy_from_env};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{fetch_dataset, load_csv, Dataset};
+use analyzer::harness::replay::build_replay;
+use analyzer::harness::report::{build_payload, write_report, PayloadInput};
+use analyzer::harness::sim::{simulate, SimSignal};
+use analyzer::harness::stats::summarize;
+use analyzer::identity;
 use clap::Parser;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -27,7 +25,7 @@ struct Cli {
     #[arg(long)]
     init_fund: Option<i64>,
     /// HTML report output path.
-    #[arg(long, default_value = "process/analyzer-rs/out/replay.html")]
+    #[arg(long, default_value = "process/analyzer/out/replay.html")]
     out: PathBuf,
     /// Offline CSV: SYMBOL=path (repeatable).
     #[arg(long = "data")]
@@ -105,6 +103,7 @@ fn resolve_symbols(
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     load_dotenv();
+    share::logger::init_logger();
     let cli = Cli::parse();
     let strategy = strategy_from_env()?;
     let timeframe_name = cli

@@ -1,5 +1,5 @@
 [package]
-name = "analyzer-rs"
+name = "analyzer"
 version = "0.1.0"
 edition = "2021"
 
@@ -11,6 +11,8 @@ grpc = ["live", "dep:tonic", "dep:prost"]
 harness = ["exchange", "dep:clap", "dep:csv"]
 
 [dependencies]
+share = { path = "../../lib/share" }
+log.workspace = true
 rust_decimal = { version = "1", features = ["serde-with-str"] }
 serde = { version = "1", features = ["derive"] }
 thiserror = "2"

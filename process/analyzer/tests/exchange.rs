@@ -1,7 +1,7 @@
 #![cfg(feature = "exchange")]
 
-use analyzer_rs::exchange::kucoin::{kline_window, parse_klines};
-use analyzer_rs::exchange::timeframes::Timeframe;
+use analyzer::exchange::kucoin::{kline_window, parse_klines};
+use analyzer::exchange::timeframes::Timeframe;
 
 #[test]
 fn kline_window_uses_the_as_of_cutoff() {

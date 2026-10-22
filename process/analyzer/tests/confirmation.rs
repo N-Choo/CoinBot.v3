@@ -1,25 +1,25 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::load_csv;
-use analyzer_rs::harness::sweep::confirmation::{decide, evaluate_full_period};
-use analyzer_rs::harness::sweep::data::{verify_dataset_quality, DatasetProvenance};
-use analyzer_rs::harness::sweep::evaluate::PartitionMetrics;
-use analyzer_rs::harness::sweep::execution::{EntryMode, ExecPartition};
-use analyzer_rs::harness::sweep::freeze::{self, DecisionRule};
-use analyzer_rs::harness::sweep::sampling;
-use analyzer_rs::strategy::types::Candle;
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::load_csv;
+use analyzer::harness::sweep::confirmation::{decide, evaluate_full_period};
+use analyzer::harness::sweep::data::{verify_dataset_quality, DatasetProvenance};
+use analyzer::harness::sweep::evaluate::PartitionMetrics;
+use analyzer::harness::sweep::execution::{EntryMode, ExecPartition};
+use analyzer::harness::sweep::freeze::{self, DecisionRule};
+use analyzer::harness::sweep::sampling;
+use analyzer::strategy::types::Candle;
 use rust_decimal::prelude::ToPrimitive;
 use rust_decimal::Decimal;
 use std::path::{Path, PathBuf};
 
 fn repo_root() -> PathBuf {
-    // `CARGO_MANIFEST_DIR` is `process/analyzer-rs`.
+    // `CARGO_MANIFEST_DIR` is `process/analyzer`.
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
 fn lock_path() -> PathBuf {
-    repo_root().join("freeze/confirmation-lock.json")
+    repo_root().join("process/analyzer/freeze/confirmation-lock.json")
 }
 
 fn empty_partition() -> ExecPartition {

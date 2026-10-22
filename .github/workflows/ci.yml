@@ -2,14 +2,13 @@ name: Full-Stack CI
 
 on:
   push:
-    branches: [main, "feature/**", "FEAT/**", "feat/**"]
+    branches: [main, "feature/**", "FEAT/**", "feat/**", "fix/**", "chore/**"]
   pull_request:
     branches: [main]
 
 jobs:
   # --- Backend Checks ---
-  # The Rust matrix is an **architecture** matrix (x86_64 vs arm64), not an OS matrix: it exists
-  # so the cross-platform golden-hash check (replay_equivalence) compares on both architectures.
+  # The Rust matrix is an **architecture** matrix (x86_64 vs arm64), not an OS matrix.
   backend-test:
     name: Rust (Server, ${{ matrix.arch }})
     strategy:
@@ -36,24 +35,12 @@ jobs:
         run: make fmt
       - name: Clippy (Linter)
         run: make clippy
-      - name: Strategy core purity + feature builds
-        run: make strategy-check
-      - name: Strategy golden hash (cross-platform)
-        run: cargo test -p strategy-analyzer --features harness --test replay_equivalence
-      - name: Setup Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-          cache: pip
-          cache-dependency-path: process/analyzer/requirements.txt
-      - name: Install analyzer test deps
-        run: pip install -r process/analyzer/requirements.txt pytest
       - name: Run Tests
         run: make test
-      - name: Analyzer-rs core + parity
-        run: make analyzer-rs-check
-      - name: Analyzer-rs no-default-features build
-        run: cargo build -p analyzer-rs --no-default-features
+      - name: Analyzer core + parity
+        run: make analyzer-check
+      - name: Analyzer no-default-features build
+        run: cargo build -p analyzer --no-default-features
 
   # --- Frontend Checks ---
   frontend-test:
@@ -116,8 +103,8 @@ jobs:
       - name: Build & push analyzer
         uses: docker/build-push-action@v5
         with:
-          context: ./process/analyzer
-          file: ./process/analyzer/Dockerfile
+          context: .
+          file: process/analyzer/Dockerfile
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
@@ -156,11 +143,25 @@ jobs:
           done
           echo "ERROR: Backend failed to start within 60 seconds"
           exit 1
+      - name: Verify all services are running
+        run: |
+          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod analyzer-prod frontend-prod"
+          running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+            --profile prod ps --status running --services | sort)
+          echo "$running"
+          missing=0
+          for svc in $expected; do
+            echo "$running" | grep -qx "$svc" || { echo "ERROR: $svc is not running"; missing=1; }
+          done
+          if [ "$missing" -ne 0 ]; then
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
+            exit 1
+          fi
       - name: Run smoke tests
         run: BASE_URL=http://localhost:8080 make test-api
       - name: Collect logs on failure
         if: failure()
-        run: docker compose logs --tail=200
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
       - name: Cleanup
         if: always()
         run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down

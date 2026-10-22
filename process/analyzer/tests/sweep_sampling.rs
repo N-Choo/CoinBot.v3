@@ -1,5 +1,5 @@
 #![cfg(feature = "harness")]
-use analyzer_rs::harness::sweep::sampling::{generate, Candidate, SEED_DEFAULT};
+use analyzer::harness::sweep::sampling::{generate, Candidate, SEED_DEFAULT};
 use std::collections::HashSet;
 
 #[test]

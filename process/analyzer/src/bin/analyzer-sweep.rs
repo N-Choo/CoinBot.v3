@@ -1,18 +1,18 @@
-use analyzer_rs::config_env::{env_string, load_dotenv};
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, Dataset};
-use analyzer_rs::harness::sweep::costs::CostScenario;
-use analyzer_rs::harness::sweep::data::{fetch_range, load_with_cache, write_cache};
-use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetrics};
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
-use analyzer_rs::harness::sweep::report::{
+use analyzer::config_env::{env_string, load_dotenv};
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, Dataset};
+use analyzer::harness::sweep::costs::CostScenario;
+use analyzer::harness::sweep::data::{fetch_range, load_with_cache, write_cache};
+use analyzer::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetrics};
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
+use analyzer::harness::sweep::report::{
     write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
     DatasetSummary, SplitSummary, SweepResults,
 };
-use analyzer_rs::harness::sweep::sampling::{self, Candidate};
-use analyzer_rs::identity;
-use analyzer_rs::strategy::types::Candle;
+use analyzer::harness::sweep::sampling::{self, Candidate};
+use analyzer::identity;
+use analyzer::strategy::types::Candle;
 use clap::Parser;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -55,7 +55,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer-rs/experiments/sweep")]
+    #[arg(long, default_value = "process/analyzer/experiments/sweep")]
     out_dir: PathBuf,
 
     /// Deterministic candidate-sampling seed.
@@ -366,6 +366,7 @@ fn print_summary(results: &SweepResults) {
 
 fn main() -> Result<(), String> {
     load_dotenv();
+    share::logger::init_logger();
     let cli = Cli::parse();
 
     let symbols = parse_list(&cli.symbols);

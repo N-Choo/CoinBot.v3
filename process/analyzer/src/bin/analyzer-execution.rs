@@ -1,12 +1,12 @@
-use analyzer_rs::config_env::load_dotenv;
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, Dataset};
-use analyzer_rs::harness::sweep::cost_ladder::frozen_candidates;
-use analyzer_rs::harness::sweep::execution::{
+use analyzer::config_env::load_dotenv;
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, Dataset};
+use analyzer::harness::sweep::cost_ladder::frozen_candidates;
+use analyzer::harness::sweep::execution::{
     evaluate_execution_config, pool_exec, EntryMode, ExecModel, ExecPartition,
 };
-use analyzer_rs::harness::sweep::partition::chronological_splits;
-use analyzer_rs::harness::sweep::sampling::Candidate;
+use analyzer::harness::sweep::partition::chronological_splits;
+use analyzer::harness::sweep::sampling::Candidate;
 use clap::Parser;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -34,7 +34,7 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer-rs/experiments/execution")]
+    #[arg(long, default_value = "process/analyzer/experiments/execution")]
     out_dir: PathBuf,
 
     /// Reference time in milliseconds.
@@ -1182,6 +1182,7 @@ fn print_summary(runs: &[CandidateRun], models: &[ExecModel], decision: &Decisio
 
 fn main() -> Result<(), String> {
     load_dotenv();
+    share::logger::init_logger();
     let cli = Cli::parse();
 
     let symbols = parse_list(&cli.symbols);

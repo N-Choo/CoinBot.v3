@@ -1,12 +1,12 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::exchange::timeframes::Timeframe;
-use analyzer_rs::harness::dataset::{load_csv, Provenance};
-use analyzer_rs::harness::replay::{build_replay, Replay};
-use analyzer_rs::harness::report::{build_payload, write_report, PayloadInput};
-use analyzer_rs::harness::sim::{simulate, SimOutcome, SimSignal};
-use analyzer_rs::harness::stats::{summarize, SimSummary};
-use analyzer_rs::strategy::config::Config;
+use analyzer::exchange::timeframes::Timeframe;
+use analyzer::harness::dataset::{load_csv, Provenance};
+use analyzer::harness::replay::{build_replay, Replay};
+use analyzer::harness::report::{build_payload, write_report, PayloadInput};
+use analyzer::harness::sim::{simulate, SimOutcome, SimSignal};
+use analyzer::harness::stats::{summarize, SimSummary};
+use analyzer::strategy::config::Config;
 use rust_decimal::Decimal;
 use serde_json::json;
 use std::path::PathBuf;

@@ -113,16 +113,19 @@ pub async fn run_publisher(
         let Some(proto) =
             to_proto_signal(&signal, seq, now_ms(), ttl_ms, &config_version, timeframe)
         else {
-            eprintln!("signal {} not representable as f64; dropped", signal.reason);
+            log::warn!("signal {} not representable as f64; dropped", signal.reason);
             continue;
         };
         seq += 1;
         match client.publish(proto.clone()).await {
-            Ok(ack) => println!(
+            Ok(ack) => log::info!(
                 "publish symbol={} action={} accepted={} reason={}",
-                proto.ticker, proto.action, ack.accepted, ack.reason
+                proto.ticker,
+                proto.action,
+                ack.accepted,
+                ack.reason
             ),
-            Err(error) => eprintln!("publish failed symbol={}: {error} (dropped)", proto.ticker),
+            Err(error) => log::error!("publish failed symbol={}: {error} (dropped)", proto.ticker),
         }
     }
 }
