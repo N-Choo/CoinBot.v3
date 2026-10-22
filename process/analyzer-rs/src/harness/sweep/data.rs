@@ -64,6 +64,56 @@ pub fn cache_matches(
         && provenance.settle_ms == settle_ms
 }
 
+/// Fails closed when a fetched series is not the exact, gapless requested range.
+///
+/// `end_ms` is exclusive, so the last closed candle may open one interval before it.
+pub fn verify_dataset_quality(
+    provenance: &DatasetProvenance,
+    candles: &[Candle],
+    start_ms: i64,
+    end_ms: i64,
+    timeframe: Timeframe,
+) -> Result<(), String> {
+    let symbol = &provenance.symbol;
+    if provenance.missing_candles > 0 {
+        return Err(format!(
+            "{symbol}: {} missing candles in the requested range",
+            provenance.missing_candles
+        ));
+    }
+    if provenance.duplicates_dropped > 0 {
+        return Err(format!(
+            "{symbol}: {} duplicate candles dropped",
+            provenance.duplicates_dropped
+        ));
+    }
+    if provenance.first_open_time_ms != start_ms {
+        return Err(format!(
+            "{symbol}: first open {} did not match the requested start {}",
+            provenance.first_open_time_ms, start_ms
+        ));
+    }
+    let required_last_open = end_ms - timeframe.millis();
+    if provenance.last_open_time_ms < required_last_open {
+        return Err(format!(
+            "{symbol}: last open {} was before the required {}",
+            provenance.last_open_time_ms, required_last_open
+        ));
+    }
+    for pair in candles.windows(2) {
+        let spacing = pair[1].open_time_ms - pair[0].open_time_ms;
+        if spacing != timeframe.millis() {
+            return Err(format!(
+                "{symbol}: candle spacing {} ms at {} was not the {} ms interval",
+                spacing,
+                pair[1].open_time_ms,
+                timeframe.millis()
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Counts the gaps between consecutive candles for `tf`.
 ///
 /// Assumes the candles are sorted by `open_time_ms` and aligned to `tf`;
