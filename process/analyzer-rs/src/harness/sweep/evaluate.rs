@@ -1,6 +1,9 @@
 use crate::harness::dataset::Dataset;
 use crate::harness::replay::build_replay;
-use crate::harness::sim::{simulate, unrealized_pnl, SimOutcome, SimSignal};
+use crate::harness::sim::{
+    simulate, unrealized_pnl, SimOutcome, SimSignal, REASON_GAP_SL, REASON_GAP_TP, REASON_SL,
+    REASON_TP,
+};
 use crate::harness::sweep::costs::{net_open_pnl, net_trade_pnl, CostScenario};
 use crate::harness::sweep::partition::{slice_with_warmup, Slice, Splits};
 use crate::strategy::config::Config;
@@ -27,6 +30,10 @@ pub struct PartitionMetrics {
     pub win_rate: Decimal,
     pub max_drawdown: Decimal,
     pub max_drawdown_pct: Decimal,
+    /// Sum of candle durations held by closed trades and open positions.
+    pub exposure_candles: usize,
+    /// Exposure as a percentage of replayed candles.
+    pub time_in_market_pct: Decimal,
     /// Standard error of the mean closed net PnL (`std / sqrt(n)`).
     pub expectancy_stderr: Decimal,
     pub tp_hits: usize,
@@ -40,11 +47,14 @@ pub struct PartitionMetrics {
 /// partition boundary are marked at `last_close` (the partition's final close) and also pay an
 /// estimated exit cost; the mark is included in the final net equity point for drawdown.
 ///
-/// A closed trade or open position with a zero `fill` cannot be costed; their gross value is used
-/// unchanged. Callers must ensure fills are positive in normal operation.
+/// A closed trade with a zero `fill` cannot be costed; its gross value is used unchanged.
+/// Zero fill is unreachable with validated data; if it occurs, an open position contributes
+/// nothing to PnL (its count is still reported).
 pub fn metrics_from_outcome(
     outcome: &SimOutcome,
     last_close: Decimal,
+    last_index: usize,
+    replayed_candles: usize,
     init_fund: Decimal,
     scenario: &CostScenario,
 ) -> PartitionMetrics {
@@ -60,6 +70,7 @@ pub fn metrics_from_outcome(
     let mut max_dd = Decimal::ZERO;
     let mut pnls: Vec<Decimal> = Vec::with_capacity(outcome.trades.len());
     let (mut tp, mut sl, mut other) = (0usize, 0usize, 0usize);
+    let mut exposure_candles = 0usize;
 
     for trade in &outcome.trades {
         let net = if trade.fill.is_zero() {
@@ -83,10 +94,11 @@ pub fn metrics_from_outcome(
             r_n += 1;
         }
         match trade.reason.as_str() {
-            "TP" | "gap_tp" => tp += 1,
-            "SL" | "gap_sl" => sl += 1,
+            REASON_TP | REASON_GAP_TP => tp += 1,
+            REASON_SL | REASON_GAP_SL => sl += 1,
             _ => other += 1,
         }
+        exposure_candles += trade.exit_index.saturating_sub(trade.entry_index);
         equity += net;
         if equity > peak {
             peak = equity;
@@ -113,6 +125,7 @@ pub fn metrics_from_outcome(
         );
         gross += gross_unrealized;
         open_net += net;
+        exposure_candles += last_index.saturating_sub(position.entry_index);
     }
 
     // The final open mark closes the net equity curve.
@@ -173,6 +186,11 @@ pub fn metrics_from_outcome(
     } else {
         max_dd / init_fund * Decimal::from(100)
     };
+    let time_in_market_pct = if replayed_candles == 0 {
+        Decimal::ZERO
+    } else {
+        Decimal::from(exposure_candles) / Decimal::from(replayed_candles) * Decimal::from(100)
+    };
 
     PartitionMetrics {
         trades: outcome.trades.len(),
@@ -187,6 +205,8 @@ pub fn metrics_from_outcome(
         win_rate,
         max_drawdown: max_dd,
         max_drawdown_pct,
+        exposure_candles,
+        time_in_market_pct,
         expectancy_stderr,
         tp_hits: tp,
         sl_hits: sl,
@@ -214,6 +234,9 @@ pub fn evaluate_config(
     init_fund: i64,
     scenarios: &[CostScenario],
 ) -> Result<ConfigResult, String> {
+    if window != cfg.window {
+        return Err(format!("window {window} != cfg.window {}", cfg.window));
+    }
     let mut partitions: Vec<(String, Slice)> = vec![
         ("train".into(), splits.train),
         ("validation".into(), splits.validation),
@@ -228,6 +251,10 @@ pub fn evaluate_config(
 
     for (name, slice) in partitions {
         let partition = slice_with_warmup(&dataset.candles, slice, window);
+        let eval_start = window.max(partition.partition_start);
+        let n_candles = partition.candles.len();
+        let last_index = n_candles.saturating_sub(1);
+        let replayed_candles = n_candles.saturating_sub(window);
         let slice_dataset = Dataset {
             symbol: dataset.symbol.clone(),
             candles: partition.candles,
@@ -235,11 +262,12 @@ pub fn evaluate_config(
         };
         let replay = build_replay(&slice_dataset, cfg, max_age)
             .map_err(|error| format!("partition {name}: {error}"))?;
-        let last_index = slice_dataset.candles.len();
         let sim_signals: Vec<SimSignal> = replay
             .signals
             .into_iter()
-            .filter(|signal| signal.candle_index >= window && signal.candle_index + 1 < last_index)
+            .filter(|signal| {
+                signal.candle_index >= eval_start && signal.candle_index + 1 < n_candles
+            })
             .map(|signal| SimSignal {
                 candle_index: signal.candle_index,
                 signal: signal.signal,
@@ -253,7 +281,14 @@ pub fn evaluate_config(
             .expect("partition always contains candles")
             .close;
         for scenario in scenarios {
-            let metrics = metrics_from_outcome(&outcome, last_close, init_fund_decimal, scenario);
+            let metrics = metrics_from_outcome(
+                &outcome,
+                last_close,
+                last_index,
+                replayed_candles,
+                init_fund_decimal,
+                scenario,
+            );
             result
                 .partitions
                 .entry(scenario.label.clone())

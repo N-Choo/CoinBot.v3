@@ -15,13 +15,13 @@ fn d(value: i64) -> Decimal {
     Decimal::from(value)
 }
 
-fn trade(pnl: i64, entry: usize, exit: usize) -> ClosedTrade {
+fn trade(pnl: i64, entry: usize, exit: usize, exit_price: i64) -> ClosedTrade {
     ClosedTrade {
         side: Direction::Long,
         signal_id: "s".into(),
         signal_entry: d(100),
         fill: d(100),
-        exit: d(100),
+        exit: d(exit_price),
         e: d(500),
         pnl: d(pnl),
         pnl_pct: Decimal::ZERO,
@@ -35,24 +35,55 @@ fn trade(pnl: i64, entry: usize, exit: usize) -> ClosedTrade {
 #[test]
 fn metrics_subtract_costs_and_compute_expectancy() {
     let outcome = SimOutcome {
-        trades: vec![trade(50, 1, 2), trade(-20, 3, 4)],
+        trades: vec![trade(50, 1, 2, 110), trade(-20, 3, 4, 100)],
         ..Default::default()
     };
-    let m = metrics_from_outcome(&outcome, d(100), d(1000), &CostScenario::base());
+    let m = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::base());
     assert_eq!(m.trades, 2);
-    assert_eq!(m.closed_net_pnl, d(50) + d(-20) - d(3));
-    assert_eq!(m.net_expectancy, (d(30) - d(3)) / d(2));
+    // Winner exits at 110: entry cost 0.75, exit cost 0.15% * 550 = 0.825.
+    // Loser exits at 100: entry cost 0.75, exit cost 0.75.
+    let costs = Decimal::new(1575, 3) + Decimal::new(1500, 3);
+    assert_eq!(m.closed_net_pnl, d(50) + d(-20) - costs);
+    assert_eq!(m.net_expectancy, (d(30) - costs) / d(2));
     assert_eq!(m.open_net_pnl, Decimal::ZERO);
 }
 
 #[test]
 fn max_drawdown_tracks_net_equity() {
     let outcome = SimOutcome {
-        trades: vec![trade(-100, 1, 2), trade(50, 3, 4)],
+        trades: vec![trade(-100, 1, 2, 100), trade(50, 3, 4, 100)],
         ..Default::default()
     };
-    let m = metrics_from_outcome(&outcome, d(100), d(1000), &CostScenario::base());
-    assert!(m.max_drawdown > d(0));
+    let m = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::base());
+    assert_eq!(m.max_drawdown, Decimal::new(1015, 1));
+    assert_eq!(m.max_drawdown_pct, Decimal::new(1015, 2));
+}
+
+#[test]
+fn stress_costs_reduce_profitable_net_pnl() {
+    let outcome = SimOutcome {
+        trades: vec![trade(50, 1, 2, 110)],
+        ..Default::default()
+    };
+    let base = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::base());
+    let stress = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::stress());
+    assert!(
+        base.closed_net_pnl > stress.closed_net_pnl,
+        "base {} should exceed stress {}",
+        base.closed_net_pnl,
+        stress.closed_net_pnl
+    );
+}
+
+#[test]
+fn exposure_counts_closed_trade_duration() {
+    let outcome = SimOutcome {
+        trades: vec![trade(50, 1, 2, 100)],
+        ..Default::default()
+    };
+    let m = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::base());
+    assert_eq!(m.exposure_candles, 1);
+    assert_eq!(m.time_in_market_pct, d(50));
 }
 
 #[test]
@@ -70,7 +101,7 @@ fn open_position_metrics_include_estimated_exit_cost() {
         }],
         ..Default::default()
     };
-    let m = metrics_from_outcome(&outcome, d(90), d(1000), &CostScenario::base());
+    let m = metrics_from_outcome(&outcome, d(90), 2, 2, d(1000), &CostScenario::base());
     // Gross unrealized at the mark: 500 * (90 - 100) / 100 = -50.
     let gross_unrealized = d(-50);
     assert_eq!(m.open_at_end, 1);
@@ -114,6 +145,9 @@ fn evaluate_config_produces_all_partitions_for_both_scenarios() {
 
     assert!(result.partitions.contains_key("base"));
     assert!(result.partitions.contains_key("stress"));
+    let base_validation = &result.partitions["base"]["validation"];
+    let stress_validation = &result.partitions["stress"]["validation"];
+    assert_ne!(base_validation.net_pnl, stress_validation.net_pnl);
     for scenario in ["base", "stress"] {
         let partitions = result
             .partitions
