@@ -196,6 +196,8 @@ fn load_symbol(
         missing_candles: data_provenance.missing_candles,
         duplicates_dropped: data_provenance.duplicates_dropped,
         pages: data_provenance.pages,
+        fetched_at_ms: Some(data_provenance.fetched_at_ms),
+        settle_ms: data_provenance.settle_ms,
         content_sha256: dataset.provenance.content_sha256.clone(),
     };
     Ok((dataset, summary))
@@ -588,8 +590,7 @@ fn main() -> Result<(), String> {
         splits,
         baseline_config: BaselineConfig::from_candidate(&baseline),
         baseline,
-        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
-            .to_string(),
+        baseline_source: "pinned per screening design decision 5; not read from .env".to_string(),
         outcomes: outcomes_by_timeframe,
         selections,
         errors,

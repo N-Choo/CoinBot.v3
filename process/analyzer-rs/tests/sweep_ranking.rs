@@ -431,6 +431,8 @@ fn sample_results() -> SweepResults {
             missing_candles: 0,
             duplicates_dropped: 0,
             pages: 1,
+            fetched_at_ms: None,
+            settle_ms: 5_000,
             content_sha256: "0".repeat(64),
         }],
         splits: Vec::new(),

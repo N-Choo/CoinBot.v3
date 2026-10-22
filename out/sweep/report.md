@@ -18,7 +18,7 @@ Provisional screening results. This report does not claim profitability.
 
 ## 1b. Baseline configuration
 
-Source: pinned study baseline; matches process/analyzer-rs/.env values (`baseline`: RSI 14/o5 age 12 SMA on (20) SL 1.5x TP 2.0x).
+Source: pinned per screening design decision 5; not read from .env (`baseline`: RSI 14/o5 age 12 SMA on (20) SL 1.5x TP 2.0x).
 
 | Parameter | Values | Role |
 |---|---|---|

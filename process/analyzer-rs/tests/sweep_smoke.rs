@@ -133,6 +133,8 @@ fn baseline_sweep_writes_all_artifacts() {
         missing_candles: provenance.gaps,
         duplicates_dropped: 0,
         pages: 1,
+        fetched_at_ms: provenance.fetched_at_ms,
+        settle_ms: 0,
         content_sha256: provenance.content_sha256.clone(),
     };
 

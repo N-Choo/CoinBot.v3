@@ -31,6 +31,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 12,
+      "fetched_at_ms": 1792665954027,
+      "settle_ms": 5000,
       "content_sha256": "80c8ce754a1cd8fa396db61e0892415766586de1dec45f27fe8efa84ce222912"
     },
     {
@@ -46,6 +48,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 12,
+      "fetched_at_ms": 1792665961593,
+      "settle_ms": 5000,
       "content_sha256": "49227307b5cbd514ee2e7c175793f2d081edc1fe1f3d7cb24c9f4c15f32a2bd2"
     },
     {
@@ -61,6 +65,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 12,
+      "fetched_at_ms": 1792665968763,
+      "settle_ms": 5000,
       "content_sha256": "cbb57eed5f416e7d4de8d8331522f1e8dd4947370ea9a0eb751159bbfbb11996"
     },
     {
@@ -76,6 +82,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 3,
+      "fetched_at_ms": 1792665971218,
+      "settle_ms": 5000,
       "content_sha256": "377d832f66e43de90b42dfe4af015f78d81f4d9f33940bedb0faf202180cb10f"
     },
     {
@@ -91,6 +99,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 3,
+      "fetched_at_ms": 1792665972963,
+      "settle_ms": 5000,
       "content_sha256": "28cc2368ac0cbea635e8c2df9977cd5544b8236538cdd93abc2f21f9e8ca4e3a"
     },
     {
@@ -106,6 +116,8 @@
       "missing_candles": 0,
       "duplicates_dropped": 0,
       "pages": 3,
+      "fetched_at_ms": 1792665974604,
+      "settle_ms": 5000,
       "content_sha256": "ea4c6bc7f78d543e6a61c7e575a840cb2da66a512147c7308bcfd7af0588b29e"
     }
   ],
@@ -542,7 +554,7 @@
     "atr_sl_multiplier": "1.5",
     "atr_tp_multiplier": "2.0"
   },
-  "baseline_source": "pinned study baseline; matches process/analyzer-rs/.env values",
+  "baseline_source": "pinned per screening design decision 5; not read from .env",
   "baseline_config": {
     "rsi_period": 14,
     "rsi_order": 5,

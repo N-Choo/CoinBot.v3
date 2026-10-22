@@ -5,7 +5,7 @@ use crate::harness::sweep::sampling::{Candidate, SMA_PERIOD};
 use crate::strategy::types::Candle;
 use rust_decimal::Decimal;
 use serde::Serialize;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::path::Path;
 
@@ -23,6 +23,8 @@ pub struct DatasetSummary {
     pub missing_candles: usize,
     pub duplicates_dropped: usize,
     pub pages: usize,
+    pub fetched_at_ms: Option<i64>,
+    pub settle_ms: i64,
     pub content_sha256: String,
 }
 
@@ -629,6 +631,9 @@ fn write_splits(out: &mut String, results: &SweepResults) {
     )
     .expect("writing to String cannot fail");
     writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+    // Track any fold validation that reaches into the holdout so the closing
+    // sentence is only emitted when the guarantee actually holds.
+    let mut overlapping: BTreeSet<(String, String)> = BTreeSet::new();
     for split in &results.splits {
         let holdout_start = split.holdout.start_index;
         let mut rows: Vec<(String, &SplitBoundary, bool)> = vec![
@@ -645,6 +650,7 @@ fn write_splits(out: &mut String, results: &SweepResults) {
                 if boundary.end_index <= holdout_start {
                     "yes"
                 } else {
+                    overlapping.insert((split.symbol.clone(), split.timeframe.clone()));
                     "NO"
                 }
             } else {
@@ -664,11 +670,24 @@ fn write_splits(out: &mut String, results: &SweepResults) {
         }
     }
     writeln!(out).expect("writing to String cannot fail");
-    writeln!(
-        out,
-        "Every `fold*_val` row above ends at or before the holdout start index, so no fold validation overlaps the holdout."
-    )
-    .expect("writing to String cannot fail");
+    if overlapping.is_empty() {
+        writeln!(
+            out,
+            "Every `fold*_val` row above ends at or before the holdout start index, so no fold validation overlaps the holdout."
+        )
+        .expect("writing to String cannot fail");
+    } else {
+        let offenders = overlapping
+            .iter()
+            .map(|(symbol, timeframe)| format!("{symbol} {timeframe}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        writeln!(
+            out,
+            "- Warning: fold validation overlaps the holdout for {offenders}; see the `NO` rows above."
+        )
+        .expect("writing to String cannot fail");
+    }
     writeln!(out).expect("writing to String cannot fail");
 }
 
