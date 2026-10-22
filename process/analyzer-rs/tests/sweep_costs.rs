@@ -1,6 +1,6 @@
 #![cfg(feature = "harness")]
 
-use analyzer_rs::harness::sweep::costs::{net_trade_pnl, CostScenario};
+use analyzer_rs::harness::sweep::costs::{net_open_pnl, net_trade_pnl, CostScenario};
 use analyzer_rs::strategy::types::Direction;
 use rust_decimal::Decimal;
 
@@ -29,4 +29,12 @@ fn short_loser_still_pays_both_sides() {
 fn stress_scenario_doubles_the_assumption() {
     assert_eq!(CostScenario::stress().per_side_rate(), Decimal::new(30, 4));
     assert_eq!(CostScenario::base().per_side_rate(), Decimal::new(15, 4));
+}
+
+#[test]
+fn open_position_cost_uses_entry_and_estimated_exit() {
+    let scenario = CostScenario::base();
+    // E=500, fill=100, mark=90, gross=-50
+    let net = net_open_pnl(&scenario, d(500), d(100), d(90), d(-50));
+    assert_eq!(net, d(-50) - Decimal::new(75, 2) - Decimal::new(675, 3));
 }
