@@ -991,7 +991,7 @@ fn write_markdown(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by funded orders only (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
+        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by executable orders (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");

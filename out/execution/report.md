@@ -149,7 +149,7 @@ Costs apply once per side on the actual notional; the metrics are already net of
 
 Pre-registered rule result: **execution rescues**. Selected model: `max_age=4` / `retest_2c_b2`.
 
-A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by funded orders only (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout.
+A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by executable orders (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout.
 
 | Candidate | Selected model | Validation net expectancy | Val SE | Val 95% CI | Validation exec fill rate | Validation capital fill rate | Validation skipped funds | Holdout net expectancy | Holdout SE | Holdout 95% CI | Holdout PF | Positive symbols | Rescues | Rationale |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|

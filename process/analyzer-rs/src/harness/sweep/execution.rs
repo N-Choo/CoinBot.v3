@@ -446,12 +446,19 @@ fn limit_fill(
                 return LimitFill::BeyondStop;
             }
             let threshold = limit * (Decimal::ONE - buffer);
-            if candle.open <= threshold {
-                LimitFill::Filled { price: candle.open }
+            let price = if candle.open <= threshold {
+                candle.open
             } else if candle.low <= threshold {
-                LimitFill::Filled { price: limit }
+                limit
             } else {
-                LimitFill::NoFill
+                return LimitFill::NoFill;
+            };
+            // An open through the limit can gap beyond the stop; reject the actual fill rather
+            // than booking a phantom profitable `gap_sl` on the next candle.
+            if price <= sl {
+                LimitFill::BeyondStop
+            } else {
+                LimitFill::Filled { price }
             }
         }
         Direction::Short => {
@@ -460,12 +467,19 @@ fn limit_fill(
                 return LimitFill::BeyondStop;
             }
             let threshold = limit * (Decimal::ONE + buffer);
-            if candle.open >= threshold {
-                LimitFill::Filled { price: candle.open }
+            let price = if candle.open >= threshold {
+                candle.open
             } else if candle.high >= threshold {
-                LimitFill::Filled { price: limit }
+                limit
             } else {
-                LimitFill::NoFill
+                return LimitFill::NoFill;
+            };
+            // An open through the limit can gap beyond the stop; reject the actual fill rather
+            // than booking a phantom profitable `gap_sl` on the next candle.
+            if price >= sl {
+                LimitFill::BeyondStop
+            } else {
+                LimitFill::Filled { price }
             }
         }
     }
@@ -473,8 +487,9 @@ fn limit_fill(
 
 /// True when the entry candle traded through the stop after the fill.
 ///
-/// The fill-price guard excludes open-through fills that already entered beyond their stop; in
-/// that case the stop cannot have occurred after the fill.
+/// Limit fills at or beyond the stop are rejected upstream as `LimitFill::BeyondStop`, so any
+/// fill reaching this point sits on the correct side of `sl`. The guard is retained as a
+/// defensive check against an invalid fill being passed in.
 fn stop_after_fill(side: Direction, sl: Decimal, fill: Decimal, candle: &Candle) -> bool {
     match side {
         Direction::Long => fill > sl && candle.low <= sl,

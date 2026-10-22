@@ -352,6 +352,67 @@ fn retest_limit_beyond_stop_is_rejected() {
 }
 
 #[test]
+fn long_gap_open_through_stop_is_rejected() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Opens at 90, through both the limit (100) and the stop (95).
+        candle(1, 90, 91, 89, 90),
+    ];
+    let signals = vec![replay_signal(0, Direction::Long, 100, 95, 120)];
+    let outcome = simulate_execution(&candles, &signals, 1000, 0, &limit_model(1, 2, 0));
+
+    assert!(outcome.trades.is_empty());
+    assert_eq!(outcome.filled, 0);
+    assert_eq!(outcome.invalid_levels, 1);
+}
+
+#[test]
+fn short_gap_open_through_stop_is_rejected() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Opens at 110, through both the limit (100) and the stop (105).
+        candle(1, 110, 111, 109, 110),
+    ];
+    let signals = vec![replay_signal(0, Direction::Short, 100, 105, 80)];
+    let outcome = simulate_execution(&candles, &signals, 1000, 0, &limit_model(1, 2, 0));
+
+    assert!(outcome.trades.is_empty());
+    assert_eq!(outcome.filled, 0);
+    assert_eq!(outcome.invalid_levels, 1);
+}
+
+#[test]
+fn gap_open_exactly_at_stop_is_rejected() {
+    let long_candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Opens exactly at the stop 95.
+        candle(1, 95, 96, 94, 95),
+    ];
+    let long_signals = vec![replay_signal(0, Direction::Long, 100, 95, 120)];
+    let long = simulate_execution(&long_candles, &long_signals, 1000, 0, &limit_model(1, 2, 0));
+    assert!(long.trades.is_empty());
+    assert_eq!(long.filled, 0);
+    assert_eq!(long.invalid_levels, 1);
+
+    let short_candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Opens exactly at the stop 105.
+        candle(1, 105, 106, 104, 105),
+    ];
+    let short_signals = vec![replay_signal(0, Direction::Short, 100, 105, 80)];
+    let short = simulate_execution(
+        &short_candles,
+        &short_signals,
+        1000,
+        0,
+        &limit_model(1, 2, 0),
+    );
+    assert!(short.trades.is_empty());
+    assert_eq!(short.filled, 0);
+    assert_eq!(short.invalid_levels, 1);
+}
+
+#[test]
 fn market_cost_is_15_bps_per_side() {
     let candles = vec![
         candle(0, 100, 101, 99, 100),
