@@ -1,134 +1,112 @@
-# Analyzer
+# analyzer
 
-RSI divergence signal engine + backtesting bench for CoinBot.v3.
+Rust RSI-divergence analyzer. **Status: closed — not profitable** (see
+[Research summary](#research-summary)).
 
-## Configuration
+The crate has three layers:
 
-All settings in `.env` at project root:
-
-```ini
-# ── Required ──────────────────────────────────
-DATABASE_URL=postgresql://user:pass@host:port/coinbot
-REDIS_URL=redis://redis:6379
-
-# ── KuCoin API Keys ───────────────────────────
-TRADE_ENGINE_KC_KEY=your_key
-TRADE_ENGINE_KC_SECRET=your_secret
-TRADE_ENGINE_KC_PASSPHRASE=your_passphrase
-
-# ── Analyzer ──────────────────────────────────
-KUCOIN_TIMEFRAME=1day
-SMA_ENABLED=true
-SMA_PERIOD=200
-RSI_PERIOD=14
-RSI_DIVERGENCE_ORDER=8
-
-# ── Risk Management ───────────────────────────
-ATR_SL_MULTIPLIER=2.8
-ATR_TP_MULTIPLIER=3.5
-ATR_SL_MAX_PCT=0.10
-
-# ── Benchmark ─────────────────────────────────
-BENCHMARK_DAYS=360
-BENCHMARK_INIT_FUND=1000
-BENCHMARK_FEE_RATE=0.001
-BENCHMARK_TICKERS=BTC-USDT,ETH-USDT,SOL-USDT
-```
-
-
-
-## Trading pipeline
-
-1. **Trade engine** loads active contracts from the DB
-2. Publishes ticker list to Redis `tickers:analyze`
-3. **Analyzer** fetches daily klines (KuCoin's shared spot/margin candles — margin exposes no separate price feed), computes RSI divergences
-4. Applies SMA trend filter (buy only above, sell only below)
-5. Sizes SL/TP via ATR with volatility scaling and max-loss cap
-6. Publishes the single most recent signal to `signals:result`
-
-## Signals
-
-| Type         | Condition                         | Direction |
-| ------------ | --------------------------------- | --------- |
-| Regular Bull | Price lower low, RSI higher low   | BUY       |
-| Regular Bear | Price higher high, RSI lower high | SELL      |
-| Hidden Bull  | Price higher low, RSI lower low   | BUY       |
-| Hidden Bear  | Price lower high, RSI higher high | SELL      |
-
-Only the most recent divergence per ticker is emitted. Confidence: 0.6 regular, 0.8 near overbought/oversold, 0.5 hidden.
-
-
-## Architecture
-
-```
-analyzer/
-├── main.py              # live mode — subscribes to Redis, emits signals
-├── config.py             # all settings via .env
-├── models/types.py       # Signal, OHLCV dataclasses
-├── indicators/
-│   ├── rsi.py            # calculate_rsi, detect_rsi_divergences
-│   ├── sma.py            # calculate_sma  (trend filter)
-│   └── atr.py            # calculate_atr  (SL/TP sizing)
-├── signals/generator.py  # generate_signals — picks the single most recent divergence
-├── fetchers/kucoin.py    # KuCoin REST klines
-├── publisher/redis_pub.py
-└── benchmark/
-    ├── engine.py         # pure trade-engine port + SimEngine
-    └── main.py           # replay fetch → signals → engine → ledger
-```
-
-## How it works
-
-**Live mode** — subscribes to `tickers:analyze` on Redis. For each ticker batch, fetches daily klines from KuCoin, runs RSI divergence detection, applies SMA trend filter + ATR-based SL/TP, and publishes the single most recent signal to `signals:result`.
-
-**Benchmark** — replays historical candles one at a time through a simulation of the **trade engine**. It fetches the history once, then for each candle evaluates `generate_signals` on the data available up to that point (causal) and feeds the signal to a simulated contract: a market entry of `init_fund / 2` whenever funds allow, and an exit when the candle's range reaches the signal's TP or SL (TP checked first). There is no time cap — a position is held until TP/SL, exactly as the live engine does. Fees are netted into realized PnL and losses are capped at the committed fund. The ledger reports closed round trips plus open positions and an account summary (win rate, realized/unrealized PnL, equity).
-
-## Quick start
+- a pure deterministic core (`src/strategy/`) with no I/O, no clock, and no floats;
+- an offline research harness (`src/harness/`, feature `harness`) for replay, sweeps, and
+  cost/execution modelling;
+- a live gRPC client (`src/live/`, features `live` + `grpc`) that pushes signals to
+  `trade-engine`.
 
 ```bash
-# Run backtest
-make benchmark
-
-# Run unit tests
-make benchmark-test   # benchmark only
-make analyzer-test    # everything
-
-# Live mode (needs Redis)
-make trade
+make analyzer-check   # fmt + clippy + tests (default, grpc, harness)
+make analyzer-replay  # replay candles into a self-contained HTML report
+make analyzer-sweep   # screen hyperparameter candidates and write artifacts
 ```
 
-## Bench output
+## Live gRPC client
 
-Each ticker prints a round-trip ledger — one row per closed trade — plus a
-footer for positions still open and an account summary:
+The trade engine is the gRPC server and the analyzer is the client. The analyzer polls
+`GetActiveSymbols` for activation, runs one task per active symbol, warms a rolling window,
+recomputes `signals()` on every newly closed candle, and publishes each new signal once via
+`Publish`. Each signal gets exactly one publish attempt; nothing is resent after a restart.
 
+The crate-local `.env` holds both strategy and live settings. It is loaded from the current
+directory first, then from `process/analyzer/.env` for `cargo run`. Start from the checked-in
+example:
+
+```bash
+cp process/analyzer/.env.example process/analyzer/.env
+# edit .env
+cargo run -p analyzer --features grpc --bin analyzer-serve
 ```
-  BTC-USDT
-──────────────────────────────────────────────────────────────────
-  entry      dir      entry$ exit            exit$    pnl%     pnl$  why
-  2026-05-12 BUY     $91,200 2026-05-19    $96,000   +5.0%   +50.00  TP
-  2026-05-28 BUY     $88,000 2026-06-02    $85,000  -10.0%   -50.00  SL
-  2026-06-10 BUY     $91,000 open                -       -        -  open
-──────────────────────────────────────────────────────────────────
-  open: 1  |  trades 2  wins 1/2 (50%)  realized +0.00  equity 1000.00 (init 1000)
-══════════════════════════════════════════════════════════════════
+
+Existing process environment variables take precedence over `.env` values. `LIVE_SYMBOLS` is
+only a fallback: it is used when the engine returns an empty active-symbol set (or when the
+engine is unreachable and no symbol tasks are running). `ANALYZER_ACTIVATION_POLL_MS` controls
+how often activation is refreshed (default 30000).
+
+`ANALYZER_ONCE=1` runs one closed-candle scan per symbol using the engine's active symbols (or
+`LIVE_SYMBOLS` as the fallback), logs the signals, and exits:
+
+```bash
+ANALYZER_ONCE=1 \
+GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
+LIVE_SYMBOLS=BTC-USDT KUCOIN_TIMEFRAME=15min \
+cargo run -p analyzer --features grpc --bin analyzer-serve
 ```
 
-`why` is `TP` or `SL` on closed rows, and `open` on rows that are still open at
-the end of data (they are never force-closed and are counted in the `open:`
-footer); the summary reports win rate, realized PnL, and equity.
+## Replay report
 
-## Core rules
+`analyzer-replay` replays closed candles through the same signal engine and trade simulator used
+by the parity tests, then writes a self-contained HTML report (no external CSS, JS, or network
+references). Fees and slippage are excluded: the output is a signal/execution replay, not a
+profitability claim.
 
-| Signal type  | Condition                                        |
-| ------------ | ------------------------------------------------ |
-| Regular Bull | Price lower low, RSI higher low                  |
-| Regular Bear | Price higher high, RSI lower high                |
-| Hidden Bull  | Price higher low, RSI lower low (continuation)   |
-| Hidden Bear  | Price lower high, RSI higher high (continuation) |
+By default it fetches live candles from KuCoin. `--data SYMBOL=path` is the
+deterministic/offline override: for any symbol listed in `--data`, the local CSV is used instead
+of calling KuCoin, while missing symbols are still fetched live.
 
-Regular divergences get 0.6–0.8 confidence (boosted near oversold/overbought). Hidden get 0.5.
+```bash
+cargo run -p analyzer --features harness --bin analyzer-replay -- \
+  --symbol BTC-USDT --timeframe 15min --limit 500 \
+  --out process/analyzer/out/replay.html
 
-**SMA filter** — when enabled, buy signals only if price > SMA (uptrend), sell only if price < SMA (downtrend).
+# Offline / reproducible: fixed fixtures, cutoff, and report timestamp.
+cargo run -p analyzer --features harness --bin analyzer-replay -- \
+  --timeframe 1day --as-of 1800000000000 \
+  --data BTC-USDT=tests/fixtures/btc_usdt_1day.csv \
+  --out /tmp/replay-btc.html
+```
 
-**ATR scaling** — SL and TP are sized as multiples of ATR. If ATR% exceeds `ATR_PCT_HIGH`, the multipliers are scaled up by `ATR_HIGH_ADJUST` to handle volatile coins. SL is also clamped at `ATR_SL_MAX_PCT` as an absolute floor.
+Run from `process/analyzer` so relative fixture paths resolve; from the workspace root use
+`process/analyzer/tests/fixtures/...` instead.
+
+### Options
+
+- `--symbol SYMBOL` (repeatable) selects symbols explicitly. When omitted, the `--data` symbols
+  are used; if there are none, `BENCHMARK_TICKERS` is used.
+- `--data SYMBOL=path` loads a CSV for that symbol instead of calling KuCoin. Entries are
+  trimmed and deduplicated by symbol.
+- `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `15min`.
+- `--limit` (default 500) is the fetch request size. Offline `--data` replays every closed row.
+- `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`; must be `> 0`.
+- `--as-of` is the reference time in ms (default now). For network runs it sets the fetch cutoff;
+  for all runs it filters by the closed-candle boundary. Pass a fixed value for reproducibility.
+- `--generated-at` overrides the report timestamp.
+- `--max-gap-candles` (default 0, must be `>= 0`) rejects datasets with larger gaps.
+- `--out` defaults to `process/analyzer/out/replay.html`.
+
+If at least one symbol succeeds the report is written and the process exits `0`; partial failures
+are recorded in the report. If all symbols fail the process exits non-zero and writes nothing.
+
+The remaining strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `PRICE_DIFF_THRESHOLD`,
+`ANALYZER_WINDOW_CANDLES`, `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES`) come from the same `.env`; see
+`.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint and `ANALYZER_CANDLE_SETTLE_MS`
+controls the closed-candle boundary (default `5000`).
+
+## Research summary
+
+The strategy was evaluated on BTC/ETH/SOL with chronological validation/holdout splits and
+realistic costs. The pre-registered one-shot confirmation failed, so the strategy is closed.
+Full artifacts live under `experiments/`.
+
+| Experiment                                             | Scope                                                                     | Result                                                                                                                                 |
+| ------------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| [Sweep](experiments/sweep/report.md)                   | 648-point grid sampled to 30 candidates, 1hour + 4hour, base/stress costs | **Insufficient evidence** — no candidate cleared validation on every timeframe.                                                        |
+| [Cost ladder](experiments/cost-ladder/report.md)       | 4hour, 0–30 bps/side                                                      | Holdout gross edge exists but sits below realistic costs; best break-even **6.86 bps/side**. No viable path without execution changes. |
+| [Execution modelling](experiments/execution/report.md) | market vs limit/retest entries                                            | Nominal rescue for `max_age=4` + `retest_2c_b2`, but holdout edge is within noise and the holdout had been reused.                     |
+| [Fresh confirmation](experiments/confirm/report.md)    | Pre-registered one-shot, 4hour, 2022-11 → 2024-10                         | **Failed** — pooled net expectancy −2.15, PF 0.80, 0/3 symbols positive.                                                               |

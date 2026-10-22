@@ -1,7 +1,9 @@
 target/
+**/target/
 .git/
 .gitignore
 .env
+**/.env
 node_modules/
 react/node_modules/
 react/dist/
@@ -10,3 +12,9 @@ react/dist/
 LICENSE
 docs/
 system_architecture/
+lib/kucoin/
+graphify-out/
+.superpowers/
+.pytest_cache/
+**/__pycache__/
+**/*.pyc

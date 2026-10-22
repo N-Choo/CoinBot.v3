@@ -1,19 +1,24 @@
-PACKAGES = api-gateway share deposit trade-engine strategy-analyzer
+PACKAGES = api-gateway share deposit trade-engine analyzer
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade status seed seed-reset
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build logs logs-api-gateway restart test-api trade analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
 	@echo ""
 	@echo "Getting Started"
-	@echo "  make dev          Start all services (DB + Redis + API + worker + frontend)"
+	@echo "  make dev          Start all services (DB + Redis + API + worker + trade-engine + analyzer + frontend)"
 	@echo ""
 	@echo "Testing (starts Postgres + Redis automatically)"
 	@echo "  make test         Run all Rust tests"
 	@echo "  make frontend-test  Frontend tests only"
+	@echo "  make analyzer-check  Rust analyzer core: fmt + clippy + tests"
+	@echo "  make analyzer-test   Rust analyzer tests only"
 	@echo ""
 	@echo "Trading"
-	@echo "  make trade        Run trade-engine + Rust strategy-analyzer live (needs DB + creds)"
+	@echo "  make trade        Run trade-engine + Rust analyzer live (needs DB + creds)"
+	@echo "  make analyzer-replay  Replay signals into a self-contained HTML report (live KuCoin fetch by default; fees excluded)"
+	@echo "                        make analyzer-replay ARGS='--symbol BTC-USDT --timeframe 1day --limit 500'"
+	@echo "  make analyzer-sweep   Screen analyzer hyperparameter candidates and write sweep artifacts"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -23,7 +28,6 @@ help:
 	@echo "  make test-api     Run curl tests against the running API"
 	@echo ""
 	@echo "Production"
-	@echo "  make prod         Build + start all production services (detached)"
 	@echo "  make prod-build   Build production images without running"
 	@echo ""
 	@echo "Rust"
@@ -48,7 +52,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test strategy-check frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test analyzer-check frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -58,29 +62,36 @@ fmt-fix:
 
 clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
-	cargo clippy -p strategy-analyzer --all-features --no-deps -- -D warnings
 
 test:
 	@[ -f .env ] || cp .env.ci .env; \
 	 docker compose up -d postgres redis && \
 		sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)) && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test -p strategy-analyzer --all-features; \
+		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
 		docker compose stop redis postgres; \
 		exit $$rst
 
-# Purity gate for the deterministic core: no float arithmetic and no hash-map iteration
-# under src/strategy. The greps below are fast pre-filters that strip trailing `//` comments;
-# the authoritative check is the `syn` token-level test (tests/purity.rs), which still catches
-# a real `f64` on a line that carries a trailing comment and does not flag comments/strings.
-strategy-check:
-	@echo "checking strategy core purity..."
-	@! grep -RInE '\b(f32|f64)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(f32|f64)\b' || (echo "float type in core" && exit 1)
-	@! grep -RInE '\b(HashMap|HashSet)\b' process/strategy-analyzer/src/strategy --include='*.rs' | sed 's|//.*||' | grep -qE '\b(HashMap|HashSet)\b' || (echo "hash-map in core" && exit 1)
-	cargo test -p strategy-analyzer --no-default-features --test purity
-	cargo build -p strategy-analyzer --no-default-features
-	cargo build -p strategy-analyzer --all-features
+analyzer-check:
+	cargo fmt -p analyzer -- --check
+	cargo clippy -p analyzer --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer --features grpc --all-targets --no-deps -- -D warnings
+	cargo clippy -p analyzer --features harness --all-targets --no-deps -- -D warnings
+	cargo test -p analyzer
+	cargo test -p analyzer --features grpc
+	cargo test -p analyzer --features harness
+
+analyzer-test:
+	cargo clippy -p analyzer --features harness --all-targets --no-deps -- -D warnings
+	cargo test -p analyzer
+	cargo test -p analyzer --features grpc
+	cargo test -p analyzer --features harness
+
+analyzer-replay:
+	cargo run -p analyzer --features harness --bin analyzer-replay -- $(ARGS)
+
+analyzer-sweep:
+	cargo run -p analyzer --features harness --bin analyzer-sweep -- $(ARGS)
 
 frontend-install:
 	cd react && npm ci
@@ -109,17 +120,14 @@ status:
 	@docker compose ps 2>/dev/null
 
 restart:
-	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine strategy-analyzer)
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine analyzer)
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine strategy-analyzer frontend
+		docker compose up api_gateway deposit-worker trade-engine analyzer frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod strategy-analyzer-prod
-
-prod:
-	docker compose --profile prod up -d deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod strategy-analyzer-prod redis postgres
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer-prod
 
 logs:
 	docker compose logs -f
@@ -135,14 +143,14 @@ trade:
 		sleep 2 && \
 		(GRPC_ADDR=127.0.0.1:50051 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo run -p trade-engine & \
 		PID=$$!; sleep 5 && \
-		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT LIVE_CANDLE_INTERVAL=15min \
-		cargo run -p strategy-analyzer --features "harness live grpc" --bin serve -- live; st=$$?; \
+		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT KUCOIN_TIMEFRAME=15min \
+		cargo run -p analyzer --features "live grpc" --bin analyzer-serve; st=$$?; \
 		kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \
 		docker compose stop postgres
 
 proto:
-	cargo build -p common --timings
+	cargo build -p share --timings
 
 seed:
 	@PGPASSWORD=postgres psql -h 127.0.0.1 -U postgres -d coinbot -f scripts/seed-demo.sql

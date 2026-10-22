@@ -1,0 +1,63 @@
+{
+  "created_at": "2026-10-22T00:00:00Z",
+  "git_commit": "91e79e1",
+  "signal_generator_sha256": "f60e448fe3879798a3c4c7dd5921101fa6b6401b214e36637a9a2b17b8d6d07d",
+  "frozen_files": [
+    "process/analyzer/src/driver/candle_driver.rs",
+    "process/analyzer/src/driver/mod.rs",
+    "process/analyzer/src/harness/replay.rs",
+    "process/analyzer/src/harness/sim.rs",
+    "process/analyzer/src/harness/sweep/execution.rs",
+    "process/analyzer/src/strategy/config.rs",
+    "process/analyzer/src/strategy/decimal.rs",
+    "process/analyzer/src/strategy/divergence.rs",
+    "process/analyzer/src/strategy/error.rs",
+    "process/analyzer/src/strategy/generator.rs",
+    "process/analyzer/src/strategy/indicators/atr.rs",
+    "process/analyzer/src/strategy/indicators/mod.rs",
+    "process/analyzer/src/strategy/indicators/peaks.rs",
+    "process/analyzer/src/strategy/indicators/rsi.rs",
+    "process/analyzer/src/strategy/indicators/sma.rs",
+    "process/analyzer/src/strategy/mod.rs",
+    "process/analyzer/src/strategy/types.rs",
+    "process/analyzer/src/strategy/window.rs"
+  ],
+  "config": {
+    "rsi_period": 14,
+    "rsi_order": 5,
+    "max_age": 4,
+    "sma_enabled": true,
+    "sma_period": 20,
+    "atr_period": 14,
+    "atr_sl_multiplier": "1.5",
+    "atr_tp_multiplier": "2.0",
+    "price_diff_threshold": "0.05",
+    "atr_pct_high": "5.0",
+    "atr_high_adjust": "1.5",
+    "atr_sl_max_pct": "0.0",
+    "window": 100
+  },
+  "model": {
+    "name": "retest_2c_b2",
+    "entry": "limit",
+    "offset_bps": "25",
+    "valid_candles": 2,
+    "buffer_bps": "2",
+    "maker_bps": "2",
+    "taker_bps": "10",
+    "slip_bps": "5"
+  },
+  "dataset": {
+    "symbols": ["BTC-USDT", "ETH-USDT", "SOL-USDT"],
+    "timeframe": "4hour",
+    "as_of_ms": 1729555200000,
+    "months": 24,
+    "start_ms": 1667347200000
+  },
+  "decision_rule": {
+    "min_pooled_trades": 50,
+    "require_positive_net_expectancy": true,
+    "require_profit_factor_above": 1.0,
+    "min_positive_symbols": 2
+  }
+}

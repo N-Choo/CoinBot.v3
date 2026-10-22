@@ -37,7 +37,7 @@ flowchart TB
         GW["api_gateway"]
         DW["deposit-worker"]
         TE["trade-engine<br/>(gRPC server: EngineService)"]
-        SA["strategy-analyzer<br/>(supply and demand, 4H)"]
+        SA["analyzer<br/>(RSI divergence)<br/>[ Closed - not profitable ]"]
     end
 
     DB[("PostgreSQL")]
@@ -64,25 +64,25 @@ flowchart TB
     class UI,GW,DW,TE,SA,DB,RD,ETH,KC plain;
 ```
 
-| Process             | Role                                                                                       | Docs                                          |
-| ------------------- | ------------------------------------------------------------------------------------------ | --------------------------------------------- |
-| `api_gateway`       | HTTP API — auth, contract signing, deposit intake                                          | [README](process/api_gateway/README.md)       |
-| `deposit-worker`    | gRPC ticket + background deposit sweeper                                                   | [README](process/deposit-worker/README.md)    |
-| `trade-engine`      | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL. Also serves the gRPC `EngineService` that `strategy-analyzer` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)      |
-| `strategy-analyzer` | Supply-and-demand 4H strategy (Rust): a pure deterministic core, an offline backtest harness, and a live path. Runs one loop per symbol on KuCoin public market data and pushes entry signals to `trade-engine` over gRPC. Pulls its active symbol set from the engine, so it never binds a port. | [README](process/strategy-analyzer/README.md) |
-| `frontend`          | React SPA                                                                                  | [README](react/README.md)                     |
+| Process          | Role                                                                                                                                                                                                                                                                                                                        | Docs                                       |
+| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                           | [README](process/api_gateway/README.md)    |
+| `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                    | [README](process/deposit-worker/README.md) |
+| `trade-engine`   | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL. Also serves the gRPC `EngineService` that `analyzer` calls. Sole writer of order rows and contract funds (via its `ledger`).                                                                | [README](process/trade-engine/README.md)   |
+| `analyzer`       | **[ Closed - not profitable ]** RSI-divergence strategy (Rust): a pure deterministic core, an offline backtest harness, and a live path. Runs one loop per symbol on KuCoin public market data and pushes entry signals to `trade-engine` over gRPC. Pulls its active symbol set from the engine, so it never binds a port. | [README](process/analyzer/README.md)       |
+| `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                   | [README](react/README.md)                  |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`). **Redis** holds gateway sessions (DB 0) and login nonces (DB 1).
 
 ### Signal path
 
-`trade-engine` receives signals from `strategy-analyzer` over gRPC (`process/proto/analyzer.proto`). The analyzer pulls `GetActiveSymbols` every 30 s and pushes each signal with `Publish`, which the engine answers with an `Ack`. The link is configured with `GRPC_ADDR` on the engine (the bind address) and `GRPC_TRADE_ENGINE_ENDPOINT` on the analyzer (the engine URL).
+`trade-engine` receives signals from `analyzer` over gRPC (`process/proto/analyzer.proto`). The analyzer pulls `GetActiveSymbols` every 30 s and pushes each signal with `Publish`, which the engine answers with an `Ack`. The link is configured with `GRPC_ADDR` on the engine (the bind address) and `GRPC_TRADE_ENGINE_ENDPOINT` on the analyzer (the engine URL).
 
-Delivery is at-least-once: the analyzer retries until the engine acknowledges or the signal expires (60 s), and the engine deduplicates on `signal_id`. See the [strategy-analyzer README](process/strategy-analyzer/README.md) for the full live design.
+Each signal gets exactly one publish attempt; nothing is resent after a restart. The engine deduplicates on `signal_id`. See the [analyzer README](process/analyzer/README.md) for the full live design.
 
 ## Repository layout
 
-- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `strategy-analyzer`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/analyzer link).
+- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `analyzer`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/analyzer link).
 - `lib/share/`: shared Rust crate (config, DB models, Redis, RPC helpers).
 - `react/`: frontend SPA.
 - `docs/`, `scripts/`: project docs, demo seed data, and API smoke tests.
@@ -90,10 +90,8 @@ Delivery is at-least-once: the analyzer retries until the engine acknowledges or
 ## Quick start
 
 ```bash
-make dev     # Postgres + Redis + API + worker + trade-engine + frontend
+make dev     # Postgres + Redis + API + worker + trade-engine + analyzer + frontend
 make trade   # trade-engine + analyzer live (starts Postgres + Redis)
-make test    # Rust + Python tests
+make test    # Rust tests
 make ci      # full pipeline: fmt-fix, clippy, test, analyzer tests, frontend lint-fix, frontend tests, build
 ```
-
-The Rust `strategy-analyzer` has its own build, backtest and live-run instructions in its [README](process/strategy-analyzer/README.md).
