@@ -2,10 +2,7 @@ use analyzer_rs::config_env::{env_string, load_dotenv};
 use analyzer_rs::exchange::timeframes::Timeframe;
 use analyzer_rs::harness::dataset::{load_csv, Dataset};
 use analyzer_rs::harness::sweep::costs::CostScenario;
-use analyzer_rs::harness::sweep::data::{
-    fetch_range, provenance as sweep_provenance, read_cache, write_cache, write_provenance,
-    DatasetProvenance,
-};
+use analyzer_rs::harness::sweep::data::{fetch_range, load_with_cache, write_cache};
 use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetrics};
 use analyzer_rs::harness::sweep::partition::chronological_splits;
 use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
@@ -15,6 +12,7 @@ use analyzer_rs::harness::sweep::report::{
 };
 use analyzer_rs::harness::sweep::sampling::{self, Candidate};
 use analyzer_rs::identity;
+use analyzer_rs::strategy::types::Candle;
 use clap::Parser;
 use rust_decimal::Decimal;
 use std::collections::BTreeMap;
@@ -46,6 +44,11 @@ struct Cli {
     /// Reference time in milliseconds; defaults to now.
     #[arg(long, default_value_t = identity::now_ms())]
     as_of: i64,
+
+    /// Results timestamp in RFC 3339 form; defaults to now. Reproducible runs
+    /// should pass a fixed value so artifacts are byte-identical.
+    #[arg(long)]
+    generated_at: Option<String>,
 
     /// Candle cache directory.
     #[arg(long, default_value = "data/sweep")]
@@ -104,21 +107,49 @@ fn parse_list(value: &str) -> Vec<String> {
     out
 }
 
-fn cached_provenance(
-    cache_path: &Path,
+/// Matches `^[A-Z0-9]+-[A-Z0-9]+$` without pulling in a regex dependency.
+fn valid_symbol(symbol: &str) -> bool {
+    let mut parts = symbol.split('-');
+    let valid_part = |part: &str| {
+        !part.is_empty()
+            && part
+                .chars()
+                .all(|character| character.is_ascii_uppercase() || character.is_ascii_digit())
+    };
+    match (parts.next(), parts.next(), parts.next()) {
+        (Some(base), Some(quote), None) => valid_part(base) && valid_part(quote),
+        _ => false,
+    }
+}
+
+/// Loads filtered in-memory candles through the dataset validator using a
+/// short-lived temp file. `load_csv` takes a path, so this bridges the two.
+fn load_view_dataset(
     symbol: &str,
     timeframe: Timeframe,
-    start_ms: i64,
-    end_ms: i64,
-) -> Option<DatasetProvenance> {
-    let path = cache_path.with_extension("csv.provenance.json");
-    let text = std::fs::read_to_string(path).ok()?;
-    let provenance: DatasetProvenance = serde_json::from_str(&text).ok()?;
-    (provenance.symbol == symbol
-        && provenance.timeframe == timeframe.as_kucoin()
-        && provenance.requested_first_ms == start_ms
-        && provenance.requested_last_ms == end_ms)
-        .then_some(provenance)
+    as_of: i64,
+    settle_ms: i64,
+    candles: &[Candle],
+) -> Result<Dataset, String> {
+    let path = std::env::temp_dir().join(format!(
+        "analyzer-sweep-view-{}-{}-{}.csv",
+        std::process::id(),
+        symbol,
+        timeframe.as_kucoin()
+    ));
+    write_cache(&path, candles)?;
+    let result = load_csv(
+        symbol,
+        &path,
+        timeframe,
+        as_of,
+        settle_ms,
+        0,
+        WINDOW,
+        candles.len(),
+    );
+    let _ = std::fs::remove_file(&path);
+    result.map_err(|error| error.to_string())
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -133,36 +164,25 @@ fn load_symbol(
     refresh: bool,
 ) -> Result<(Dataset, DatasetSummary), String> {
     let cache_path = data_dir.join(format!("{symbol}_{}.csv", timeframe.as_kucoin()));
-    let (candles, data_provenance) = if cache_path.is_file() && !refresh {
-        let candles = read_cache(&cache_path)?;
-        let provenance = cached_provenance(&cache_path, symbol, timeframe, start_ms, as_of)
-            .unwrap_or_else(|| {
-                sweep_provenance(symbol, timeframe, start_ms, as_of, 0, &candles, 0)
-            });
-        (candles, provenance)
-    } else {
-        let (candles, pages, duplicates) = fetch_range(
-            base_url, symbol, timeframe, start_ms, as_of, settle_ms, as_of,
-        )?;
-        let provenance = sweep_provenance(
-            symbol, timeframe, start_ms, as_of, duplicates, &candles, pages,
-        );
-        write_cache(&cache_path, &candles)?;
-        write_provenance(&cache_path, &provenance)?;
-        (candles, provenance)
-    };
-
-    let dataset = load_csv(
-        symbol,
+    // Reuse is decided solely by provenance matching the requested range; any
+    // missing/mismatched provenance refetches even without `--refresh`.
+    let cached = load_with_cache(
         &cache_path,
+        symbol,
         timeframe,
+        start_ms,
         as_of,
+        refresh,
         settle_ms,
-        0,
         WINDOW,
-        candles.len(),
-    )
-    .map_err(|error| error.to_string())?;
+        || {
+            fetch_range(
+                base_url, symbol, timeframe, start_ms, as_of, settle_ms, as_of,
+            )
+        },
+    )?;
+    let data_provenance = cached.provenance;
+    let dataset = load_view_dataset(symbol, timeframe, as_of, settle_ms, &cached.candles)?;
     let summary = DatasetSummary {
         symbol: symbol.to_string(),
         timeframe: timeframe.as_kucoin().to_string(),
@@ -202,6 +222,7 @@ fn evaluate_candidate(
     datasets: &[Dataset],
     scenarios: &[CostScenario],
     init_fund: i64,
+    include_holdout: bool,
 ) -> Result<CandidateOutcome, String> {
     let cfg = candidate.to_config();
     let mut base_maps = Vec::with_capacity(datasets.len());
@@ -218,6 +239,7 @@ fn evaluate_candidate(
             WINDOW,
             init_fund,
             scenarios,
+            include_holdout,
         )
         .map_err(|error| {
             format!(
@@ -348,6 +370,34 @@ fn main() -> Result<(), String> {
     if symbols.is_empty() {
         return Err("--symbols resolved to an empty list".into());
     }
+    for symbol in &symbols {
+        if !valid_symbol(symbol) {
+            return Err(format!(
+                "invalid symbol {symbol:?}; expected BASE-QUOTE matching ^[A-Z0-9]+-[A-Z0-9]+$"
+            ));
+        }
+    }
+    if cli.months == 0 {
+        return Err("--months must be at least 1".into());
+    }
+    if cli.init_fund <= 0 {
+        return Err("--init-fund must be positive".into());
+    }
+    for (name, value) in [
+        ("--fee-bps", cli.fee_bps),
+        ("--slip-bps", cli.slip_bps),
+        ("--stress-fee-bps", cli.stress_fee_bps),
+        ("--stress-slip-bps", cli.stress_slip_bps),
+    ] {
+        if value > 1000 {
+            return Err(format!("{name} must be at most 1000"));
+        }
+    }
+    if let Some(value) = &cli.generated_at {
+        chrono::DateTime::parse_from_rfc3339(value).map_err(|_| {
+            format!("invalid --generated-at {value:?}; expected an RFC 3339 timestamp")
+        })?;
+    }
 
     let mut timeframes: Vec<(String, Timeframe)> = Vec::new();
     for name in parse_list(&cli.timeframes) {
@@ -380,6 +430,9 @@ fn main() -> Result<(), String> {
             None => DEFAULT_SETTLE_MS,
         },
     };
+    if settle_ms < 0 {
+        return Err("--settle-ms must be non-negative".into());
+    }
     let start_ms = cli
         .as_of
         .saturating_sub(i64::from(cli.months).saturating_mul(MONTH_MS));
@@ -443,6 +496,8 @@ fn main() -> Result<(), String> {
 
         let mut outcomes = Vec::new();
         if let Some(timeframe_datasets) = loaded.get(timeframe_name) {
+            // First pass scores every candidate without the holdout so it cannot
+            // influence the validation-based ranking.
             for candidate in &candidates {
                 match evaluate_candidate(
                     timeframe_name,
@@ -450,6 +505,7 @@ fn main() -> Result<(), String> {
                     timeframe_datasets,
                     &scenarios,
                     cli.init_fund,
+                    false,
                 ) {
                     Ok(outcome) => outcomes.push(outcome),
                     Err(error) => {
@@ -459,12 +515,58 @@ fn main() -> Result<(), String> {
             }
         }
         outcomes.sort_by(|a, b| a.label.cmp(&b.label));
-        selections.insert(timeframe_name.clone(), rank(&outcomes, &thresholds));
+        let selection = rank(&outcomes, &thresholds);
+
+        // Only the frozen set (baseline + selected winners) is scored on the
+        // one-shot holdout partition, and those outcomes replace the first pass.
+        if let Some(timeframe_datasets) = loaded.get(timeframe_name) {
+            let mut frozen = vec!["baseline".to_string()];
+            for winner in &selection.winners {
+                if !frozen.contains(winner) {
+                    frozen.push(winner.clone());
+                }
+            }
+            for label in frozen {
+                let Some(candidate) = candidates.iter().find(|candidate| candidate.label == label)
+                else {
+                    errors.push(format!(
+                        "{timeframe_name}: frozen candidate {label} was not generated"
+                    ));
+                    continue;
+                };
+                match evaluate_candidate(
+                    timeframe_name,
+                    candidate,
+                    timeframe_datasets,
+                    &scenarios,
+                    cli.init_fund,
+                    true,
+                ) {
+                    Ok(outcome) => {
+                        if let Some(slot) =
+                            outcomes.iter_mut().find(|existing| existing.label == label)
+                        {
+                            *slot = outcome;
+                        } else {
+                            outcomes.push(outcome);
+                        }
+                    }
+                    Err(error) => {
+                        errors.push(format!("{timeframe_name} {label}: {error}"));
+                    }
+                }
+            }
+        }
+        outcomes.sort_by(|a, b| a.label.cmp(&b.label));
+        selections.insert(timeframe_name.clone(), selection);
         outcomes_by_timeframe.insert(timeframe_name.clone(), outcomes);
     }
 
     let results = SweepResults {
-        generated_at: chrono::Utc::now().to_rfc3339(),
+        generated_at: cli
+            .generated_at
+            .clone()
+            .unwrap_or_else(|| chrono::Utc::now().to_rfc3339()),
         as_of_ms: cli.as_of,
         months: cli.months,
         seed: cli.seed,

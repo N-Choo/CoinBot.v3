@@ -90,14 +90,16 @@ const LEADERBOARD_COLUMNS: [&str; 31] = [
     "stress_validation_expectancy",
 ];
 
-const BASE_PARTITIONS: [&str; 6] = [
-    "train",
-    "validation",
-    "holdout",
-    "fold1_val",
-    "fold2_val",
-    "fold3_val",
-];
+/// Partitions every candidate is scored on. The holdout is scored only for
+/// frozen candidates and is therefore optional in the artifacts.
+const REQUIRED_BASE_PARTITIONS: [&str; 5] =
+    ["train", "validation", "fold1_val", "fold2_val", "fold3_val"];
+
+const HOLDOUT_PARTITION: &str = "holdout";
+
+/// Placeholder for a partition that was not evaluated (for example a holdout
+/// on a non-frozen candidate).
+const MISSING_METRIC: &str = "—";
 
 fn ensure_parent(path: &Path) -> Result<(), String> {
     if let Some(parent) = path
@@ -124,12 +126,13 @@ fn sorted_results(results: &SweepResults) -> SweepResults {
     sorted
 }
 
-/// Reports every base partition that an outcome is missing, so CSV output never silently drops rows.
+/// Reports every required base partition that an outcome is missing, so CSV
+/// output never silently drops rows. The holdout is optional (frozen only).
 fn missing_base_partitions(results: &SweepResults) -> Vec<String> {
     let mut missing = Vec::new();
     for (timeframe, outcomes) in &results.outcomes {
         for outcome in outcomes {
-            for partition in BASE_PARTITIONS {
+            for partition in REQUIRED_BASE_PARTITIONS {
                 if !outcome.base.contains_key(partition) {
                     missing.push(format!("{timeframe}/{}: {partition}", outcome.label));
                 }
@@ -139,11 +142,12 @@ fn missing_base_partitions(results: &SweepResults) -> Vec<String> {
     missing
 }
 
-/// Writes one row per timeframe × candidate × symbol-or-pooled × base partition.
+/// Writes one row per timeframe × candidate × symbol-or-pooled × required base partition.
 ///
-/// Per-symbol rows carry the validation partition only, because that is the per-symbol partition
-/// recorded by [`CandidateOutcome`]. Stress columns are populated for the pooled validation row;
-/// they are empty where no stress metrics were recorded.
+/// The holdout row is emitted only when it was evaluated (frozen candidates). Per-symbol rows
+/// carry the validation partition only, because that is the per-symbol partition recorded by
+/// [`CandidateOutcome`]. Stress columns are populated for the pooled validation row; they are
+/// empty where no stress metrics were recorded.
 pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), String> {
     let sorted = sorted_results(results);
     let results = &sorted;
@@ -163,7 +167,7 @@ pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), 
 
     for (timeframe, outcomes) in &results.outcomes {
         for outcome in outcomes {
-            for partition in BASE_PARTITIONS {
+            for partition in REQUIRED_BASE_PARTITIONS {
                 // The pooled validation row is `base["validation"]`, the same partition used for
                 // selection. Missing partitions are rejected above rather than silently skipped.
                 let metrics = outcome.base.get(partition).ok_or_else(|| {
@@ -185,6 +189,20 @@ pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), 
                     metrics,
                     partition,
                     stress,
+                )?;
+            }
+
+            // The holdout is scored only for frozen candidates; when absent, no
+            // row is written rather than failing the whole artifact.
+            if let Some(metrics) = outcome.base.get(HOLDOUT_PARTITION) {
+                write_leaderboard_row(
+                    &mut writer,
+                    timeframe,
+                    "pooled",
+                    outcome,
+                    metrics,
+                    HOLDOUT_PARTITION,
+                    None,
                 )?;
             }
 
@@ -419,7 +437,7 @@ fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "Validation is the selection partition; holdout is the one-shot evaluation partition and is never used for selection. Metrics are pooled across symbols under base costs."
+        "Validation is the selection partition; holdout is the one-shot evaluation partition, scored only for the baseline and selected winners, and is never used for selection. Metrics are pooled across symbols under base costs. A missing holdout is shown as —."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -453,10 +471,10 @@ fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
                     metrics.max_drawdown_pct.to_string(),
                 ),
                 None => (
-                    "-".to_string(),
-                    "-".to_string(),
-                    "-".to_string(),
-                    "-".to_string(),
+                    MISSING_METRIC.to_string(),
+                    MISSING_METRIC.to_string(),
+                    MISSING_METRIC.to_string(),
+                    MISSING_METRIC.to_string(),
                 ),
             };
             writeln!(
@@ -842,7 +860,7 @@ fn recommendation(results: &SweepResults) -> (&'static str, String) {
     } else if has_non_baseline_winner {
         (
             "larger experiment",
-            "At least one non-baseline candidate met the validation criteria, but the selection is validation-only and provisional. Run a larger experiment that also evaluates the holdout and the stress scenario before considering any default change. This is not a profitability claim.".to_string(),
+            "At least one non-baseline candidate met the validation criteria, but the selection is validation-only and provisional. Confirm the frozen holdout result and the stress scenario in a larger experiment before considering any default change. This is not a profitability claim.".to_string(),
         )
     } else {
         (

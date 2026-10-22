@@ -2,8 +2,8 @@
 use analyzer_rs::exchange::timeframes::Timeframe;
 use analyzer_rs::harness::dataset::load_csv;
 use analyzer_rs::harness::sweep::data::{
-    dedup_and_sort, fetch_range_with, missing_candles, provenance, read_cache, write_cache,
-    write_provenance, DatasetProvenance,
+    cache_matches, dedup_and_sort, fetch_range_with, load_with_cache, missing_candles, provenance,
+    read_cache, write_cache, write_provenance, DatasetProvenance,
 };
 use analyzer_rs::strategy::types::Candle;
 use rust_decimal::Decimal;
@@ -181,6 +181,62 @@ fn provenance_json_round_trips_next_to_the_cache() {
     assert_eq!(back.duplicates_dropped, p.duplicates_dropped);
     assert_eq!(back.requested_candles, p.requested_candles);
     assert_eq!(back.content_sha256, p.content_sha256);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_matches_only_the_requested_range_symbol_and_timeframe() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let p = provenance("BTC-USDT", tf, 0, 2 * step, 0, &[c(0), c(step)], 1);
+
+    assert!(cache_matches(&p, "BTC-USDT", tf, 0, 2 * step));
+    assert!(!cache_matches(&p, "BTC-USDT", tf, step, 3 * step));
+    assert!(!cache_matches(&p, "ETH-USDT", tf, 0, 2 * step));
+    assert!(!cache_matches(&p, "BTC-USDT", Timeframe::H4, 0, 2 * step));
+}
+
+#[test]
+fn cache_with_a_different_range_is_refetched() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let dir = temp_dir("range-mismatch");
+    let path = dir.join("BTC-USDT_1hour.csv");
+
+    // Range A cache is valid on its own terms.
+    let range_a: Vec<Candle> = (0..20).map(|index| c(index * step)).collect();
+    write_cache(&path, &range_a).unwrap();
+    write_provenance(
+        &path,
+        &provenance("BTC-USDT", tf, 0, 19 * step, 0, &range_a, 1),
+    )
+    .unwrap();
+
+    let start_b = 10 * step;
+    let end_b = 29 * step;
+    let range_b: Vec<Candle> = (10..30).map(|index| c(index * step)).collect();
+    let mut fetch_calls = 0;
+    let loaded = load_with_cache(&path, "BTC-USDT", tf, start_b, end_b, false, 0, 5, || {
+        fetch_calls += 1;
+        Ok((range_b.clone(), 1, 0))
+    })
+    .unwrap();
+
+    assert_eq!(
+        fetch_calls, 1,
+        "range B must refetch instead of reusing range A"
+    );
+    assert!(!loaded.used_cache);
+    assert_eq!(loaded.provenance.requested_first_ms, start_b);
+    assert_eq!(loaded.provenance.requested_last_ms, end_b);
+    assert_eq!(
+        loaded.candles.first().map(|candle| candle.open_time_ms),
+        Some(start_b)
+    );
+    assert_eq!(
+        loaded.candles.last().map(|candle| candle.open_time_ms),
+        Some(end_b)
+    );
     std::fs::remove_dir_all(&dir).unwrap();
 }
 

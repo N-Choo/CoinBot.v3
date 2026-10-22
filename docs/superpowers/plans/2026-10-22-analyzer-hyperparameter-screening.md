@@ -940,14 +940,16 @@ required-features = ["harness"]
 
 - [ ] **Step 2: Implement the CLI**
 
-Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--timeframes` (default `1hour,4hour`), `--months` (24), `--as-of` (now), `--data-dir` (`data/sweep`), `--out-dir` (`out/sweep`), `--seed` (20261022), `--fee-bps` (10), `--slip-bps` (5), `--stress-fee-bps` (20), `--stress-slip-bps` (10), `--init-fund` (1000), `--refresh`.
+Flags: `--symbols` (default `BTC-USDT,ETH-USDT,SOL-USDT`), `--timeframes` (default `1hour,4hour`), `--months` (24), `--as-of` (now), `--generated-at` (optional RFC 3339 override for reproducible artifacts; defaults to now), `--data-dir` (`data/sweep`), `--out-dir` (`out/sweep`), `--seed` (20261022), `--fee-bps` (10), `--slip-bps` (5), `--stress-fee-bps` (20), `--stress-slip-bps` (10), `--init-fund` (1000), `--refresh`.
+
+Reproducible runs should pass `--generated-at` so `results.json`, `report.md`, and `leaderboard.csv` are byte-identical across reruns.
 
 Orchestration:
-1. For each timeframe and symbol: compute `[as_of - months, as_of]`, reuse cache or `fetch_range`, write cache + provenance.
+1. For each timeframe and symbol: compute `[as_of - months, as_of]`, reuse the cache only when its provenance matches the requested symbol, timeframe, and range (otherwise refetch even without `--refresh`), retain only in-range candles, and validate a fetch through `load_csv` before committing it to the cache.
 2. `generate(seed)` once per timeframe (same candidates for both).
-3. For each timeframe × candidate × symbol: `evaluate_config`.
-4. Pool per candidate; `rank`; score holdout once for the frozen winners + baseline.
-5. Write `leaderboard.csv`, `results.json`, `report.md`; print a short summary and the artifact paths.
+3. First pass: for each timeframe × candidate × symbol, call `evaluate_config` with `include_holdout = false`; pool per candidate and `rank` on validation.
+4. Freeze baseline plus the selected winners and re-evaluate only those with `include_holdout = true`, replacing their outcomes. Non-frozen candidates never carry holdout metrics.
+5. Write `leaderboard.csv`, `results.json`, `report.md`; print a short summary and the artifact paths. Holdout rows/columns are omitted or rendered as `—` for non-frozen candidates.
 
 - [ ] **Step 3: Makefile target**
 
@@ -997,7 +999,7 @@ make analyzer-sweep ARGS="--as-of <MS> --out-dir out/sweep"
 
 - [ ] **Step 4: Validate artifacts**
 
-- `leaderboard.csv` has 60 rows (30 per timeframe) plus scenario columns.
+- `leaderboard.csv` has one row per timeframe × candidate × scored partition: `train`, `validation`, and `fold1_val`–`fold3_val` for every candidate (5 rows), `holdout` only for frozen candidates (baseline plus selected winners), plus one `validation` row per timeframe × candidate × symbol. For 30 candidates per timeframe, 3 symbols, and `F` frozen candidates, that is `30 × (5 + 3) + F` rows per timeframe (and twice that across two timeframes), not 60 rows. Stress columns are present on the pooled validation rows.
 - `results.json` records the seed, candidate list, dedup results, provenance, splits, and per-partition metrics.
 - `report.md` clearly separates validation (selection) from holdout (evaluation).
 

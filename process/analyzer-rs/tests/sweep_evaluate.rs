@@ -140,6 +140,7 @@ fn evaluate_config_produces_all_partitions_for_both_scenarios() {
         100,
         1000,
         &scenarios,
+        true,
     )
     .expect("evaluation runs");
 
@@ -181,5 +182,57 @@ fn evaluate_config_produces_all_partitions_for_both_scenarios() {
                 m.other_exits,
             );
         }
+    }
+}
+
+#[test]
+fn holdout_partition_is_omitted_unless_requested() {
+    let dataset = load_csv(
+        "SYN",
+        Path::new("tests/fixtures/synthetic_1day.csv"),
+        Timeframe::D1,
+        i64::MAX / 2,
+        0,
+        0,
+        100,
+        0,
+    )
+    .expect("fixture loads");
+    let splits = chronological_splits(dataset.candles.len());
+    let baseline = sampling::baseline();
+    let scenarios = [CostScenario::base(), CostScenario::stress()];
+
+    let without = evaluate_config(
+        &dataset,
+        &baseline.to_config(),
+        baseline.max_age,
+        &splits,
+        100,
+        1000,
+        &scenarios,
+        false,
+    )
+    .expect("first pass runs");
+    let with = evaluate_config(
+        &dataset,
+        &baseline.to_config(),
+        baseline.max_age,
+        &splits,
+        100,
+        1000,
+        &scenarios,
+        true,
+    )
+    .expect("frozen pass runs");
+
+    for scenario in ["base", "stress"] {
+        assert!(
+            !without.partitions[scenario].contains_key("holdout"),
+            "non-frozen {scenario} must not contain holdout"
+        );
+        assert!(
+            with.partitions[scenario].contains_key("holdout"),
+            "frozen {scenario} must contain holdout"
+        );
     }
 }

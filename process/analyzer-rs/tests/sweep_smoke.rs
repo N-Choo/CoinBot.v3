@@ -11,6 +11,8 @@ use analyzer_rs::harness::sweep::report::{
     SweepResults,
 };
 use analyzer_rs::harness::sweep::sampling;
+use rust_decimal::prelude::ToPrimitive;
+use rust_decimal::Decimal;
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
@@ -46,6 +48,7 @@ fn baseline_sweep_writes_all_artifacts() {
         100,
         1000,
         &scenarios,
+        true,
     )
     .expect("baseline evaluates");
 
@@ -59,6 +62,25 @@ fn baseline_sweep_writes_all_artifacts() {
         .get("stress")
         .expect("stress scenario")
         .clone();
+    for metrics in base.values().chain(stress.values()) {
+        // Decimals cannot represent NaN or infinity, but converting catches a
+        // nonsensical magnitude and every risk metric must be non-negative.
+        for value in [
+            metrics.net_expectancy,
+            metrics.net_expectancy_r,
+            metrics.max_drawdown,
+            metrics.max_drawdown_pct,
+        ] {
+            assert!(
+                value.to_f64().is_some_and(f64::is_finite),
+                "metric is not finite: {value}"
+            );
+        }
+        assert!(metrics.max_drawdown >= Decimal::ZERO);
+        assert!(metrics.max_drawdown_pct >= Decimal::ZERO);
+        assert!(metrics.win_rate >= Decimal::ZERO);
+        assert!(metrics.time_in_market_pct >= Decimal::ZERO);
+    }
     let validation = base
         .get("validation")
         .expect("validation partition")

@@ -267,8 +267,11 @@ pub fn pool(metrics: &[PartitionMetrics]) -> PartitionMetrics {
         Some(pooled.gross_profit / pooled.gross_loss.abs())
     };
 
-    let group_count = stderr_groups.len();
-    if pooled.trades > 0 && group_count > 0 && pooled.trades > group_count {
+    // Only groups with at least two trades contribute variance; including a
+    // single-trade group adds zero variance but still inflates the denominator.
+    let included_groups = stderr_groups.len();
+    let included_trades: usize = stderr_groups.iter().map(|(n, _)| *n).sum();
+    if included_trades > included_groups {
         // variance_i = (se_i * sqrt(n_i))^2. The square root only bridges the pooled variance
         // through f64; the result is a reporting statistic, not an accounting value.
         let numerator: f64 = stderr_groups
@@ -280,8 +283,8 @@ pub fn pool(metrics: &[PartitionMetrics]) -> PartitionMetrics {
                 (n - 1.0) * variance
             })
             .sum();
-        let pooled_variance = numerator / (pooled.trades - group_count) as f64;
-        let standard_error = (pooled_variance / pooled.trades as f64).sqrt();
+        let pooled_variance = numerator / (included_trades - included_groups) as f64;
+        let standard_error = (pooled_variance / included_trades as f64).sqrt();
         pooled.expectancy_stderr = Decimal::from_f64(standard_error).unwrap_or(Decimal::ZERO);
     }
 
@@ -298,7 +301,9 @@ pub struct ConfigResult {
 ///
 /// Each partition is a self-contained backtest: `window` warm-up candles immediately preceding
 /// the partition start, a fresh account seeded with `init_fund`, and only signals inside the
-/// evaluated range. Positions open at partition end are marked and dropped.
+/// evaluated range. Positions open at partition end are marked and dropped. The holdout is
+/// evaluated only when `include_holdout` is true so screening can freeze the selection first.
+#[allow(clippy::too_many_arguments)]
 pub fn evaluate_config(
     dataset: &Dataset,
     cfg: &Config,
@@ -307,6 +312,7 @@ pub fn evaluate_config(
     window: usize,
     init_fund: i64,
     scenarios: &[CostScenario],
+    include_holdout: bool,
 ) -> Result<ConfigResult, String> {
     if window != cfg.window {
         return Err(format!("window {window} != cfg.window {}", cfg.window));
@@ -314,8 +320,10 @@ pub fn evaluate_config(
     let mut partitions: Vec<(String, Slice)> = vec![
         ("train".into(), splits.train),
         ("validation".into(), splits.validation),
-        ("holdout".into(), splits.holdout),
     ];
+    if include_holdout {
+        partitions.push(("holdout".into(), splits.holdout));
+    }
     for (index, fold) in splits.folds.iter().enumerate() {
         partitions.push((format!("fold{}_val", index + 1), fold.val));
     }
@@ -448,6 +456,18 @@ mod tests {
         let expected = (16.5f64 / 10.0).sqrt();
         let actual = pooled.expectancy_stderr.to_f64().unwrap();
         assert!((actual - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pool_excludes_single_trade_groups_from_standard_error() {
+        // The single-trade group contributes zero variance, so it must not
+        // dilute the denominator either.
+        let single = partition(1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
+        let group = partition(4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+
+        let pooled = pool(&[single, group]);
+
+        assert_eq!(pooled.expectancy_stderr, Decimal::ONE);
     }
 
     #[test]
