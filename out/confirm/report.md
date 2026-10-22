@@ -11,6 +11,7 @@ Pre-registered one-shot confirmation. No tuning is permitted after this run.
 | Repository root | . |
 | Frozen commit | 91e79e1 |
 | Frozen-file SHA-256 (verified) | d3699b82fe34ec6277f877317637c0f81baf0194ee397fb7e3dd4d79c99bc80f |
+| Lock SHA-256 (verified) | b4c6e24d0e0c298b3c713d93e937af5dbc869bc6dc964af0611ef8083c849063 |
 | Lock created at | 2026-10-22T00:00:00Z |
 
 ## 2. Dataset
@@ -23,7 +24,7 @@ Pre-registered one-shot confirmation. No tuning is permitted after this run.
 | Data dir | data/confirm |
 | Base URL | https://api.kucoin.com |
 | Settle (ms) | 5000 |
-| Initial fund per symbol | 1000 |
+| Initial fund per symbol | 1000 (CLI-configurable; the decision is scale-invariant) |
 | Warm-up window | 100 |
 
 | Symbol | First open | Last open | Candles | Requested | Expected | Missing | Duplicates | Content SHA-256 | Cache |

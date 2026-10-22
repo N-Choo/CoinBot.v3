@@ -4,6 +4,13 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::Path;
 
+/// Independent digest of the committed lock file itself.
+///
+/// This makes the lock's config/model/dataset/decision rule tamper-evident even if the lock's own
+/// `signal_generator_sha256` is edited to match altered frozen files.
+pub const EXPECTED_LOCK_SHA256: &str =
+    "b4c6e24d0e0c298b3c713d93e937af5dbc869bc6dc964af0611ef8083c849063";
+
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FrozenConfig {
     pub rsi_period: usize,
@@ -155,5 +162,104 @@ pub fn verify(repo_root: &Path, lock: &FrozenLock) -> Result<(), String> {
             lock.signal_generator_sha256, actual
         ));
     }
+    Ok(())
+}
+
+/// Verifies the lock bytes against the independently committed digest.
+///
+/// Any edit to the lock file (including its config, model, dataset, decision rule, or stored
+/// frozen-file hash) changes the digest and aborts the run.
+pub fn verify_lock_digest(path: &Path) -> Result<(), String> {
+    let bytes = std::fs::read(path).map_err(|error| format!("{}: {error}", path.display()))?;
+    let actual = format!("{:x}", Sha256::digest(&bytes));
+    if actual != EXPECTED_LOCK_SHA256 {
+        return Err(format!(
+            "lock digest mismatch: expected {}, got {}",
+            EXPECTED_LOCK_SHA256, actual
+        ));
+    }
+    Ok(())
+}
+
+fn expect_value<T, U>(field: &str, actual: &T, expected: U) -> Result<(), String>
+where
+    T: PartialEq<U> + std::fmt::Debug,
+    U: std::fmt::Debug,
+{
+    if *actual != expected {
+        return Err(format!(
+            "locked {field} is {actual:?}; expected {expected:?}"
+        ));
+    }
+    Ok(())
+}
+
+/// Rejects a lock whose frozen values differ from the pre-registered confirmation.
+pub fn validate_lock(lock: &FrozenLock) -> Result<(), String> {
+    let config = &lock.config;
+    expect_value("config.rsi_period", &config.rsi_period, 14)?;
+    expect_value("config.rsi_order", &config.rsi_order, 5)?;
+    expect_value("config.max_age", &config.max_age, Some(4))?;
+    expect_value("config.sma_enabled", &config.sma_enabled, true)?;
+    expect_value("config.sma_period", &config.sma_period, 20)?;
+    expect_value("config.atr_period", &config.atr_period, 14)?;
+    expect_value("config.atr_sl_multiplier", &config.atr_sl_multiplier, "1.5")?;
+    expect_value("config.atr_tp_multiplier", &config.atr_tp_multiplier, "2.0")?;
+    expect_value(
+        "config.price_diff_threshold",
+        &config.price_diff_threshold,
+        "0.05",
+    )?;
+    expect_value("config.atr_pct_high", &config.atr_pct_high, "5.0")?;
+    expect_value("config.atr_high_adjust", &config.atr_high_adjust, "1.5")?;
+    expect_value("config.atr_sl_max_pct", &config.atr_sl_max_pct, "0.0")?;
+    expect_value("config.window", &config.window, 100)?;
+
+    let model = &lock.model;
+    expect_value("model.name", &model.name, "retest_2c_b2")?;
+    expect_value("model.entry", &model.entry, "limit")?;
+    expect_value("model.offset_bps", &model.offset_bps, "25")?;
+    expect_value("model.valid_candles", &model.valid_candles, 2)?;
+    expect_value("model.buffer_bps", &model.buffer_bps, "2")?;
+    expect_value("model.maker_bps", &model.maker_bps, "2")?;
+    expect_value("model.taker_bps", &model.taker_bps, "10")?;
+    expect_value("model.slip_bps", &model.slip_bps, "5")?;
+
+    let dataset = &lock.dataset;
+    expect_value(
+        "dataset.symbols",
+        &dataset.symbols,
+        vec![
+            "BTC-USDT".to_string(),
+            "ETH-USDT".to_string(),
+            "SOL-USDT".to_string(),
+        ],
+    )?;
+    expect_value("dataset.timeframe", &dataset.timeframe, "4hour")?;
+    expect_value("dataset.as_of_ms", &dataset.as_of_ms, 1_729_555_200_000i64)?;
+    expect_value("dataset.months", &dataset.months, 24u32)?;
+    expect_value("dataset.start_ms", &dataset.start_ms, 1_667_347_200_000i64)?;
+
+    let rule = &lock.decision_rule;
+    expect_value(
+        "decision_rule.min_pooled_trades",
+        &rule.min_pooled_trades,
+        50,
+    )?;
+    expect_value(
+        "decision_rule.require_positive_net_expectancy",
+        &rule.require_positive_net_expectancy,
+        true,
+    )?;
+    expect_value(
+        "decision_rule.require_profit_factor_above",
+        &rule.require_profit_factor_above,
+        1.0,
+    )?;
+    expect_value(
+        "decision_rule.min_positive_symbols",
+        &rule.min_positive_symbols,
+        2,
+    )?;
     Ok(())
 }

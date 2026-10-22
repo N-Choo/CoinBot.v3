@@ -4,7 +4,9 @@ use analyzer_rs::harness::dataset::{Dataset, EffectiveRange, Provenance, Request
 use analyzer_rs::harness::sweep::confirmation::{
     decide, evaluate_full_period, pool_parts, Decision,
 };
-use analyzer_rs::harness::sweep::data::{fetch_range, load_with_cache, CachedCandles};
+use analyzer_rs::harness::sweep::data::{
+    fetch_range, load_with_cache, verify_dataset_quality, CachedCandles,
+};
 use analyzer_rs::harness::sweep::execution::{ExecModel, ExecPartition};
 use analyzer_rs::harness::sweep::freeze::{self, FrozenLock};
 use analyzer_rs::identity;
@@ -289,6 +291,13 @@ fn load_symbol(
             )
         },
     )?;
+    verify_dataset_quality(
+        &cached.provenance,
+        &cached.candles,
+        start_ms,
+        end_ms,
+        timeframe,
+    )?;
     let summary = DatasetSummary::from_cached(&cached);
     let dataset = dataset_from_cache(symbol, timeframe, end_ms, &cached);
     Ok((dataset, summary))
@@ -414,6 +423,12 @@ fn write_markdown(path: &Path, results: &ConfirmationResults) -> Result<(), Stri
         results.lock.signal_generator_sha256
     )
     .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "| Lock SHA-256 (verified) | {} |",
+        freeze::EXPECTED_LOCK_SHA256
+    )
+    .expect("writing to String cannot fail");
     writeln!(out, "| Lock created at | {} |", results.lock.created_at)
         .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -443,8 +458,12 @@ fn write_markdown(path: &Path, results: &ConfirmationResults) -> Result<(), Stri
     writeln!(out, "| Base URL | {} |", results.base_url).expect("writing to String cannot fail");
     writeln!(out, "| Settle (ms) | {} |", results.settle_ms)
         .expect("writing to String cannot fail");
-    writeln!(out, "| Initial fund per symbol | {} |", results.init_fund)
-        .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "| Initial fund per symbol | {} (CLI-configurable; the decision is scale-invariant) |",
+        results.init_fund
+    )
+    .expect("writing to String cannot fail");
     writeln!(out, "| Warm-up window | {} |", results.window)
         .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -654,8 +673,10 @@ fn main() -> Result<(), String> {
     let base_url = resolve_base_url(cli.base_url.clone());
     let lock_path = absolute_from(&cli.repo_root, &cli.lock);
 
+    freeze::verify_lock_digest(&lock_path)?;
     let lock = freeze::load(&lock_path)?;
     freeze::verify(&cli.repo_root, &lock)?;
+    freeze::validate_lock(&lock)?;
     let config = lock.config.to_config()?;
     let model = lock.model.to_exec_model()?;
     let timeframe = Timeframe::from_kucoin(&lock.dataset.timeframe).ok_or_else(|| {
