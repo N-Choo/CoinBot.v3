@@ -260,7 +260,7 @@ fn validate(
     })
 }
 
-fn hash_candles(candles: &[Candle]) -> String {
+pub(crate) fn hash_candles(candles: &[Candle]) -> String {
     let mut hasher = Sha256::new();
     for candle in candles {
         hasher.update(candle.open_time_ms.to_be_bytes());

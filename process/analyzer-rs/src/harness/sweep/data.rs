@@ -1,15 +1,15 @@
 use crate::exchange::kucoin::fetch_klines;
 use crate::exchange::timeframes::Timeframe;
+use crate::harness::dataset::hash_candles;
 use crate::strategy::types::Candle;
 use rust_decimal::Decimal;
-use serde::Serialize;
-use sha2::{Digest, Sha256};
+use serde::{Deserialize, Serialize};
 use std::path::Path;
 use std::str::FromStr;
 
 pub const PAGE: usize = 1500;
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DatasetProvenance {
     pub symbol: String,
     pub timeframe: String,
@@ -18,8 +18,16 @@ pub struct DatasetProvenance {
     pub first_open_time_ms: i64,
     pub last_open_time_ms: i64,
     pub candles: usize,
+    /// Timeframe-aligned slots in the requested inclusive range
+    /// `[requested_first_ms, requested_last_ms]`.
+    pub requested_candles: usize,
+    /// Timeframe-aligned slots spanned by the effective range of the returned
+    /// candles (first through last open time), including gaps.
     pub expected_candles: usize,
+    /// Gaps inside the effective range. Assumes the candles are sorted by
+    /// `open_time_ms` and aligned to `timeframe`.
     pub missing_candles: usize,
+    /// Overlapping duplicates removed before range and closed-candle filtering.
     pub duplicates_dropped: usize,
     pub pages: usize,
     pub content_sha256: String,
@@ -31,6 +39,10 @@ pub fn dedup_and_sort(mut candles: Vec<Candle>) -> Vec<Candle> {
     candles
 }
 
+/// Counts the gaps between consecutive candles for `tf`.
+///
+/// Assumes the candles are sorted by `open_time_ms` and aligned to `tf`;
+/// unsorted or misaligned input is not detected here.
 pub fn missing_candles(candles: &[Candle], tf: Timeframe) -> usize {
     let mut missing = 0usize;
     for pair in candles.windows(2) {
@@ -43,26 +55,41 @@ pub fn missing_candles(candles: &[Candle], tf: Timeframe) -> usize {
     missing
 }
 
-/// Pages backward from `end_ms` until `start_ms` is covered. Closed candles only.
-pub fn fetch_range(
-    base_url: &str,
-    symbol: &str,
+/// Pages backward from `end_ms` until `start_ms` is covered, fetching batches
+/// through `fetch`. Returns the retained candles, the number of pages fetched,
+/// and the number of duplicates removed before filtering. Closed candles only.
+pub fn fetch_range_with<F>(
     tf: Timeframe,
     start_ms: i64,
     end_ms: i64,
     settle_ms: i64,
     now_ms: i64,
-) -> Result<(Vec<Candle>, usize), String> {
+    mut fetch: F,
+) -> Result<(Vec<Candle>, usize, usize), String>
+where
+    F: FnMut(i64) -> Result<Vec<Candle>, String>,
+{
+    if start_ms > end_ms {
+        return Err(format!(
+            "invalid range: start_ms {start_ms} is after end_ms {end_ms}"
+        ));
+    }
+    // A paginating source that never reaches `start_ms` must not loop forever.
+    let max_pages = ((end_ms - start_ms) / tf.millis() / PAGE as i64 + 4) as usize;
     let mut all: Vec<Candle> = Vec::new();
     let mut cursor = end_ms;
     let mut pages = 0usize;
     loop {
-        let batch =
-            fetch_klines(base_url, symbol, tf, PAGE, Some(cursor)).map_err(|e| e.to_string())?;
+        let batch = fetch(cursor)?;
         if batch.is_empty() {
             break;
         }
         pages += 1;
+        if pages > max_pages {
+            return Err(format!(
+                "pagination exceeded {max_pages} pages for range {start_ms}..={end_ms}"
+            ));
+        }
         let earliest = batch
             .iter()
             .map(|candle| candle.open_time_ms)
@@ -74,16 +101,48 @@ pub fn fetch_range(
         }
         cursor = earliest - tf.millis();
     }
+    let raw = all.len();
     let mut clean = dedup_and_sort(all);
+    let duplicates = raw - clean.len();
     clean.retain(|candle| {
         candle.open_time_ms >= start_ms
             && candle.open_time_ms <= end_ms
             && tf.is_closed(candle.open_time_ms, now_ms, settle_ms)
     });
-    Ok((clean, pages))
+    Ok((clean, pages, duplicates))
+}
+
+/// Pages backward from `end_ms` until `start_ms` is covered using the KuCoin
+/// client. Closed candles only.
+pub fn fetch_range(
+    base_url: &str,
+    symbol: &str,
+    tf: Timeframe,
+    start_ms: i64,
+    end_ms: i64,
+    settle_ms: i64,
+    now_ms: i64,
+) -> Result<(Vec<Candle>, usize, usize), String> {
+    fetch_range_with(tf, start_ms, end_ms, settle_ms, now_ms, |cursor| {
+        fetch_klines(base_url, symbol, tf, PAGE, Some(cursor)).map_err(|error| error.to_string())
+    })
 }
 
 pub fn write_cache(path: &Path, candles: &[Candle]) -> Result<(), String> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    // Write the whole cache before replacing the destination so a partial write
+    // can never leave a truncated cache behind.
+    let temp_path = path.with_extension(format!("csv.{}.tmp", std::process::id()));
+    write_cache_file(&temp_path, candles)?;
+    std::fs::rename(&temp_path, path).map_err(|error| error.to_string())
+}
+
+fn write_cache_file(path: &Path, candles: &[Candle]) -> Result<(), String> {
     let mut writer = csv::Writer::from_path(path).map_err(|error| error.to_string())?;
     writer
         .write_record(["open_time_ms", "open", "high", "low", "close", "volume"])
@@ -146,16 +205,32 @@ pub fn read_cache(path: &Path) -> Result<Vec<Candle>, String> {
     Ok(candles)
 }
 
+/// Writes the provenance next to the cache as pretty JSON.
+pub fn write_provenance(csv_path: &Path, provenance: &DatasetProvenance) -> Result<(), String> {
+    let json = serde_json::to_string_pretty(provenance).map_err(|error| error.to_string())?;
+    let path = csv_path.with_extension("csv.provenance.json");
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent).map_err(|error| error.to_string())?;
+    }
+    std::fs::write(path, json).map_err(|error| error.to_string())
+}
+
+/// `duplicates` is the count removed by [`dedup_and_sort`] before range and
+/// closed-candle filtering; it cannot be inferred from the retained candles.
 pub fn provenance(
     symbol: &str,
     tf: Timeframe,
     start_ms: i64,
     end_ms: i64,
-    raw_count: usize,
+    duplicates: usize,
     candles: &[Candle],
     pages: usize,
 ) -> DatasetProvenance {
     let missing = missing_candles(candles, tf);
+    let requested_candles = ((end_ms - start_ms).max(0) / tf.millis() + 1) as usize;
     DatasetProvenance {
         symbol: symbol.to_string(),
         timeframe: tf.as_kucoin().to_string(),
@@ -170,33 +245,11 @@ pub fn provenance(
             .map(|candle| candle.open_time_ms)
             .unwrap_or(0),
         candles: candles.len(),
+        requested_candles,
         expected_candles: candles.len() + missing,
         missing_candles: missing,
-        duplicates_dropped: raw_count.saturating_sub(candles.len()),
+        duplicates_dropped: duplicates,
         pages,
         content_sha256: hash_candles(candles),
     }
-}
-
-fn hash_candles(candles: &[Candle]) -> String {
-    let mut hasher = Sha256::new();
-    for candle in candles {
-        hasher.update(candle.open_time_ms.to_be_bytes());
-        hasher.update(candle.open.normalize().to_string().as_bytes());
-        hasher.update([0]);
-        hasher.update(candle.high.normalize().to_string().as_bytes());
-        hasher.update([0]);
-        hasher.update(candle.low.normalize().to_string().as_bytes());
-        hasher.update([0]);
-        hasher.update(candle.close.normalize().to_string().as_bytes());
-        hasher.update([0]);
-        hasher.update(candle.volume.normalize().to_string().as_bytes());
-        hasher.update([0]);
-    }
-    let digest = hasher.finalize();
-    let mut text = String::new();
-    for byte in digest {
-        text.push_str(&format!("{byte:02x}"));
-    }
-    text
 }
