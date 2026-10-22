@@ -44,30 +44,76 @@ fn fetch_range_with_walks_pages_until_start_is_covered() {
     let tf = Timeframe::H1;
     let step = tf.millis();
     let start_ms = 0;
-    let end_ms = 20 * step;
+    // Not candle-aligned, like the live `as_of` timestamp, so the candle at
+    // `20 * step` is returned by the first (exclusive) page.
+    let end_ms = 20 * step + 1;
+    let all: Vec<Candle> = (0..=20).map(|index| c(index * step)).collect();
     let mut cursors = Vec::new();
     let (candles, pages, duplicates) =
         fetch_range_with(tf, start_ms, end_ms, 0, i64::MAX, |cursor| {
             cursors.push(cursor);
-            if cursor == end_ms {
-                Ok(vec![c(10 * step), c(15 * step), c(20 * step)])
-            } else {
-                Ok(vec![c(0), c(5 * step), c(9 * step), c(15 * step)])
-            }
+            // Mimic KuCoin's exclusive `endAt`: only candles strictly before
+            // the cursor are returned, at most 11 per page.
+            let mut page: Vec<Candle> = all
+                .iter()
+                .filter(|candle| candle.open_time_ms < cursor)
+                .rev()
+                .take(11)
+                .cloned()
+                .collect();
+            page.reverse();
+            Ok(page)
         })
         .unwrap();
 
     assert_eq!(pages, 2);
-    assert_eq!(duplicates, 1);
-    assert_eq!(cursors, vec![end_ms, 10 * step - step]);
+    assert_eq!(duplicates, 0);
+    assert_eq!(cursors, vec![end_ms, 10 * step - 1]);
     let times: Vec<i64> = candles.iter().map(|candle| candle.open_time_ms).collect();
     assert_eq!(
         times,
-        vec![0, 5 * step, 9 * step, 10 * step, 15 * step, 20 * step]
+        (0..=20).map(|index| index * step).collect::<Vec<_>>()
     );
     assert!(candles
         .windows(2)
         .all(|pair| pair[0].open_time_ms < pair[1].open_time_ms));
+    assert_eq!(missing_candles(&candles, tf), 0);
+    let unique: std::collections::BTreeSet<i64> = times.iter().copied().collect();
+    assert_eq!(
+        unique.len(),
+        times.len(),
+        "pagination must not duplicate timestamps"
+    );
+}
+
+#[test]
+fn pagination_keeps_the_candle_before_the_page_boundary() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let all: Vec<Candle> = (0..=20).map(|index| c(index * step)).collect();
+
+    let (candles, pages, _) = fetch_range_with(tf, 0, 20 * step, 0, i64::MAX, |cursor| {
+        let mut page: Vec<Candle> = all
+            .iter()
+            .filter(|candle| candle.open_time_ms < cursor)
+            .rev()
+            .take(11)
+            .cloned()
+            .collect();
+        page.reverse();
+        Ok(page)
+    })
+    .unwrap();
+
+    assert_eq!(pages, 2);
+    let times: Vec<i64> = candles.iter().map(|candle| candle.open_time_ms).collect();
+    // The old `earliest - tf.millis()` cursor skipped this candle because the
+    // second page's exclusive end was one full timeframe too low.
+    assert!(
+        times.contains(&(8 * step)),
+        "the candle before the page boundary must be retained, got {times:?}"
+    );
+    assert_eq!(missing_candles(&candles, tf), 0);
 }
 
 #[test]
@@ -156,7 +202,7 @@ fn provenance_reports_duplicates_before_filtering() {
     let tf = Timeframe::H1;
     let step = tf.millis();
     let candles = vec![c(9 * step), c(10 * step), c(15 * step), c(20 * step)];
-    let p = provenance("BTC-USDT", tf, 5 * step, 20 * step, 1, &candles, 2);
+    let p = provenance("BTC-USDT", tf, 5 * step, 20 * step, 0, 0, 1, &candles, 2);
 
     assert_eq!(p.candles, 4);
     assert_eq!(p.requested_candles, 16);
@@ -173,13 +219,25 @@ fn provenance_json_round_trips_next_to_the_cache() {
     let step = tf.millis();
     let dir = temp_dir("provenance");
     let csv_path = dir.join("BTC-USDT_1hour.csv");
-    let p = provenance("BTC-USDT", tf, 0, 3 * step, 2, &[c(0), c(step)], 4);
+    let p = provenance(
+        "BTC-USDT",
+        tf,
+        0,
+        3 * step,
+        7_000,
+        1_700_000_000_000,
+        2,
+        &[c(0), c(step)],
+        4,
+    );
 
     write_provenance(&csv_path, &p).unwrap();
     let text = std::fs::read_to_string(csv_path.with_extension("csv.provenance.json")).unwrap();
     let back: DatasetProvenance = serde_json::from_str(&text).unwrap();
     assert_eq!(back.duplicates_dropped, p.duplicates_dropped);
     assert_eq!(back.requested_candles, p.requested_candles);
+    assert_eq!(back.fetched_at_ms, 1_700_000_000_000);
+    assert_eq!(back.settle_ms, 7_000);
     assert_eq!(back.content_sha256, p.content_sha256);
     std::fs::remove_dir_all(&dir).unwrap();
 }
@@ -188,12 +246,20 @@ fn provenance_json_round_trips_next_to_the_cache() {
 fn cache_matches_only_the_requested_range_symbol_and_timeframe() {
     let tf = Timeframe::H1;
     let step = tf.millis();
-    let p = provenance("BTC-USDT", tf, 0, 2 * step, 0, &[c(0), c(step)], 1);
+    let p = provenance("BTC-USDT", tf, 0, 2 * step, 0, 0, 0, &[c(0), c(step)], 1);
 
-    assert!(cache_matches(&p, "BTC-USDT", tf, 0, 2 * step));
-    assert!(!cache_matches(&p, "BTC-USDT", tf, step, 3 * step));
-    assert!(!cache_matches(&p, "ETH-USDT", tf, 0, 2 * step));
-    assert!(!cache_matches(&p, "BTC-USDT", Timeframe::H4, 0, 2 * step));
+    assert!(cache_matches(&p, "BTC-USDT", tf, 0, 2 * step, 0));
+    assert!(!cache_matches(&p, "BTC-USDT", tf, step, 3 * step, 0));
+    assert!(!cache_matches(&p, "ETH-USDT", tf, 0, 2 * step, 0));
+    assert!(!cache_matches(
+        &p,
+        "BTC-USDT",
+        Timeframe::H4,
+        0,
+        2 * step,
+        0
+    ));
+    assert!(!cache_matches(&p, "BTC-USDT", tf, 0, 2 * step, step));
 }
 
 #[test]
@@ -208,7 +274,7 @@ fn cache_with_a_different_range_is_refetched() {
     write_cache(&path, &range_a).unwrap();
     write_provenance(
         &path,
-        &provenance("BTC-USDT", tf, 0, 19 * step, 0, &range_a, 1),
+        &provenance("BTC-USDT", tf, 0, 19 * step, 0, 0, 0, &range_a, 1),
     )
     .unwrap();
 
@@ -258,7 +324,7 @@ fn valid_cache_with_matching_provenance_is_reused() {
     let dir = temp_dir("reuse");
     let path = dir.join("BTC-USDT_1hour.csv");
     let candles: Vec<Candle> = (0..8).map(|index| c(index * step)).collect();
-    let expected = provenance("BTC-USDT", tf, 0, 7 * step, 0, &candles, 1);
+    let expected = provenance("BTC-USDT", tf, 0, 7 * step, 0, 0, 0, &candles, 1);
     write_cache(&path, &candles).unwrap();
     write_provenance(&path, &expected).unwrap();
 
@@ -286,7 +352,7 @@ fn cache_with_truncated_csv_is_refetched() {
     write_cache(&path, &full).unwrap();
     write_provenance(
         &path,
-        &provenance("BTC-USDT", tf, 0, 11 * step, 0, &full, 1),
+        &provenance("BTC-USDT", tf, 0, 11 * step, 0, 0, 0, &full, 1),
     )
     .unwrap();
 
@@ -313,7 +379,7 @@ fn cache_with_corrupted_values_is_refetched() {
     let dir = temp_dir("corrupted");
     let path = dir.join("BTC-USDT_1hour.csv");
     let full: Vec<Candle> = (0..12).map(|index| c(index * step)).collect();
-    let expected = provenance("BTC-USDT", tf, 0, 11 * step, 0, &full, 1);
+    let expected = provenance("BTC-USDT", tf, 0, 11 * step, 0, 0, 0, &full, 1);
     write_cache(&path, &full).unwrap();
     write_provenance(&path, &expected).unwrap();
 
@@ -345,7 +411,7 @@ fn cache_csv_is_accepted_by_the_dataset_loader() {
     write_cache(&path, &candles).unwrap();
 
     let loaded = load_csv("BTC-USDT", &path, tf, i64::MAX, 0, 0, 5, 8).unwrap();
-    let expected = provenance("BTC-USDT", tf, 0, 7 * step, 0, &candles, 1);
+    let expected = provenance("BTC-USDT", tf, 0, 7 * step, 0, 0, 0, &candles, 1);
     assert_eq!(loaded.provenance.content_sha256, expected.content_sha256);
     std::fs::remove_dir_all(&dir).unwrap();
 }

@@ -1,6 +1,8 @@
 use crate::harness::sweep::evaluate::PartitionMetrics;
+use crate::harness::sweep::partition::{chronological_splits, Slice};
 use crate::harness::sweep::ranking::{CandidateOutcome, Selection, Thresholds};
 use crate::harness::sweep::sampling::{Candidate, SMA_PERIOD};
+use crate::strategy::types::Candle;
 use rust_decimal::Decimal;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -30,6 +32,118 @@ pub struct CandidatePlan {
     pub candidates: Vec<Candidate>,
 }
 
+/// A half-open candle-index range (`start` inclusive, `end` exclusive) with
+/// ISO timestamps derived from the first and last candle in the range.
+#[derive(Debug, Clone, Serialize)]
+pub struct SplitBoundary {
+    pub start_index: usize,
+    pub end_index: usize,
+    pub start_time: String,
+    pub end_time: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct FoldSummary {
+    pub fold: usize,
+    pub train: SplitBoundary,
+    pub validation: SplitBoundary,
+}
+
+/// Chronological split boundaries for one loaded dataset. Timestamps are the
+/// open times of the boundary candles, so they can be checked independently of
+/// the index arithmetic.
+#[derive(Debug, Clone, Serialize)]
+pub struct SplitSummary {
+    pub symbol: String,
+    pub timeframe: String,
+    pub candles: usize,
+    pub train: SplitBoundary,
+    pub validation: SplitBoundary,
+    pub holdout: SplitBoundary,
+    pub folds: Vec<FoldSummary>,
+}
+
+impl SplitSummary {
+    pub fn from_candles(symbol: &str, timeframe: &str, candles: &[Candle]) -> Self {
+        let splits = chronological_splits(candles.len());
+        let boundary = |slice: Slice| SplitBoundary {
+            start_index: slice.start,
+            end_index: slice.end,
+            start_time: iso_open_time(candles, slice.start),
+            end_time: iso_open_time(candles, slice.end.saturating_sub(1)),
+        };
+        let folds = splits
+            .folds
+            .iter()
+            .enumerate()
+            .map(|(index, fold)| FoldSummary {
+                fold: index + 1,
+                train: boundary(fold.train),
+                validation: boundary(fold.val),
+            })
+            .collect();
+        Self {
+            symbol: symbol.to_string(),
+            timeframe: timeframe.to_string(),
+            candles: candles.len(),
+            train: boundary(splits.train),
+            validation: boundary(splits.validation),
+            holdout: boundary(splits.holdout),
+            folds,
+        }
+    }
+}
+
+fn iso_open_time(candles: &[Candle], index: usize) -> String {
+    candles
+        .get(index)
+        .and_then(|candle| {
+            chrono::DateTime::<chrono::Utc>::from_timestamp_millis(candle.open_time_ms)
+        })
+        .map(|timestamp| timestamp.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
+        .unwrap_or_default()
+}
+
+/// Full resolved baseline configuration, including the `max_age` value that is
+/// not part of [`crate::strategy::config::Config`].
+#[derive(Debug, Clone, Serialize)]
+pub struct BaselineConfig {
+    pub rsi_period: usize,
+    pub rsi_order: usize,
+    pub price_diff_threshold: Decimal,
+    pub sma_enabled: bool,
+    pub sma_period: usize,
+    pub atr_period: usize,
+    pub atr_sl_multiplier: Decimal,
+    pub atr_tp_multiplier: Decimal,
+    pub atr_pct_high: Decimal,
+    pub atr_high_adjust: Decimal,
+    pub atr_sl_max_pct: Decimal,
+    pub window: usize,
+    pub max_age: Option<usize>,
+}
+
+impl BaselineConfig {
+    pub fn from_candidate(candidate: &Candidate) -> Self {
+        let config = candidate.to_config();
+        Self {
+            rsi_period: config.rsi_period,
+            rsi_order: config.rsi_order,
+            price_diff_threshold: config.price_diff_threshold,
+            sma_enabled: config.sma_enabled,
+            sma_period: config.sma_period,
+            atr_period: config.atr_period,
+            atr_sl_multiplier: config.atr_sl_multiplier,
+            atr_tp_multiplier: config.atr_tp_multiplier,
+            atr_pct_high: config.atr_pct_high,
+            atr_high_adjust: config.atr_high_adjust,
+            atr_sl_max_pct: config.atr_sl_max_pct,
+            window: config.window,
+            max_age: candidate.max_age,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct SweepResults {
     pub generated_at: String,
@@ -44,6 +158,14 @@ pub struct SweepResults {
     pub stress_slip_bps: u32,
     pub init_fund: i64,
     pub datasets: Vec<DatasetSummary>,
+    /// Chronological split boundaries for every loaded symbol/timeframe.
+    pub splits: Vec<SplitSummary>,
+    /// Baseline candidate pinned at the start of the study.
+    pub baseline: Candidate,
+    /// Human-readable description of where the baseline came from.
+    pub baseline_source: String,
+    /// Fully resolved baseline configuration, including `max_age`.
+    pub baseline_config: BaselineConfig,
     /// timeframe -> candidate outcomes (sorted by label)
     pub outcomes: BTreeMap<String, Vec<CandidateOutcome>>,
     /// timeframe -> selection
@@ -309,7 +431,9 @@ pub fn write_markdown(path: &Path, results: &SweepResults) -> Result<(), String>
     writeln!(out).expect("writing to String cannot fail");
 
     write_metadata(&mut out, results);
+    write_baseline_config(&mut out, results);
     write_data_quality(&mut out, results);
+    write_splits(&mut out, results);
     write_baseline_vs_candidates(&mut out, results);
     write_configurations(&mut out, results);
     write_selection(&mut out, results);
@@ -317,6 +441,7 @@ pub fn write_markdown(path: &Path, results: &SweepResults) -> Result<(), String>
     write_sensitivity(&mut out, results);
     write_costs(&mut out, results);
     write_commands(&mut out, results);
+    write_limitations(&mut out);
     write_recommendation(&mut out, results);
 
     std::fs::write(path, out).map_err(|error| error.to_string())
@@ -349,6 +474,58 @@ fn write_metadata(out: &mut String, results: &SweepResults) {
     )
     .expect("writing to String cannot fail");
     writeln!(out, "| Init fund | {} |", results.init_fund).expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+}
+
+fn write_baseline_config(out: &mut String, results: &SweepResults) {
+    let config = &results.baseline_config;
+    writeln!(out, "## 1b. Baseline configuration").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "Source: {} (`{}`: {}).",
+        results.baseline_source,
+        results.baseline.label,
+        config_summary(&results.baseline)
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(out, "| Parameter | Values | Role |").expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|").expect("writing to String cannot fail");
+    let rows = [
+        ("RSI period", "10, 14, 21".to_string(), "varied"),
+        ("RSI order", "3, 5, 7".to_string(), "varied"),
+        ("Max age", "4, 8, 12, uncapped".to_string(), "varied"),
+        ("SMA enabled", "true, false".to_string(), "varied"),
+        ("SMA period", config.sma_period.to_string(), "held constant"),
+        ("ATR SL multiplier", "1.5, 2.0, 2.5".to_string(), "varied"),
+        ("ATR TP multiplier", "2.0, 3.0, 4.0".to_string(), "varied"),
+        (
+            "Price diff threshold",
+            config.price_diff_threshold.to_string(),
+            "held constant",
+        ),
+        ("ATR period", config.atr_period.to_string(), "held constant"),
+        (
+            "ATR pct high",
+            config.atr_pct_high.to_string(),
+            "held constant",
+        ),
+        (
+            "ATR high adjust",
+            config.atr_high_adjust.to_string(),
+            "held constant",
+        ),
+        (
+            "ATR SL max pct",
+            config.atr_sl_max_pct.to_string(),
+            "held constant",
+        ),
+        ("Window", config.window.to_string(), "held constant"),
+    ];
+    for (parameter, value, role) in rows {
+        writeln!(out, "| {parameter} | {value} | {role} |").expect("writing to String cannot fail");
+    }
     writeln!(out).expect("writing to String cannot fail");
 }
 
@@ -432,12 +609,81 @@ fn write_data_quality(out: &mut String, results: &SweepResults) {
     writeln!(out).expect("writing to String cannot fail");
 }
 
+fn write_splits(out: &mut String, results: &SweepResults) {
+    writeln!(out, "## 2b. Chronological splits").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    if results.splits.is_empty() {
+        writeln!(out, "No splits recorded.").expect("writing to String cannot fail");
+        writeln!(out).expect("writing to String cannot fail");
+        return;
+    }
+    writeln!(
+        out,
+        "Each split is chronological: 60% train, 20% validation, 20% holdout, plus three expanding folds inside train+validation. Indices are half-open (`start` inclusive, `end` exclusive); timestamps are the open times of the first and last candle in each range."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "| Symbol | Timeframe | Partition | Start index | End index | Start | End | Fold validation ends <= holdout start |"
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+    for split in &results.splits {
+        let holdout_start = split.holdout.start_index;
+        let mut rows: Vec<(String, &SplitBoundary, bool)> = vec![
+            ("train".to_string(), &split.train, false),
+            ("validation".to_string(), &split.validation, false),
+            ("holdout".to_string(), &split.holdout, false),
+        ];
+        for fold in &split.folds {
+            rows.push((format!("fold{}_train", fold.fold), &fold.train, false));
+            rows.push((format!("fold{}_val", fold.fold), &fold.validation, true));
+        }
+        for (name, boundary, is_fold_validation) in rows {
+            let check = if is_fold_validation {
+                if boundary.end_index <= holdout_start {
+                    "yes"
+                } else {
+                    "NO"
+                }
+            } else {
+                "—"
+            };
+            writeln!(
+                out,
+                "| {} | {} | {name} | {} | {} | {} | {} | {check} |",
+                split.symbol,
+                split.timeframe,
+                boundary.start_index,
+                boundary.end_index,
+                boundary.start_time,
+                boundary.end_time
+            )
+            .expect("writing to String cannot fail");
+        }
+    }
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "Every `fold*_val` row above ends at or before the holdout start index, so no fold validation overlaps the holdout."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+}
+
 fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
     writeln!(out, "## 3. Baseline vs candidates").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
         "Validation is the selection partition; holdout is the one-shot evaluation partition, scored only for the baseline and selected winners, and is never used for selection. Metrics are pooled across symbols under base costs. A missing holdout is shown as —."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "Footnote: *pooled max DD* is the maximum per-symbol drawdown, not a portfolio drawdown."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -454,10 +700,10 @@ fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
 
         writeln!(
             out,
-            "| Label | Config | Val trades | Val net expectancy | Val PF | Val max DD % | Holdout trades | Holdout net expectancy | Holdout PF | Holdout max DD % | Status |"
+            "| Label | Config | Val trades | Val net expectancy | Val PF | Val max DD % | Val stderr | Holdout trades | Holdout net expectancy | Holdout PF | Holdout max DD % | Status |"
         )
         .expect("writing to String cannot fail");
-        writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
+        writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|---|")
             .expect("writing to String cannot fail");
         let selection = results.selections.get(timeframe);
         for outcome in outcomes {
@@ -479,13 +725,14 @@ fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
             };
             writeln!(
                 out,
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 outcome.label,
                 config_summary(&outcome.candidate),
                 validation.trades,
                 validation.net_expectancy,
                 format_profit_factor(validation.net_profit_factor),
                 validation.max_drawdown_pct,
+                validation.expectancy_stderr,
                 holdout_trades,
                 holdout_expectancy,
                 holdout_pf,
@@ -688,18 +935,38 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
 
-    type ParameterAccessor = (&'static str, fn(&Candidate) -> String);
+    type ParameterAccessor = (
+        &'static str,
+        fn(&Candidate) -> String,
+        fn(&str, &str) -> std::cmp::Ordering,
+    );
     let parameters: [ParameterAccessor; 6] = [
-        ("RSI period", |candidate| candidate.rsi_period.to_string()),
-        ("RSI order", |candidate| candidate.rsi_order.to_string()),
-        ("Max age", age_text),
-        ("SMA enabled", |candidate| candidate.sma_enabled.to_string()),
-        ("ATR SL multiplier", |candidate| {
-            candidate.atr_sl_multiplier.to_string()
-        }),
-        ("ATR TP multiplier", |candidate| {
-            candidate.atr_tp_multiplier.to_string()
-        }),
+        (
+            "RSI period",
+            |candidate| candidate.rsi_period.to_string(),
+            lexical_order,
+        ),
+        (
+            "RSI order",
+            |candidate| candidate.rsi_order.to_string(),
+            lexical_order,
+        ),
+        ("Max age", age_text, max_age_order),
+        (
+            "SMA enabled",
+            |candidate| candidate.sma_enabled.to_string(),
+            lexical_order,
+        ),
+        (
+            "ATR SL multiplier",
+            |candidate| candidate.atr_sl_multiplier.to_string(),
+            lexical_order,
+        ),
+        (
+            "ATR TP multiplier",
+            |candidate| candidate.atr_tp_multiplier.to_string(),
+            lexical_order,
+        ),
     ];
 
     for timeframe in &results.timeframes {
@@ -718,8 +985,8 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
         )
         .expect("writing to String cannot fail");
         writeln!(out, "|---|---|---|---|---|---|").expect("writing to String cannot fail");
-        for (parameter, accessor) in parameters {
-            let groups = group_values(outcomes, accessor);
+        for (parameter, accessor, order) in parameters {
+            let groups = group_values(outcomes, accessor, order);
             for (value, values) in groups {
                 let count = values.len();
                 let min = values.iter().copied().min().unwrap_or_default();
@@ -816,6 +1083,17 @@ fn write_commands(out: &mut String, results: &SweepResults) {
     writeln!(out).expect("writing to String cannot fail");
 }
 
+fn write_limitations(out: &mut String) {
+    writeln!(out, "## 9b. Limitations").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "The neighbor-median-within-one-standard-error stability check from the study spec is approximated by fold and symbol consistency: only 30 of the 648 grid points are sampled, so a candidate's one-step grid neighbors are usually absent. No bootstrap confidence interval is reported; only the pooled standard error of validation net expectancy is shown. The single chronological 60/20/20 split is regime-sensitive, and the holdout is a one-shot evaluation rather than a rolling out-of-sample test."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+}
+
 fn write_recommendation(out: &mut String, results: &SweepResults) {
     writeln!(out, "## 10. Recommendation").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -848,7 +1126,7 @@ fn recommendation(results: &SweepResults) -> (&'static str, String) {
                 None => true,
             });
 
-    if !results.errors.is_empty() {
+    let (label, mut rationale) = if !results.errors.is_empty() {
         (
             "insufficient evidence",
             "The run recorded one or more errors, so the screening is incomplete. Resolve the listed errors and rerun before drawing any conclusion. This is a provisional screening result, not a profitability claim.".to_string(),
@@ -856,19 +1134,51 @@ fn recommendation(results: &SweepResults) -> (&'static str, String) {
     } else if missing_selection || winner_count == 0 {
         (
             "insufficient evidence",
-            "No candidate met the validation criteria for every requested timeframe, so the screening produced no evidence strong enough to change the baseline. This is a provisional screening result, not a profitability claim; a larger or differently scoped experiment would be needed before revising defaults.".to_string(),
+            "No candidate met the validation criteria for every requested timeframe, so the screening produced no evidence strong enough to change the study baseline. This is a provisional screening result, not a profitability claim; a larger or differently scoped experiment would be needed before revising the study baseline.".to_string(),
         )
     } else if has_non_baseline_winner {
         (
             "larger experiment",
-            "At least one non-baseline candidate met the validation criteria, but the selection is validation-only and provisional. Confirm the frozen holdout result and the stress scenario in a larger experiment before considering any default change. This is not a profitability claim.".to_string(),
+            "At least one non-baseline candidate met the validation criteria, but the selection is validation-only and provisional. Confirm the frozen holdout result and the stress scenario in a larger experiment before considering any change to the study baseline. This is not a profitability claim.".to_string(),
         )
     } else {
         (
             "retain baseline",
-            "Only the baseline met the validation criteria across the screened timeframes, so there is no supported reason to change production defaults. This is a provisional screening result, not a profitability claim.".to_string(),
+            "Only the baseline met the validation criteria across the screened timeframes, so there is no supported reason to change the study baseline. This is a provisional screening result, not a profitability claim.".to_string(),
         )
+    };
+
+    let negative_holdout = negative_holdout_winners(results);
+    if !negative_holdout.is_empty() {
+        rationale.push_str(&format!(
+            " Selected candidate(s) with non-positive holdout net expectancy: {}.",
+            negative_holdout.join(", ")
+        ));
     }
+
+    (label, rationale)
+}
+
+/// Lists selected candidates whose one-shot holdout net expectancy is not positive.
+fn negative_holdout_winners(results: &SweepResults) -> Vec<String> {
+    let mut negative = Vec::new();
+    for (timeframe, selection) in &results.selections {
+        for winner in &selection.winners {
+            let Some(outcome) = timeframe_outcomes(results, timeframe)
+                .iter()
+                .find(|outcome| &outcome.label == winner)
+            else {
+                continue;
+            };
+            if let Some(holdout) = outcome.base.get("holdout") {
+                if holdout.net_expectancy <= Decimal::ZERO {
+                    negative.push(format!("{timeframe}/{winner} ({})", holdout.net_expectancy));
+                }
+            }
+        }
+    }
+    negative.sort();
+    negative
 }
 
 fn timeframe_outcomes<'a>(results: &'a SweepResults, timeframe: &str) -> &'a [CandidateOutcome] {
@@ -947,10 +1257,26 @@ fn selection_status(label: &str, selection: Option<&Selection>) -> String {
     }
 }
 
+fn lexical_order(a: &str, b: &str) -> std::cmp::Ordering {
+    a.cmp(b)
+}
+
+/// Orders max-age values numerically with the uncapped option last.
+fn max_age_order(a: &str, b: &str) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+    match (a.parse::<usize>(), b.parse::<usize>()) {
+        (Ok(left), Ok(right)) => left.cmp(&right),
+        (Ok(_), Err(_)) => Ordering::Less,
+        (Err(_), Ok(_)) => Ordering::Greater,
+        (Err(_), Err(_)) => a.cmp(b),
+    }
+}
+
 fn group_values(
     outcomes: &[CandidateOutcome],
     accessor: fn(&Candidate) -> String,
-) -> BTreeMap<String, Vec<Decimal>> {
+    order: fn(&str, &str) -> std::cmp::Ordering,
+) -> Vec<(String, Vec<Decimal>)> {
     let mut groups: BTreeMap<String, Vec<Decimal>> = BTreeMap::new();
     for outcome in outcomes {
         groups
@@ -958,5 +1284,7 @@ fn group_values(
             .or_default()
             .push(outcome.pooled_validation.net_expectancy);
     }
-    groups
+    let mut rows: Vec<(String, Vec<Decimal>)> = groups.into_iter().collect();
+    rows.sort_by(|left, right| order(&left.0, &right.0));
+    rows
 }

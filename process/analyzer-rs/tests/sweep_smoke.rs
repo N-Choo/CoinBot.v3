@@ -7,8 +7,8 @@ use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool};
 use analyzer_rs::harness::sweep::partition::chronological_splits;
 use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
 use analyzer_rs::harness::sweep::report::{
-    write_leaderboard_csv, write_markdown, write_results_json, CandidatePlan, DatasetSummary,
-    SweepResults,
+    write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
+    DatasetSummary, SplitSummary, SweepResults,
 };
 use analyzer_rs::harness::sweep::sampling;
 use rust_decimal::prelude::ToPrimitive;
@@ -149,6 +149,15 @@ fn baseline_sweep_writes_all_artifacts() {
         stress_slip_bps: 10,
         init_fund: 1000,
         datasets: vec![dataset_summary],
+        splits: vec![SplitSummary::from_candles(
+            &dataset.symbol,
+            "1day",
+            &dataset.candles,
+        )],
+        baseline_config: BaselineConfig::from_candidate(&baseline),
+        baseline: baseline.clone(),
+        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
+            .to_string(),
         outcomes,
         selections,
         errors: Vec::new(),
@@ -172,10 +181,35 @@ fn baseline_sweep_writes_all_artifacts() {
     let parsed: serde_json::Value = serde_json::from_str(&json).expect("json parses");
     assert!(parsed.get("outcomes").is_some());
     assert!(parsed.get("selections").is_some());
+    assert!(parsed.get("baseline_config").is_some());
+    assert!(parsed.get("baseline_source").is_some());
+    let splits = parsed
+        .get("splits")
+        .and_then(serde_json::Value::as_array)
+        .expect("splits array");
+    assert!(!splits.is_empty());
+    for split in splits {
+        let holdout_start = split["holdout"]["start_index"]
+            .as_u64()
+            .expect("holdout start index");
+        for fold in split["folds"].as_array().expect("folds array") {
+            let validation_end = fold["validation"]["end_index"]
+                .as_u64()
+                .expect("fold validation end index");
+            assert!(
+                validation_end <= holdout_start,
+                "fold validation must end at or before the holdout start"
+            );
+        }
+    }
 
     let markdown = std::fs::read_to_string(&report).expect("markdown readable");
     assert!(markdown.contains("validation"));
     assert!(markdown.contains("holdout"));
+    assert!(markdown.contains("Baseline configuration"));
+    assert!(markdown.contains("Chronological splits"));
+    assert!(markdown.contains("Limitations"));
+    assert!(markdown.contains("Val stderr"));
 
     let leaderboard_text = std::fs::read_to_string(&leaderboard).expect("csv readable");
     assert!(leaderboard_text.contains("validation"));

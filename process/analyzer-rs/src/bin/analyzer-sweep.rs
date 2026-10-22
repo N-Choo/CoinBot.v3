@@ -7,8 +7,8 @@ use analyzer_rs::harness::sweep::evaluate::{evaluate_config, pool, PartitionMetr
 use analyzer_rs::harness::sweep::partition::chronological_splits;
 use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Thresholds};
 use analyzer_rs::harness::sweep::report::{
-    write_leaderboard_csv, write_markdown, write_results_json, CandidatePlan, DatasetSummary,
-    SweepResults,
+    write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
+    DatasetSummary, SplitSummary, SweepResults,
 };
 use analyzer_rs::harness::sweep::sampling::{self, Candidate};
 use analyzer_rs::identity;
@@ -452,6 +452,7 @@ fn main() -> Result<(), String> {
 
     let mut loaded: BTreeMap<String, Vec<Dataset>> = BTreeMap::new();
     let mut datasets = Vec::new();
+    let mut splits = Vec::new();
     let mut errors = Vec::new();
     for (timeframe_name, timeframe) in &timeframes {
         for symbol in &symbols {
@@ -466,6 +467,11 @@ fn main() -> Result<(), String> {
                 cli.refresh,
             ) {
                 Ok((dataset, summary)) => {
+                    splits.push(SplitSummary::from_candles(
+                        &dataset.symbol,
+                        timeframe_name,
+                        &dataset.candles,
+                    ));
                     loaded
                         .entry(timeframe_name.clone())
                         .or_default()
@@ -562,6 +568,7 @@ fn main() -> Result<(), String> {
         outcomes_by_timeframe.insert(timeframe_name.clone(), outcomes);
     }
 
+    let baseline = sampling::baseline();
     let results = SweepResults {
         generated_at: cli
             .generated_at
@@ -578,6 +585,11 @@ fn main() -> Result<(), String> {
         stress_slip_bps: cli.stress_slip_bps,
         init_fund: cli.init_fund,
         datasets,
+        splits,
+        baseline_config: BaselineConfig::from_candidate(&baseline),
+        baseline,
+        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
+            .to_string(),
         outcomes: outcomes_by_timeframe,
         selections,
         errors,

@@ -3,8 +3,8 @@
 use analyzer_rs::harness::sweep::evaluate::PartitionMetrics;
 use analyzer_rs::harness::sweep::ranking::{rank, CandidateOutcome, Selection, Thresholds};
 use analyzer_rs::harness::sweep::report::{
-    write_leaderboard_csv, write_markdown, write_results_json, CandidatePlan, DatasetSummary,
-    SweepResults,
+    write_leaderboard_csv, write_markdown, write_results_json, BaselineConfig, CandidatePlan,
+    DatasetSummary, SweepResults,
 };
 use analyzer_rs::harness::sweep::sampling::{self, Candidate};
 use rust_decimal::Decimal;
@@ -433,6 +433,11 @@ fn sample_results() -> SweepResults {
             pages: 1,
             content_sha256: "0".repeat(64),
         }],
+        splits: Vec::new(),
+        baseline_config: BaselineConfig::from_candidate(&sampling::baseline()),
+        baseline: sampling::baseline(),
+        baseline_source: "pinned study baseline; matches process/analyzer-rs/.env values"
+            .to_string(),
         outcomes,
         selections,
         errors: Vec::new(),

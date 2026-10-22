@@ -30,6 +30,10 @@ pub struct DatasetProvenance {
     /// Overlapping duplicates removed before range and closed-candle filtering.
     pub duplicates_dropped: usize,
     pub pages: usize,
+    /// Wall-clock time at which the cache was fetched.
+    pub fetched_at_ms: i64,
+    /// Closed-candle settle time used for the fetch.
+    pub settle_ms: i64,
     pub content_sha256: String,
 }
 
@@ -51,11 +55,13 @@ pub fn cache_matches(
     timeframe: Timeframe,
     start_ms: i64,
     end_ms: i64,
+    settle_ms: i64,
 ) -> bool {
     provenance.symbol == symbol
         && provenance.timeframe == timeframe.as_kucoin()
         && provenance.requested_first_ms == start_ms
         && provenance.requested_last_ms == end_ms
+        && provenance.settle_ms == settle_ms
 }
 
 /// Counts the gaps between consecutive candles for `tf`.
@@ -118,7 +124,10 @@ where
         if earliest <= start_ms {
             break;
         }
-        cursor = earliest - tf.millis();
+        // KuCoin's `endAt` is exclusive: the next page returns candles with
+        // `open_time_ms < cursor`. Subtracting one millisecond keeps the candle
+        // immediately before `earliest` in the next page instead of skipping it.
+        cursor = earliest.saturating_sub(1);
     }
     let raw = all.len();
     let mut clean = dedup_and_sort(all);
@@ -331,7 +340,7 @@ where
 {
     if !refresh && cache_path.is_file() {
         if let Ok(provenance) = read_provenance(cache_path) {
-            if cache_matches(&provenance, symbol, timeframe, start_ms, end_ms) {
+            if cache_matches(&provenance, symbol, timeframe, start_ms, end_ms, settle_ms) {
                 let mut candles = read_cache(cache_path)?;
                 retain_range(&mut candles, start_ms, end_ms);
                 // A cache whose CSV no longer matches its provenance is treated
@@ -350,9 +359,18 @@ where
     }
 
     let (mut candles, pages, duplicates) = fetch()?;
+    let fetched_at_ms = crate::identity::now_ms();
     retain_range(&mut candles, start_ms, end_ms);
     let data_provenance = provenance(
-        symbol, timeframe, start_ms, end_ms, duplicates, &candles, pages,
+        symbol,
+        timeframe,
+        start_ms,
+        end_ms,
+        settle_ms,
+        fetched_at_ms,
+        duplicates,
+        &candles,
+        pages,
     );
     commit_cache(
         cache_path,
@@ -373,11 +391,14 @@ where
 
 /// `duplicates` is the count removed by [`dedup_and_sort`] before range and
 /// closed-candle filtering; it cannot be inferred from the retained candles.
+#[allow(clippy::too_many_arguments)]
 pub fn provenance(
     symbol: &str,
     tf: Timeframe,
     start_ms: i64,
     end_ms: i64,
+    settle_ms: i64,
+    fetched_at_ms: i64,
     duplicates: usize,
     candles: &[Candle],
     pages: usize,
@@ -403,6 +424,8 @@ pub fn provenance(
         missing_candles: missing,
         duplicates_dropped: duplicates,
         pages,
+        fetched_at_ms,
+        settle_ms,
         content_sha256: hash_candles(candles),
     }
 }
