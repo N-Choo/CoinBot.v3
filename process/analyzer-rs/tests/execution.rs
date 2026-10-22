@@ -334,8 +334,11 @@ fn fill_counts_add_up() {
         outcome.filled + outcome.expired + outcome.skipped_funds + outcome.invalid_levels,
         outcome.signals_total
     );
-    let fill_rate = Decimal::from(outcome.filled) / Decimal::from(outcome.signals_total);
-    assert_eq!(fill_rate, Decimal::new(4, 1));
+    let capital_fill_rate = Decimal::from(outcome.filled) / Decimal::from(outcome.signals_total);
+    assert_eq!(capital_fill_rate, Decimal::new(4, 1));
+    let execution_fill_rate = Decimal::from(outcome.filled)
+        / Decimal::from(outcome.signals_total - outcome.skipped_funds - outcome.invalid_levels);
+    assert_eq!(execution_fill_rate, Decimal::from(2) / Decimal::from(3));
 }
 
 #[test]
@@ -382,8 +385,11 @@ fn evaluate_execution_config_produces_validation_and_holdout_only() {
                     + partition.invalid_levels,
                 partition.signals
             );
-            assert!(partition.fill_rate >= Decimal::ZERO);
-            assert!(partition.fill_rate <= Decimal::ONE);
+            assert!(partition.capital_fill_rate >= Decimal::ZERO);
+            assert!(partition.capital_fill_rate <= Decimal::ONE);
+            assert!(partition.execution_fill_rate >= Decimal::ZERO);
+            assert!(partition.execution_fill_rate <= Decimal::ONE);
+            assert!(partition.execution_fill_rate >= partition.capital_fill_rate);
             assert_eq!(
                 partition.metrics.net_pnl,
                 partition.metrics.closed_net_pnl + partition.metrics.open_net_pnl

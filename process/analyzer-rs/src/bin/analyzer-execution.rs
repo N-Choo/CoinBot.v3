@@ -62,7 +62,8 @@ struct ExecutionRow {
     partition: String,
     signals: usize,
     filled: usize,
-    fill_rate: Decimal,
+    capital_fill_rate: Decimal,
+    execution_fill_rate: Decimal,
     expired: usize,
     skipped_funds: usize,
     invalid_levels: usize,
@@ -90,7 +91,8 @@ impl ExecutionRow {
             partition: partition.to_string(),
             signals: part.signals,
             filled: part.filled,
-            fill_rate: part.fill_rate,
+            capital_fill_rate: part.capital_fill_rate,
+            execution_fill_rate: part.execution_fill_rate,
             expired: part.expired,
             skipped_funds: part.skipped_funds,
             invalid_levels: part.invalid_levels,
@@ -115,7 +117,9 @@ struct DatasetSummary {
 struct CandidateDecision {
     candidate: String,
     selected_model: Option<String>,
-    validation_fill_rate: Option<Decimal>,
+    validation_execution_fill_rate: Option<Decimal>,
+    validation_capital_fill_rate: Option<Decimal>,
+    validation_skipped_funds: Option<usize>,
     validation_net_expectancy: Option<Decimal>,
     market_validation_net_expectancy: Option<Decimal>,
     holdout_net_expectancy: Option<Decimal>,
@@ -366,6 +370,7 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
             .unwrap_or(Decimal::ZERO);
 
         let mut best: Option<(&ExecModel, &ExecPartition)> = None;
+        let mut rejected: Vec<String> = Vec::new();
         for model in models {
             if model.label == "market" {
                 continue;
@@ -373,24 +378,53 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
             let Some(validation) = part(run, &model.label, "validation") else {
                 continue;
             };
-            if validation.fill_rate < Decimal::new(5, 1)
-                || validation.metrics.net_expectancy <= Decimal::ZERO
-                || validation.metrics.net_expectancy <= market_validation
-            {
-                continue;
-            }
-            if best.is_none_or(|(_, current)| {
-                validation.metrics.net_expectancy > current.metrics.net_expectancy
-            }) {
-                best = Some((model, validation));
+            let fill_ok = validation.execution_fill_rate >= Decimal::new(5, 1);
+            let expectancy_positive = validation.metrics.net_expectancy > Decimal::ZERO;
+            let beats_market = validation.metrics.net_expectancy > market_validation;
+            if fill_ok && expectancy_positive && beats_market {
+                if best.is_none_or(|(_, current)| {
+                    validation.metrics.net_expectancy > current.metrics.net_expectancy
+                }) {
+                    best = Some((model, validation));
+                }
+            } else {
+                let mut failures = Vec::new();
+                if !fill_ok {
+                    failures.push(format!(
+                        "execution fill rate {} was below 50%",
+                        display_pct(validation.execution_fill_rate)
+                    ));
+                }
+                if !expectancy_positive {
+                    failures.push(format!(
+                        "net expectancy {} was not positive",
+                        validation.metrics.net_expectancy
+                    ));
+                } else if !beats_market {
+                    failures.push(format!(
+                        "net expectancy {} did not beat market {}",
+                        validation.metrics.net_expectancy, market_validation
+                    ));
+                }
+                rejected.push(format!("{} ({})", model.label, failures.join("; ")));
             }
         }
 
         let Some((model, validation)) = best else {
+            let rationale = if rejected.is_empty() {
+                "no limit model had a validation partition to evaluate".to_string()
+            } else {
+                format!(
+                    "no limit model met the validation criteria: {}. Execution fill rate excludes orders skipped for capital; capital fill rate and skipped funds are reported separately.",
+                    rejected.join("; ")
+                )
+            };
             decisions.push(CandidateDecision {
                 candidate: run.label.clone(),
                 selected_model: None,
-                validation_fill_rate: None,
+                validation_execution_fill_rate: None,
+                validation_capital_fill_rate: None,
+                validation_skipped_funds: None,
                 validation_net_expectancy: None,
                 market_validation_net_expectancy: Some(market_validation),
                 holdout_net_expectancy: None,
@@ -398,7 +432,7 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 holdout_positive_symbols: 0,
                 holdout_symbols: symbols.len(),
                 rescues: false,
-                rationale: "no limit model met the validation criteria (fill rate >= 50%, positive net expectancy, and better than market)".to_string(),
+                rationale,
             });
             continue;
         };
@@ -424,9 +458,10 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
 
         let rationale = if rescues {
             format!(
-                "{} passed validation (fill rate {}, net expectancy {}) and the holdout held up (net expectancy {}, PF {}, {} of {} symbols positive).",
+                "{} passed validation (execution fill rate {}, capital fill rate {}, net expectancy {}) and the holdout held up (net expectancy {}, PF {}, {} of {} symbols positive).",
                 model.label,
-                display_pct(validation.fill_rate),
+                display_pct(validation.execution_fill_rate),
+                display_pct(validation.capital_fill_rate),
                 validation.metrics.net_expectancy,
                 holdout_net_expectancy,
                 display_profit_factor(holdout_profit_factor),
@@ -455,9 +490,10 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 ));
             }
             format!(
-                "{} passed validation (fill rate {}, net expectancy {}) but did not rescue execution: {}.",
+                "{} passed validation (execution fill rate {}, capital fill rate {}, net expectancy {}) but did not rescue execution: {}.",
                 model.label,
-                display_pct(validation.fill_rate),
+                display_pct(validation.execution_fill_rate),
+                display_pct(validation.capital_fill_rate),
                 validation.metrics.net_expectancy,
                 reasons.join("; ")
             )
@@ -466,7 +502,9 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
         decisions.push(CandidateDecision {
             candidate: run.label.clone(),
             selected_model: Some(model.label.clone()),
-            validation_fill_rate: Some(validation.fill_rate),
+            validation_execution_fill_rate: Some(validation.execution_fill_rate),
+            validation_capital_fill_rate: Some(validation.capital_fill_rate),
+            validation_skipped_funds: Some(validation.skipped_funds),
             validation_net_expectancy: Some(validation.metrics.net_expectancy),
             market_validation_net_expectancy: Some(market_validation),
             holdout_net_expectancy: Some(holdout_net_expectancy),
@@ -568,14 +606,15 @@ fn display_profit_factor(value: Option<Decimal>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-const CSV_COLUMNS: [&str; 17] = [
+const CSV_COLUMNS: [&str; 18] = [
     "candidate",
     "model",
     "symbol_or_pooled",
     "partition",
     "signals",
     "filled",
-    "fill_rate",
+    "capital_fill_rate",
+    "execution_fill_rate",
     "expired",
     "skipped_funds",
     "invalid_levels",
@@ -602,7 +641,8 @@ fn write_csv(path: &Path, rows: &[ExecutionRow]) -> Result<(), String> {
             row.partition.clone(),
             row.signals.to_string(),
             row.filled.to_string(),
-            row.fill_rate.to_string(),
+            row.capital_fill_rate.to_string(),
+            row.execution_fill_rate.to_string(),
             row.expired.to_string(),
             row.skipped_funds.to_string(),
             row.invalid_levels.to_string(),
@@ -640,10 +680,10 @@ fn write_partition_table(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Model | Fill rate | Filled/Signals | Expired | Skipped funds | Net expectancy | PF | Trades | Max DD % |"
+        "| Candidate | Model | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Skipped funds | Net expectancy | PF | Trades | Max DD % |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|")
+    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
         .expect("writing to String cannot fail");
     for run in runs {
         for model in models {
@@ -652,10 +692,11 @@ fn write_partition_table(
             };
             writeln!(
                 out,
-                "| {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} |",
                 run.label,
                 model.label,
-                display_pct(part.fill_rate),
+                display_pct(part.execution_fill_rate),
+                display_pct(part.capital_fill_rate),
                 part.filled,
                 part.signals,
                 part.expired,
@@ -683,10 +724,11 @@ fn write_per_symbol_table(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Model | Symbol | Fill rate | Filled/Signals | Expired | Net expectancy | PF | Trades |"
+        "| Candidate | Model | Symbol | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Net expectancy | PF | Trades |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|")
+        .expect("writing to String cannot fail");
     for run in runs {
         for model in models {
             for symbol in symbols {
@@ -700,10 +742,11 @@ fn write_per_symbol_table(
                 };
                 writeln!(
                     out,
-                    "| {} | {} | {symbol} | {} | {}/{} | {} | {} | {} | {} |",
+                    "| {} | {} | {symbol} | {} | {} | {}/{} | {} | {} | {} | {} |",
                     run.label,
                     model.label,
-                    display_pct(part.fill_rate),
+                    display_pct(part.execution_fill_rate),
+                    display_pct(part.capital_fill_rate),
                     part.filled,
                     part.signals,
                     part.expired,
@@ -842,28 +885,37 @@ fn write_markdown(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation fill rate is at least 50%, and it beats `market` on validation net expectancy. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
+        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by funded orders only (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Selected model | Validation fill rate | Holdout net expectancy | Holdout PF | Positive symbols | Rescues | Rationale |"
+        "| Candidate | Selected model | Validation exec fill rate | Validation capital fill rate | Validation skipped funds | Holdout net expectancy | Holdout PF | Positive symbols | Rescues | Rationale |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|")
+        .expect("writing to String cannot fail");
     for candidate in &decision.candidates {
         writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {}/{} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} |",
             candidate.candidate,
             candidate
                 .selected_model
                 .clone()
                 .unwrap_or_else(|| "-".to_string()),
             candidate
-                .validation_fill_rate
+                .validation_execution_fill_rate
                 .map(display_pct)
+                .unwrap_or_else(|| "-".to_string()),
+            candidate
+                .validation_capital_fill_rate
+                .map(display_pct)
+                .unwrap_or_else(|| "-".to_string()),
+            candidate
+                .validation_skipped_funds
+                .map(|value| value.to_string())
                 .unwrap_or_else(|| "-".to_string()),
             candidate
                 .holdout_net_expectancy
@@ -882,7 +934,42 @@ fn write_markdown(
         .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
 
-    writeln!(out, "## 8. Limitations").expect("writing to String cannot fail");
+    writeln!(out, "## 8. Capacity / capital constraint").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    if let Some(validation) = runs
+        .iter()
+        .find(|run| run.label == "joint-13")
+        .and_then(|run| part(run, "market", "validation"))
+    {
+        writeln!(
+            out,
+            "- `joint-13` produced {} validation signals but only {} were funded (`E = init_fund / 2`, max two concurrent positions); {} were skipped for funds.",
+            validation.signals, validation.filled, validation.skipped_funds
+        )
+        .expect("writing to String cannot fail");
+    }
+    writeln!(
+        out,
+        "- This is a strategy-capacity issue, not an execution-model failure."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "- A larger `--init-fund` or smaller `E` would change the comparison; not tested here."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+
+    writeln!(out, "## 9. Market control").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "The execution simulator closes open positions at partition end (`eod`, taker), while the cost ladder marks them; absolute `market` metrics can differ slightly from the cost-ladder report. Model comparisons are within the same execution simulator."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+
+    writeln!(out, "## 10. Limitations").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
@@ -918,13 +1005,15 @@ fn print_summary(runs: &[CandidateRun], models: &[ExecModel], decision: &Decisio
             let holdout = part(run, &model.label, "holdout");
             if let (Some(validation), Some(holdout)) = (validation, holdout) {
                 println!(
-                    "  {} / {}: validation net={} fill={} holdout net={} fill={}",
+                    "  {} / {}: validation net={} exec_fill={} capital_fill={} holdout net={} exec_fill={} capital_fill={}",
                     run.label,
                     model.label,
                     validation.metrics.net_expectancy.round_dp(4),
-                    display_pct(validation.fill_rate),
+                    display_pct(validation.execution_fill_rate),
+                    display_pct(validation.capital_fill_rate),
                     holdout.metrics.net_expectancy.round_dp(4),
-                    display_pct(holdout.fill_rate)
+                    display_pct(holdout.execution_fill_rate),
+                    display_pct(holdout.capital_fill_rate)
                 );
             }
         }

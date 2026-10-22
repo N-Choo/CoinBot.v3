@@ -516,10 +516,40 @@ pub struct ExecPartition {
     pub expired: usize,
     pub skipped_funds: usize,
     pub invalid_levels: usize,
-    pub fill_rate: Decimal,
+    /// `filled / signals_total`, including signals dropped for insufficient funds.
+    pub capital_fill_rate: Decimal,
+    /// `filled / (signals_total - skipped_funds - invalid_levels)`.
+    /// This measures limit-fill quality among orders that were actually executable.
+    pub execution_fill_rate: Decimal,
 }
 
-/// Pools per-symbol execution partitions, summing signal counts and recomputing the fill rate.
+/// Computes the capital-constrained and execution-only fill rates.
+///
+/// The execution rate excludes signals rejected for insufficient capital or invalid levels so
+/// that capital scarcity is not mistaken for a limit-fill failure.
+fn fill_rates(
+    filled: usize,
+    signals: usize,
+    skipped_funds: usize,
+    invalid_levels: usize,
+) -> (Decimal, Decimal) {
+    let capital_fill_rate = if signals == 0 {
+        Decimal::ZERO
+    } else {
+        Decimal::from(filled) / Decimal::from(signals)
+    };
+    let executable = signals
+        .saturating_sub(skipped_funds)
+        .saturating_sub(invalid_levels);
+    let execution_fill_rate = if executable == 0 {
+        Decimal::ZERO
+    } else {
+        Decimal::from(filled) / Decimal::from(executable)
+    };
+    (capital_fill_rate, execution_fill_rate)
+}
+
+/// Pools per-symbol execution partitions, summing signal counts and recomputing the fill rates.
 pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
     let metrics: Vec<PartitionMetrics> = parts.iter().map(|part| part.metrics.clone()).collect();
     let mut pooled = ExecPartition {
@@ -529,7 +559,8 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         expired: 0,
         skipped_funds: 0,
         invalid_levels: 0,
-        fill_rate: Decimal::ZERO,
+        capital_fill_rate: Decimal::ZERO,
+        execution_fill_rate: Decimal::ZERO,
     };
     for part in parts {
         pooled.signals += part.signals;
@@ -538,9 +569,14 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         pooled.skipped_funds += part.skipped_funds;
         pooled.invalid_levels += part.invalid_levels;
     }
-    if pooled.signals != 0 {
-        pooled.fill_rate = Decimal::from(pooled.filled) / Decimal::from(pooled.signals);
-    }
+    let (capital_fill_rate, execution_fill_rate) = fill_rates(
+        pooled.filled,
+        pooled.signals,
+        pooled.skipped_funds,
+        pooled.invalid_levels,
+    );
+    pooled.capital_fill_rate = capital_fill_rate;
+    pooled.execution_fill_rate = execution_fill_rate;
     pooled
 }
 
@@ -607,11 +643,12 @@ pub fn evaluate_execution_config(
                 init_fund_decimal,
                 &zero_cost,
             );
-            let fill_rate = if outcome.signals_total == 0 {
-                Decimal::ZERO
-            } else {
-                Decimal::from(outcome.filled) / Decimal::from(outcome.signals_total)
-            };
+            let (capital_fill_rate, execution_fill_rate) = fill_rates(
+                outcome.filled,
+                outcome.signals_total,
+                outcome.skipped_funds,
+                outcome.invalid_levels,
+            );
             result.entry(model.label.clone()).or_default().insert(
                 name.to_string(),
                 ExecPartition {
@@ -621,7 +658,8 @@ pub fn evaluate_execution_config(
                     expired: outcome.expired,
                     skipped_funds: outcome.skipped_funds,
                     invalid_levels: outcome.invalid_levels,
-                    fill_rate,
+                    capital_fill_rate,
+                    execution_fill_rate,
                 },
             );
         }
