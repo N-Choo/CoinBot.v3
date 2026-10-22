@@ -1,6 +1,6 @@
 use crate::harness::dataset::Provenance;
 use crate::harness::replay::{Replay, ReplayEvent, ReplaySignal};
-use crate::harness::sim::{unrealized_pnl, AccountStep, Position, SimOutcome};
+use crate::harness::sim::{unrealized_pnl, Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
@@ -84,7 +84,7 @@ pub fn build_payload(
                     "tp": p.tp.to_string(),
                     "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
-                "account": account_payload(&input.replay.signals, input.sim, &input.sim.account),
+                "account": account_payload(&input.replay.signals, input.sim),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
             })
@@ -127,11 +127,7 @@ fn direction_str(direction: Direction) -> &'static str {
 
 /// Builds the per-step account payload, enriching each open position with the
 /// side, fill, size, SL, and TP needed by the read-only UI.
-fn account_payload(
-    signals: &[ReplaySignal],
-    sim: &SimOutcome,
-    account: &[AccountStep],
-) -> Vec<Value> {
+fn account_payload(signals: &[ReplaySignal], sim: &SimOutcome) -> Vec<Value> {
     let signals_by_id: HashMap<&str, &ReplaySignal> =
         signals.iter().map(|s| (s.signal_id.as_str(), s)).collect();
 
@@ -159,7 +155,7 @@ fn account_payload(
         );
     }
 
-    account
+    sim.account
         .iter()
         .map(|a| {
             json!({

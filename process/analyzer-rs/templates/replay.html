@@ -40,7 +40,7 @@ header{position:sticky;top:0;z-index:100;border-bottom:1px solid var(--line);bac
 .dot.warn{background:var(--orange);box-shadow:0 0 8px var(--orange)}
 @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 .banner{padding:7px 16px;border-bottom:1px solid var(--line2);background:rgba(29,205,159,.055);color:var(--teal);font-size:10px;letter-spacing:.16em;text-transform:uppercase;text-align:center}
-.tabs{position:sticky;top:82px;z-index:90;display:flex;gap:6px;flex-wrap:wrap;padding:10px 0 8px;background:var(--bg);border-bottom:1px solid var(--line)}
+.tabs{position:sticky;z-index:90;display:flex;gap:6px;flex-wrap:wrap;padding:10px 0 8px;background:var(--bg);border-bottom:1px solid var(--line)}
 .tab{background:transparent;border:1px solid var(--line2);color:var(--muted);font-size:11px;letter-spacing:.1em;padding:7px 12px;cursor:pointer;transition:.15s;max-width:340px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .tab:hover{border-color:var(--teal);color:var(--teal)}
 .tab.on{background:var(--teal);border-color:var(--teal);color:#04110d;font-weight:700}
@@ -226,7 +226,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     </div>
 
     <div class="card ledgercard">
-      <div class="ph"><h3>Simulation summary</h3><span class="hint">gross simulated · fees and slippage excluded</span></div>
+      <div class="ph"><h3>Simulation summary</h3><span class="hint">equity/unrealized at selected candle · other metrics whole-run · gross, fees excluded</span></div>
       <div class="summarygrid" id="summaryGrid"></div>
       <div class="labelbar" id="returnsLabel">gross simulated, excluding fees and slippage</div>
       <div class="prov" id="provenance">—</div>
@@ -425,7 +425,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     return side === "BUY" ? price <= level : price >= level;
   }
   function distanceText(side, price, level, kind) {
-    if (!Number.isFinite(level)) return "—";
+    if (!Number.isFinite(price) || !Number.isFinite(level)) return "—";
     if (isBeyond(side, price, level, kind)) {
       return "beyond " + kind.toUpperCase();
     }
@@ -618,7 +618,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       ctx.stroke();
     }
 
-    function levels(tab, side, sl, tp, fromIndex, toIndex) {
+    function levels(sl, tp, fromIndex, toIndex) {
       if (!Number.isFinite(sl) || !Number.isFinite(tp)) return;
       const from = Math.max(fromIndex, start);
       const to = Math.min(toIndex, step);
@@ -649,7 +649,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       if (trade.entryIndex > step) continue;
       const signal = signalForTrade(tab, trade);
       const color = trade.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
-      if (signal) levels(tab, trade.side, signal.sl, signal.tp, trade.entryIndex, trade.exitIndex);
+      if (signal) levels(signal.sl, signal.tp, trade.entryIndex, trade.exitIndex);
       if (trade.entryIndex >= start) {
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -666,7 +666,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     for (const position of tab.openPositions) {
       if (position.entryIndex > step) continue;
       const color = position.side === "BUY" ? "#1dcd9f" : "#ff4d4d";
-      levels(tab, position.side, position.sl, position.tp, position.entryIndex, step);
+      levels(position.sl, position.tp, position.entryIndex, step);
       if (position.entryIndex >= start) {
         ctx.fillStyle = color;
         ctx.beginPath();
@@ -692,15 +692,16 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       placed.push(textY);
 
       const clamped = Math.max(plotTop, Math.min(plotBottom, textY));
+      const textX = w - m.r - 4;
+      const ax = textX - ctx.measureText(label.text).width - 8;
       ctx.fillStyle = label.color;
       ctx.textAlign = "right";
-      ctx.fillText(label.text, w - m.r - 4, clamped);
+      ctx.fillText(label.text, textX, clamped);
 
       // Arrow only when the actual price is off-screen, regardless of staggering.
       if (priceY < plotTop || priceY > plotBottom) {
         ctx.fillStyle = label.color;
         ctx.beginPath();
-        const ax = w - m.r - 14;
         if (priceY < plotTop) {
           ctx.moveTo(ax - 3, clamped + 6);
           ctx.lineTo(ax, clamped);
@@ -936,7 +937,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   }
 
   function positionBar(side, price, sl, tp) {
-    if (!Number.isFinite(sl) || !Number.isFinite(tp)) {
+    if (!Number.isFinite(price) || !Number.isFinite(sl) || !Number.isFinite(tp)) {
       return '<span class="bar-track"><span class="bar-fill" style="width:0"></span></span><span class="bar-label">—</span>';
     }
     const beyondTp = isBeyond(side, price, tp, "tp");
@@ -1054,7 +1055,13 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     const tab = current();
     if (!host || !tab) return;
     const summary = tab.summary || {};
-    host.innerHTML = summaryCells(summary)
+    const acct = accountAtStep(tab, currentStep());
+    const view = Object.assign({}, summary);
+    if (acct) {
+      view.equity = acct.equity;
+      view.unrealized_pnl = acct.unrealized;
+    }
+    host.innerHTML = summaryCells(view)
       .map((cell) => '<div class="cell"><span class="k">' + escapeHtml(cell[0]) + '</span><span class="v">' + escapeHtml(cell[1]) + "</span></div>")
       .join("");
     setText("returnsLabel", summary.returns_label || "gross simulated, excluding fees and slippage");
@@ -1123,6 +1130,12 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     }, speed);
   }
 
+  function syncTabsTop() {
+    const tabs = el("tabs");
+    const header = document.querySelector("header");
+    if (tabs && header) tabs.style.top = header.offsetHeight + "px";
+  }
+
   function bind() {
     el("play")?.addEventListener("click", play);
     el("prev")?.addEventListener("click", () => {
@@ -1162,7 +1175,10 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       setStep(Number(event.target.value));
       render();
     });
-    window.addEventListener("resize", render);
+    window.addEventListener("resize", () => {
+      syncTabsTop();
+      render();
+    });
     document.addEventListener("keydown", (event) => {
       if (event.target.tagName === "INPUT" || event.target.tagName === "SELECT") return;
       if (event.code === "Space") {
@@ -1184,6 +1200,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
 
   function init() {
     renderTabs();
+    syncTabsTop();
     if (TABS.length && !TABS[0].candles.length) {
       const empty = el("events");
       if (empty) empty.innerHTML = '<div class="empty">No candles in this report.</div>';
