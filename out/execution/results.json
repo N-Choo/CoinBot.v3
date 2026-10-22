@@ -239,19 +239,19 @@
       "symbol_or_pooled": "pooled",
       "partition": "validation",
       "signals": 130,
-      "filled": 101,
-      "capital_fill_rate": "0.7769230769230769230769230769",
-      "execution_fill_rate": "0.9528301886792452830188679245",
+      "filled": 100,
+      "capital_fill_rate": "0.7692307692307692307692307692",
+      "execution_fill_rate": "0.9523809523809523809523809524",
       "expired": 5,
-      "skipped_funds": 24,
+      "skipped_funds": 25,
       "invalid_levels": 0,
-      "trades": 101,
-      "net_expectancy": "0.0719546244704584476583479274",
-      "net_profit_factor": "1.0087066537539580245084305536",
-      "win_rate": "39.603960396039603960396039600",
-      "max_drawdown_pct": "17.557810208745040188416656370",
-      "expectancy_stderr": "1.915780463265284",
-      "net_pnl": "7.267417071516303213493140663"
+      "trades": 100,
+      "net_expectancy": "0.0094357072811565636798261467",
+      "net_profit_factor": "1.0011432991247321160613662643",
+      "win_rate": "39.00",
+      "max_drawdown_pct": "18.724897497197646257134941180",
+      "expectancy_stderr": "1.923008399225408",
+      "net_pnl": "0.943570728115656367982614667"
     },
     {
       "candidate": "baseline",
@@ -266,12 +266,12 @@
       "skipped_funds": 6,
       "invalid_levels": 0,
       "trades": 32,
-      "net_expectancy": "-2.3578606638105112254125572417",
-      "net_profit_factor": "0.6872028883849048197962917465",
+      "net_expectancy": "-2.1907660844003420428602971766",
+      "net_profit_factor": "0.7027814460318187158079904667",
       "win_rate": "34.37500",
-      "max_drawdown_pct": "10.801586806699912292237060450",
-      "expectancy_stderr": "2.529784661244218",
-      "net_pnl": "-75.451541241936359213201831735"
+      "max_drawdown_pct": "10.266884152587370908069828250",
+      "expectancy_stderr": "2.510909124001105",
+      "net_pnl": "-70.104514700810945371529509652"
     },
     {
       "candidate": "baseline",
@@ -299,19 +299,19 @@
       "symbol_or_pooled": "SOL-USDT",
       "partition": "validation",
       "signals": 43,
-      "filled": 33,
-      "capital_fill_rate": "0.7674418604651162790697674419",
-      "execution_fill_rate": "0.9428571428571428571428571429",
+      "filled": 32,
+      "capital_fill_rate": "0.744186046511627906976744186",
+      "execution_fill_rate": "0.9411764705882352941176470588",
       "expired": 2,
-      "skipped_funds": 8,
+      "skipped_funds": 9,
       "invalid_levels": 0,
-      "trades": 33,
-      "net_expectancy": "-0.4840559585505111479726209522",
-      "net_profit_factor": "0.9516651008725218629009041849",
-      "win_rate": "42.424242424242424242424242420",
-      "max_drawdown_pct": "17.557810208745040188416656370",
-      "expectancy_stderr": "3.862880855687496",
-      "net_pnl": "-15.973846632166867883096491422"
+      "trades": 32,
+      "net_expectancy": "-0.8638974848966540178212293594",
+      "net_profit_factor": "0.9153140254374720359059628319",
+      "win_rate": "40.62500",
+      "max_drawdown_pct": "18.724897497197646257134941180",
+      "expectancy_stderr": "3.9393454937616",
+      "net_pnl": "-27.644719516692928570279339501"
     },
     {
       "candidate": "baseline",
@@ -326,12 +326,12 @@
       "skipped_funds": 25,
       "invalid_levels": 0,
       "trades": 111,
-      "net_expectancy": "-0.5086821363966332483123586628",
-      "net_profit_factor": "0.9297983352713978146627964812",
+      "net_expectancy": "-0.3740401367234270360848842807",
+      "net_profit_factor": "0.9474025239559535815080512489",
       "win_rate": "38.738738738738738738738738740",
-      "max_drawdown_pct": "13.570149213559628098906283750",
-      "expectancy_stderr": "1.458502337201572",
-      "net_pnl": "-56.463717140026290562671811576"
+      "max_drawdown_pct": "13.541536251583843723322904160",
+      "expectancy_stderr": "1.444983362454872",
+      "net_pnl": "-41.518455176300401005422155154"
     },
     {
       "candidate": "baseline",
@@ -346,12 +346,12 @@
       "skipped_funds": 2,
       "invalid_levels": 0,
       "trades": 39,
-      "net_expectancy": "-0.6320416050216529772093921178",
-      "net_profit_factor": "0.892420188672250820440142861",
+      "net_expectancy": "-0.6247049481047851885982691471",
+      "net_profit_factor": "0.893536011859867574869502931",
       "win_rate": "33.333333333333333333333333330",
-      "max_drawdown_pct": "13.570149213559628098906283750",
-      "expectancy_stderr": "1.998614779857267",
-      "net_pnl": "-24.649622595844466111166292596"
+      "max_drawdown_pct": "13.541536251583843723322904160",
+      "expectancy_stderr": "1.997788849595825",
+      "net_pnl": "-24.363492976086622355332496736"
     },
     {
       "candidate": "baseline",
@@ -366,12 +366,12 @@
       "skipped_funds": 17,
       "invalid_levels": 0,
       "trades": 27,
-      "net_expectancy": "-0.915362453847355730578769188",
-      "net_profit_factor": "0.8832290338486105506680639618",
+      "net_expectancy": "-0.4741492490137005558336826564",
+      "net_profit_factor": "0.935906225903092347723733486",
       "win_rate": "44.444444444444444444444444440",
-      "max_drawdown_pct": "7.6834826372267449563831780500",
-      "expectancy_stderr": "3.004341716722486",
-      "net_pnl": "-24.714786253878604725626768075"
+      "max_drawdown_pct": "6.4922069841758759845714444200",
+      "expectancy_stderr": "2.906741301549033",
+      "net_pnl": "-12.802029723369915007509431723"
     },
     {
       "candidate": "baseline",
@@ -386,12 +386,12 @@
       "skipped_funds": 6,
       "invalid_levels": 0,
       "trades": 45,
-      "net_expectancy": "-0.1577624064511826605750833534",
-      "net_profit_factor": "0.9804710218648690200919187433",
+      "net_expectancy": "-0.0967318328187525253906717043",
+      "net_profit_factor": "0.9879346789797175499417679325",
       "win_rate": "40.00",
       "max_drawdown_pct": "12.433967625113727331881087850",
-      "expectancy_stderr": "2.586398988420761",
-      "net_pnl": "-7.0993082903032197258787509045"
+      "expectancy_stderr": "2.580469376122073",
+      "net_pnl": "-4.3529324768438636425802266945"
     },
     {
       "candidate": "baseline",
@@ -399,19 +399,19 @@
       "symbol_or_pooled": "pooled",
       "partition": "validation",
       "signals": 130,
-      "filled": 105,
-      "capital_fill_rate": "0.8076923076923076923076923077",
-      "execution_fill_rate": "0.9722222222222222222222222222",
+      "filled": 104,
+      "capital_fill_rate": "0.80",
+      "execution_fill_rate": "0.9719626168224299065420560748",
       "expired": 3,
-      "skipped_funds": 22,
+      "skipped_funds": 23,
       "invalid_levels": 0,
-      "trades": 105,
-      "net_expectancy": "0.3648698720192537672647568739",
-      "net_profit_factor": "1.0452495867521457537250224342",
-      "win_rate": "40.952380952380952380952380950",
-      "max_drawdown_pct": "17.562257711657909655680219840",
-      "expectancy_stderr": "1.859118899310157",
-      "net_pnl": "38.311336562021645562799471756"
+      "trades": 104,
+      "net_expectancy": "0.3507344847454224801746934328",
+      "net_profit_factor": "1.0435306678615620785390357674",
+      "win_rate": "40.384615384615384615384615380",
+      "max_drawdown_pct": "18.280455380620221802310587530",
+      "expectancy_stderr": "1.870212345794005",
+      "net_pnl": "36.476386413523937938168117010"
     },
     {
       "candidate": "baseline",
@@ -426,12 +426,12 @@
       "skipped_funds": 6,
       "invalid_levels": 0,
       "trades": 32,
-      "net_expectancy": "-2.3578606638105112254125572417",
-      "net_profit_factor": "0.6872028883849048197962917465",
+      "net_expectancy": "-2.1907660844003420428602971766",
+      "net_profit_factor": "0.7027814460318187158079904667",
       "win_rate": "34.37500",
-      "max_drawdown_pct": "10.801586806699912292237060450",
-      "expectancy_stderr": "2.529784661244218",
-      "net_pnl": "-75.451541241936359213201831735"
+      "max_drawdown_pct": "10.266884152587370908069828250",
+      "expectancy_stderr": "2.510909124001105",
+      "net_pnl": "-70.104514700810945371529509652"
     },
     {
       "candidate": "baseline",
@@ -459,19 +459,19 @@
       "symbol_or_pooled": "SOL-USDT",
       "partition": "validation",
       "signals": 43,
-      "filled": 36,
-      "capital_fill_rate": "0.8372093023255813953488372093",
-      "execution_fill_rate": "0.972972972972972972972972973",
+      "filled": 35,
+      "capital_fill_rate": "0.8139534883720930232558139535",
+      "execution_fill_rate": "0.9722222222222222222222222222",
       "expired": 1,
-      "skipped_funds": 6,
+      "skipped_funds": 7,
       "invalid_levels": 0,
-      "trades": 36,
-      "net_expectancy": "-0.0534177272015375260731233469",
-      "net_profit_factor": "0.9943845170377266634876420421",
-      "win_rate": "44.444444444444444444444444440",
-      "max_drawdown_pct": "17.562257711657909655680219840",
-      "expectancy_stderr": "3.591136175586563",
-      "net_pnl": "-1.923038179255350938632440489"
+      "trades": 35,
+      "net_expectancy": "-0.2601432819679563544267462091",
+      "net_profit_factor": "0.9731478571865991522017425529",
+      "win_rate": "42.857142857142857142857142860",
+      "max_drawdown_pct": "18.280455380620221802310587530",
+      "expectancy_stderr": "3.674375369148128",
+      "net_pnl": "-9.105014868878472404936117318"
     },
     {
       "candidate": "baseline",
@@ -486,12 +486,12 @@
       "skipped_funds": 26,
       "invalid_levels": 0,
       "trades": 113,
-      "net_expectancy": "-0.5637546003982943583288254422",
-      "net_profit_factor": "0.9219708720318320070707191838",
+      "net_expectancy": "-0.4314956449670917958752886597",
+      "net_profit_factor": "0.9391631242882974764769216743",
       "win_rate": "38.938053097345132743362831860",
-      "max_drawdown_pct": "13.083289705180091707212900470",
-      "expectancy_stderr": "1.436551595343341",
-      "net_pnl": "-63.704269845007262491157274972"
+      "max_drawdown_pct": "13.054676743204307331629520880",
+      "expectancy_stderr": "1.423586726626147",
+      "net_pnl": "-48.759007881281372933907618550"
     },
     {
       "candidate": "baseline",
@@ -506,12 +506,12 @@
       "skipped_funds": 3,
       "invalid_levels": 0,
       "trades": 40,
-      "net_expectancy": "-0.4945256878012275548558114952",
-      "net_profit_factor": "0.9136684872419096711995585455",
+      "net_expectancy": "-0.4873724473072814609599665986",
+      "net_profit_factor": "0.9148108778968948008285178922",
       "win_rate": "35.00",
-      "max_drawdown_pct": "13.083289705180091707212900470",
-      "expectancy_stderr": "1.952856526691014",
-      "net_pnl": "-19.781027512049102194232459806"
+      "max_drawdown_pct": "13.054676743204307331629520880",
+      "expectancy_stderr": "1.952040596136831",
+      "net_pnl": "-19.494897892291258438398663946"
     },
     {
       "candidate": "baseline",
@@ -526,12 +526,12 @@
       "skipped_funds": 17,
       "invalid_levels": 0,
       "trades": 28,
-      "net_expectancy": "-1.3151405015233907346802165808",
-      "net_profit_factor": "0.835431817373842195894982633",
+      "net_expectancy": "-0.8896849111480803876045974253",
+      "net_profit_factor": "0.8824102472793623017073326593",
       "win_rate": "42.857142857142857142857142860",
-      "max_drawdown_pct": "7.6834826372267449563831780500",
-      "expectancy_stderr": "2.922528428122257",
-      "net_pnl": "-36.823934042654940571046064261"
+      "max_drawdown_pct": "6.4922069841758759845714444200",
+      "expectancy_stderr": "2.831661089168827",
+      "net_pnl": "-24.911177512146250852928727909"
     },
     {
       "candidate": "baseline",
@@ -546,12 +546,12 @@
       "skipped_funds": 6,
       "invalid_levels": 0,
       "trades": 45,
-      "net_expectancy": "-0.1577624064511826605750833534",
-      "net_profit_factor": "0.9804710218648690200919187433",
+      "net_expectancy": "-0.0967318328187525253906717043",
+      "net_profit_factor": "0.9879346789797175499417679325",
       "win_rate": "40.00",
       "max_drawdown_pct": "12.433967625113727331881087850",
-      "expectancy_stderr": "2.586398988420761",
-      "net_pnl": "-7.0993082903032197258787509045"
+      "expectancy_stderr": "2.580469376122073",
+      "net_pnl": "-4.3529324768438636425802266945"
     },
     {
       "candidate": "baseline",
@@ -566,12 +566,12 @@
       "skipped_funds": 11,
       "invalid_levels": 0,
       "trades": 90,
-      "net_expectancy": "1.0907327054573030220969024382",
-      "net_profit_factor": "1.1422729392205189641078994009",
-      "win_rate": "38.888888888888888888888888890",
-      "max_drawdown_pct": "15.727999735043632895103615860",
-      "expectancy_stderr": "2.057360771593584",
-      "net_pnl": "98.16594349115727198872121944"
+      "net_expectancy": "0.951648845563369293525954315",
+      "net_profit_factor": "1.1239759766256946953728073169",
+      "win_rate": "37.777777777777777777777777780",
+      "max_drawdown_pct": "16.481929876947973755620634240",
+      "expectancy_stderr": "2.052153882899288",
+      "net_pnl": "85.64839610070323641733588835"
     },
     {
       "candidate": "baseline",
@@ -586,12 +586,12 @@
       "skipped_funds": 2,
       "invalid_levels": 0,
       "trades": 27,
-      "net_expectancy": "-1.2740986560416078487646889137",
-      "net_profit_factor": "0.8195502970000747305338062227",
+      "net_expectancy": "-1.076554496399032293516796718",
+      "net_profit_factor": "0.8431396942659141176460830587",
       "win_rate": "33.333333333333333333333333330",
-      "max_drawdown_pct": "8.77299516594835972322379800",
-      "expectancy_stderr": "2.854837840864735",
-      "net_pnl": "-34.400663713123411916646600671"
+      "max_drawdown_pct": "8.239625934913405724054489070",
+      "expectancy_stderr": "2.831721661654687",
+      "net_pnl": "-29.066971402773871924953511385"
     },
     {
       "candidate": "baseline",
@@ -606,12 +606,12 @@
       "skipped_funds": 4,
       "invalid_levels": 0,
       "trades": 32,
-      "net_expectancy": "2.8791444850332509791054324412",
-      "net_profit_factor": "1.4033289389286087444248640865",
+      "net_expectancy": "2.9210861818228563878707736481",
+      "net_profit_factor": "1.4116228735431469841844822857",
       "win_rate": "37.500",
-      "max_drawdown_pct": "10.096608218242499826498178680",
-      "expectancy_stderr": "3.652300284575927",
-      "net_pnl": "92.13262352106403133137383812"
+      "max_drawdown_pct": "9.962394788515762518449086820",
+      "expectancy_stderr": "3.647539544323766",
+      "net_pnl": "93.47475781833140441186475674"
     },
     {
       "candidate": "baseline",
@@ -626,12 +626,12 @@
       "skipped_funds": 5,
       "invalid_levels": 0,
       "trades": 31,
-      "net_expectancy": "1.3043220542973113733546445805",
-      "net_profit_factor": "1.1492501221627555405410176864",
-      "win_rate": "45.161290322580645161290322580",
-      "max_drawdown_pct": "15.727999735043632895103615860",
-      "expectancy_stderr": "3.905930083649251",
-      "net_pnl": "40.433983683216652573993981996"
+      "net_expectancy": "0.6851809575853452880782142901",
+      "net_profit_factor": "1.0762806227571705030394340058",
+      "win_rate": "41.935483870967741935483870970",
+      "max_drawdown_pct": "16.481929876947973755620634240",
+      "expectancy_stderr": "3.900311328166273",
+      "net_pnl": "21.240609685145703930424642992"
     },
     {
       "candidate": "baseline",
@@ -646,12 +646,12 @@
       "skipped_funds": 23,
       "invalid_levels": 0,
       "trades": 85,
-      "net_expectancy": "-0.2434571617546488307955391197",
-      "net_profit_factor": "0.965648223447710386193795873",
+      "net_expectancy": "-0.0679074682410188222106557594",
+      "net_profit_factor": "0.9901748960867207347994145578",
       "win_rate": "36.470588235294117647058823530",
-      "max_drawdown_pct": "9.381217414931685097527083320",
-      "expectancy_stderr": "1.677839784492863",
-      "net_pnl": "-20.693858749145150617620825178"
+      "max_drawdown_pct": "9.352675806975790458541168520",
+      "expectancy_stderr": "1.659657435708607",
+      "net_pnl": "-5.772134800486599887905739550"
     },
     {
       "candidate": "baseline",
@@ -666,12 +666,12 @@
       "skipped_funds": 2,
       "invalid_levels": 0,
       "trades": 28,
-      "net_expectancy": "-0.2798495364106618365966022628",
-      "net_profit_factor": "0.9483524811356464673336967797",
+      "net_expectancy": "-0.2696561049978423226730612625",
+      "net_profit_factor": "0.9501399267828968564599620054",
       "win_rate": "32.142857142857142857142857140",
-      "max_drawdown_pct": "9.381217414931685097527083320",
-      "expectancy_stderr": "2.246030905851037",
-      "net_pnl": "-7.835787019498531424704863357"
+      "max_drawdown_pct": "9.352675806975790458541168520",
+      "expectancy_stderr": "2.244747649981787",
+      "net_pnl": "-7.550370939939585034845715351"
     },
     {
       "candidate": "baseline",
@@ -686,12 +686,12 @@
       "skipped_funds": 13,
       "invalid_levels": 0,
       "trades": 23,
-      "net_expectancy": "-1.5101941808260063898609626721",
-      "net_profit_factor": "0.8138360230277512068497797585",
+      "net_expectancy": "-0.9935398804678283689082428916",
+      "net_profit_factor": "0.8691939201230714968836290786",
       "win_rate": "39.130434782608695652173913040",
-      "max_drawdown_pct": "6.54993288402819928074114500",
-      "expectancy_stderr": "3.268398245122842",
-      "net_pnl": "-34.734466158998146966802141458"
+      "max_drawdown_pct": "5.3616279932043898325498895100",
+      "expectancy_stderr": "3.157660216843733",
+      "net_pnl": "-22.851417250760052484889586506"
     },
     {
       "candidate": "baseline",
@@ -706,12 +706,12 @@
       "skipped_funds": 8,
       "invalid_levels": 0,
       "trades": 34,
-      "net_expectancy": "0.6434233655691625815848876364",
-      "net_profit_factor": "1.0828294972123303883872660666",
+      "net_expectancy": "0.724401570300383459759693009",
+      "net_profit_factor": "1.0942363935931579565451262829",
       "win_rate": "38.235294117647058823529411760",
       "max_drawdown_pct": "8.930413374186030090961424720",
-      "expectancy_stderr": "3.044896207251775",
-      "net_pnl": "21.876394429351527773886179637"
+      "expectancy_stderr": "3.036317524545797",
+      "net_pnl": "24.629653390213037631829562307"
     },
     {
       "candidate": "joint-13",
@@ -886,12 +886,12 @@
       "skipped_funds": 93,
       "invalid_levels": 0,
       "trades": 56,
-      "net_expectancy": "5.1508619090665423986974822473",
-      "net_profit_factor": "1.3951033403920088650897932919",
+      "net_expectancy": "5.1559337062797322390959425654",
+      "net_profit_factor": "1.3956463006518312972088991576",
       "win_rate": "50.00",
       "max_drawdown_pct": "22.904493601570987653084877380",
-      "expectancy_stderr": "4.74268059766654",
-      "net_pnl": "288.44826690772637432705900585"
+      "expectancy_stderr": "4.74254044246491",
+      "net_pnl": "288.73228755166500538937278366"
     },
     {
       "candidate": "joint-13",
@@ -906,12 +906,12 @@
       "skipped_funds": 35,
       "invalid_levels": 0,
       "trades": 13,
-      "net_expectancy": "-2.7056730088470962517128622194",
-      "net_profit_factor": "0.7916751876129979065922523006",
+      "net_expectancy": "-2.6838252670056630930733408488",
+      "net_profit_factor": "0.7930091711058034779005353353",
       "win_rate": "38.461538461538461538461538460",
       "max_drawdown_pct": "11.257501617497967857916787640",
-      "expectancy_stderr": "7.79382237883301",
-      "net_pnl": "-35.173749115012251272267208852"
+      "expectancy_stderr": "7.7921995949321",
+      "net_pnl": "-34.889728471073620209953431035"
     },
     {
       "candidate": "joint-13",
@@ -1046,12 +1046,12 @@
       "skipped_funds": 91,
       "invalid_levels": 0,
       "trades": 59,
-      "net_expectancy": "5.1268420298824970276584733229",
-      "net_profit_factor": "1.4031994364932298840668116743",
+      "net_expectancy": "5.1316559391017958592231136247",
+      "net_profit_factor": "1.4037308734204897705136160988",
       "win_rate": "49.152542372881355932203389830",
       "max_drawdown_pct": "21.500952316036892622605785360",
-      "expectancy_stderr": "4.5305989951117",
-      "net_pnl": "302.48367976306732463184992605"
+      "expectancy_stderr": "4.53046719941465",
+      "net_pnl": "302.76770040700595569416370386"
     },
     {
       "candidate": "joint-13",
@@ -1066,12 +1066,12 @@
       "skipped_funds": 35,
       "invalid_levels": 0,
       "trades": 13,
-      "net_expectancy": "-2.7056730088470962517128622194",
-      "net_profit_factor": "0.7916751876129979065922523006",
+      "net_expectancy": "-2.6838252670056630930733408488",
+      "net_profit_factor": "0.7930091711058034779005353353",
       "win_rate": "38.461538461538461538461538460",
       "max_drawdown_pct": "11.257501617497967857916787640",
-      "expectancy_stderr": "7.79382237883301",
-      "net_pnl": "-35.173749115012251272267208852"
+      "expectancy_stderr": "7.7921995949321",
+      "net_pnl": "-34.889728471073620209953431035"
     },
     {
       "candidate": "joint-13",
@@ -1206,12 +1206,12 @@
       "skipped_funds": 56,
       "invalid_levels": 0,
       "trades": 65,
-      "net_expectancy": "5.6422555104013664153070190431",
-      "net_profit_factor": "1.475456334448039690734214959",
+      "net_expectancy": "5.6511768660080688730782343486",
+      "net_profit_factor": "1.4765663823380539852754002838",
       "win_rate": "49.230769230769230769230769230",
       "max_drawdown_pct": "29.475085144433742841814362980",
-      "expectancy_stderr": "4.174151024873543",
-      "net_pnl": "366.74660817608881699495623780"
+      "expectancy_stderr": "4.173667511479421",
+      "net_pnl": "367.32649629052447675008523266"
     },
     {
       "candidate": "joint-13",
@@ -1226,12 +1226,12 @@
       "skipped_funds": 18,
       "invalid_levels": 0,
       "trades": 20,
-      "net_expectancy": "3.5970629985515382286294748807",
-      "net_profit_factor": "1.3757056961918681427613650523",
+      "net_expectancy": "3.6260574042733212163859246237",
+      "net_profit_factor": "1.3798845453784068399716574846",
       "win_rate": "50.00",
       "max_drawdown_pct": "6.4430042369154285797953828500",
-      "expectancy_stderr": "5.79540597237302",
-      "net_pnl": "71.941259971030764572589497614"
+      "expectancy_stderr": "5.79171171166541",
+      "net_pnl": "72.521148085466424327718492474"
     },
     {
       "candidate": "joint-13",
@@ -1526,12 +1526,12 @@
       "skipped_funds": 12,
       "invalid_levels": 0,
       "trades": 80,
-      "net_expectancy": "2.2224166481595423456623979038",
-      "net_profit_factor": "1.3029420426759876442245072404",
-      "win_rate": "47.500",
-      "max_drawdown_pct": "10.407788418994565087578137300",
-      "expectancy_stderr": "2.190672825863297",
-      "net_pnl": "177.79333185276338765299183230"
+      "net_expectancy": "1.9830146418700207892250923179",
+      "net_profit_factor": "1.2664062607791990561592521416",
+      "win_rate": "46.2500",
+      "max_drawdown_pct": "12.323004469310737539076581990",
+      "expectancy_stderr": "2.190676411612974",
+      "net_pnl": "158.64117134960166313800738543"
     },
     {
       "candidate": "max_age=4",
@@ -1586,12 +1586,12 @@
       "skipped_funds": 3,
       "invalid_levels": 0,
       "trades": 26,
-      "net_expectancy": "1.3499517487277715109289790689",
-      "net_profit_factor": "1.1521666003112151207014417382",
-      "win_rate": "50.00",
-      "max_drawdown_pct": "10.407788418994565087578137300",
-      "expectancy_stderr": "4.334954165708914",
-      "net_pnl": "35.098745466922059284153455792"
+      "net_expectancy": "0.61333019091385902958342342",
+      "net_profit_factor": "1.0666504568958493442588180361",
+      "win_rate": "46.153846153846153846153846150",
+      "max_drawdown_pct": "12.323004469310737539076581990",
+      "expectancy_stderr": "4.334971338458209",
+      "net_pnl": "15.946584963760334769169008919"
     },
     {
       "candidate": "max_age=4",
@@ -1606,12 +1606,12 @@
       "skipped_funds": 19,
       "invalid_levels": 0,
       "trades": 99,
-      "net_expectancy": "-0.2992732505314055831142498181",
-      "net_profit_factor": "0.9588229014670184002515474478",
+      "net_expectancy": "-0.1483110084735683148592027836",
+      "net_profit_factor": "0.9791609970486026459474688032",
       "win_rate": "38.383838383838383838383838380",
       "max_drawdown_pct": "12.433967625113727331881087840",
-      "expectancy_stderr": "1.571696053348856",
-      "net_pnl": "-29.628051802609152728310731992"
+      "expectancy_stderr": "1.55598369315056",
+      "net_pnl": "-14.682789838883263171061075580"
     },
     {
       "candidate": "max_age=4",
@@ -1626,12 +1626,12 @@
       "skipped_funds": 0,
       "invalid_levels": 0,
       "trades": 34,
-      "net_expectancy": "0.0912435838404465576008497473",
-      "net_profit_factor": "1.0161980377055806712070576184",
+      "net_expectancy": "0.0996591608921478445371378608",
+      "net_profit_factor": "1.0177184859250786053785411431",
       "win_rate": "35.294117647058823529411764710",
-      "max_drawdown_pct": "9.809486812981249988221683750",
-      "expectancy_stderr": "2.196583417680328",
-      "net_pnl": "3.1022818505751829584288914071"
+      "max_drawdown_pct": "9.780873851005465612638304160",
+      "expectancy_stderr": "2.195506711411873",
+      "net_pnl": "3.3884114703330267142626872671"
     },
     {
       "candidate": "max_age=4",
@@ -1646,12 +1646,12 @@
       "skipped_funds": 14,
       "invalid_levels": 0,
       "trades": 24,
-      "net_expectancy": "-1.10992112203451341978064999",
-      "net_profit_factor": "0.8568442968653727469148299452",
+      "net_expectancy": "-0.613556266596651348192427642",
+      "net_profit_factor": "0.9154517748978585429255120398",
       "win_rate": "41.666666666666666666666666670",
-      "max_drawdown_pct": "8.398528629999617364672518360",
-      "expectancy_stderr": "3.11053762822663",
-      "net_pnl": "-26.638106928828322074735599759"
+      "max_drawdown_pct": "7.2072529769487483928607847300",
+      "expectancy_stderr": "2.991480344518589",
+      "net_pnl": "-14.725350398319632356618263407"
     },
     {
       "candidate": "max_age=4",
@@ -1666,12 +1666,12 @@
       "skipped_funds": 5,
       "invalid_levels": 0,
       "trades": 41,
-      "net_expectancy": "-0.1485908957160003320000981376",
-      "net_profit_factor": "0.9821826939414320595376071517",
+      "net_expectancy": "-0.0816061197779672567976951083",
+      "net_profit_factor": "0.9901355034842621008254904108",
       "win_rate": "39.024390243902439024390243900",
       "max_drawdown_pct": "12.433967625113727331881087840",
-      "expectancy_stderr": "2.785259558518644",
-      "net_pnl": "-6.092226724356013612004023640"
+      "expectancy_stderr": "2.77860413000055",
+      "net_pnl": "-3.345850910896657528705499440"
     },
     {
       "candidate": "max_age=4",
@@ -1686,12 +1686,12 @@
       "skipped_funds": 12,
       "invalid_levels": 0,
       "trades": 82,
-      "net_expectancy": "2.5473381264926515204260219284",
-      "net_profit_factor": "1.3559135553933164410411175806",
-      "win_rate": "48.780487804878048780487804880",
-      "max_drawdown_pct": "10.407788418994565087578137300",
-      "expectancy_stderr": "2.145810472842389",
-      "net_pnl": "208.88172637239742467493379813"
+      "net_expectancy": "2.313775193527264636096943308",
+      "net_profit_factor": "1.3186130294707430367397874194",
+      "win_rate": "47.560975609756097560975609760",
+      "max_drawdown_pct": "12.323004469310737539076581990",
+      "expectancy_stderr": "2.146483031683969",
+      "net_pnl": "189.72956586923570015994935126"
     },
     {
       "candidate": "max_age=4",
@@ -1746,12 +1746,12 @@
       "skipped_funds": 3,
       "invalid_levels": 0,
       "trades": 27,
-      "net_expectancy": "1.8220010721837878111575237578",
-      "net_profit_factor": "1.2132750912088806356807896911",
-      "win_rate": "51.851851851851851851851851850",
-      "max_drawdown_pct": "10.407788418994565087578137300",
-      "expectancy_stderr": "4.197936511138579",
-      "net_pnl": "49.194028948962270901253141461"
+      "net_expectancy": "1.1126617942889091254173590589",
+      "net_profit_factor": "1.1255632013041020525552120889",
+      "win_rate": "48.148148148148148148148148150",
+      "max_drawdown_pct": "12.323004469310737539076581990",
+      "expectancy_stderr": "4.201108222330722",
+      "net_pnl": "30.041868445800546386268694589"
     },
     {
       "candidate": "max_age=4",
@@ -1766,12 +1766,12 @@
       "skipped_funds": 20,
       "invalid_levels": 0,
       "trades": 101,
-      "net_expectancy": "-0.3650356881939616302653088652",
-      "net_profit_factor": "0.9496080352946075399443947631",
+      "net_expectancy": "-0.2170627974640023277182825641",
+      "net_profit_factor": "0.9694103414971314315100173672",
       "win_rate": "38.613861386138613861386138610",
       "max_drawdown_pct": "12.433967625113727331881087840",
-      "expectancy_stderr": "1.544626983343431",
-      "net_pnl": "-36.868604507590124656796195388"
+      "expectancy_stderr": "1.529627584086593",
+      "net_pnl": "-21.923342543864235099546538976"
     },
     {
       "candidate": "max_age=4",
@@ -1786,12 +1786,12 @@
       "skipped_funds": 1,
       "invalid_levels": 0,
       "trades": 35,
-      "net_expectancy": "0.2277393409820156250103635485",
-      "net_profit_factor": "1.041618579919016413526693232",
+      "net_expectancy": "0.2359144729750968751770434302",
+      "net_profit_factor": "1.0431770626718562518189206094",
       "win_rate": "37.142857142857142857142857140",
-      "max_drawdown_pct": "9.322627304601713596528300470",
-      "expectancy_stderr": "2.137263842710033",
-      "net_pnl": "7.970876934370546875362724197"
+      "max_drawdown_pct": "9.294014342625929220944920880",
+      "expectancy_stderr": "2.136205137338371",
+      "net_pnl": "8.257006554128390631196520057"
     },
     {
       "candidate": "max_age=4",
@@ -1806,12 +1806,12 @@
       "skipped_funds": 14,
       "invalid_levels": 0,
       "trades": 25,
-      "net_expectancy": "-1.5498901887041863168061958378",
-      "net_profit_factor": "0.8044914493056565104053188936",
+      "net_expectancy": "-1.0733799274838387280815023837",
+      "net_profit_factor": "0.855940915275086214180239177",
       "win_rate": "40.00",
-      "max_drawdown_pct": "8.398528629999617364672518360",
-      "expectancy_stderr": "3.01578871430192",
-      "net_pnl": "-38.747254717604657920154895945"
+      "max_drawdown_pct": "7.2072529769487483928607847300",
+      "expectancy_stderr": "2.90593807205547",
+      "net_pnl": "-26.834498187095968202037559593"
     },
     {
       "candidate": "max_age=4",
@@ -1826,12 +1826,12 @@
       "skipped_funds": 5,
       "invalid_levels": 0,
       "trades": 41,
-      "net_expectancy": "-0.1485908957160003320000981376",
-      "net_profit_factor": "0.9821826939414320595376071517",
+      "net_expectancy": "-0.0816061197779672567976951083",
+      "net_profit_factor": "0.9901355034842621008254904108",
       "win_rate": "39.024390243902439024390243900",
       "max_drawdown_pct": "12.433967625113727331881087840",
-      "expectancy_stderr": "2.785259558518644",
-      "net_pnl": "-6.092226724356013612004023640"
+      "expectancy_stderr": "2.77860413000055",
+      "net_pnl": "-3.345850910896657528705499440"
     },
     {
       "candidate": "max_age=4",
@@ -1846,12 +1846,12 @@
       "skipped_funds": 6,
       "invalid_levels": 0,
       "trades": 69,
-      "net_expectancy": "2.752786824416455135066205268",
-      "net_profit_factor": "1.3823225250624007663604342198",
-      "win_rate": "44.927536231884057971014492750",
-      "max_drawdown_pct": "10.680043020633610533294331560",
-      "expectancy_stderr": "2.441780308980215",
-      "net_pnl": "189.94229088473540431956816349"
+      "net_expectancy": "2.4940732055642294022679672913",
+      "net_profit_factor": "1.3421233179624126293509192511",
+      "win_rate": "43.478260869565217391304347830",
+      "max_drawdown_pct": "11.433973162537951393811349940",
+      "expectancy_stderr": "2.438680250039244",
+      "net_pnl": "172.09105118393182875648974310"
     },
     {
       "candidate": "max_age=4",
@@ -1886,12 +1886,12 @@
       "skipped_funds": 2,
       "invalid_levels": 0,
       "trades": 21,
-      "net_expectancy": "7.3558811962490172682935350681",
-      "net_profit_factor": "2.2093288461493871117162694966",
+      "net_expectancy": "7.4197923532617493197454835738",
+      "net_profit_factor": "2.2327891754458176944336099931",
       "win_rate": "47.619047619047619047619047620",
-      "max_drawdown_pct": "4.3048349267495255172267392900",
-      "expectancy_stderr": "4.99154002052004",
-      "net_pnl": "154.47350512122936263416423643"
+      "max_drawdown_pct": "4.1706214970227882091776474300",
+      "expectancy_stderr": "4.98043249130966",
+      "net_pnl": "155.81563941849673571465515505"
     },
     {
       "candidate": "max_age=4",
@@ -1906,12 +1906,12 @@
       "skipped_funds": 2,
       "invalid_levels": 0,
       "trades": 24,
-      "net_expectancy": "1.8742376413718701024103811408",
-      "net_profit_factor": "1.2212294804152231173854264053",
-      "win_rate": "50.00",
-      "max_drawdown_pct": "10.680043020633610533294331560",
-      "expectancy_stderr": "4.496226059209575",
-      "net_pnl": "44.981703392924882457849147378"
+      "net_expectancy": "1.0745137247855805755949920156",
+      "net_profit_factor": "1.1222976482847235426723004205",
+      "win_rate": "45.833333333333333333333333330",
+      "max_drawdown_pct": "11.433973162537951393811349940",
+      "expectancy_stderr": "4.491715213786547",
+      "net_pnl": "25.788329394853933814279808374"
     },
     {
       "candidate": "max_age=4",
@@ -1919,19 +1919,19 @@
       "symbol_or_pooled": "pooled",
       "partition": "holdout",
       "signals": 121,
-      "filled": 78,
-      "capital_fill_rate": "0.6446280991735537190082644628",
-      "execution_fill_rate": "0.7428571428571428571428571429",
+      "filled": 80,
+      "capital_fill_rate": "0.6611570247933884297520661157",
+      "execution_fill_rate": "0.7476635514018691588785046729",
       "expired": 27,
-      "skipped_funds": 16,
+      "skipped_funds": 14,
       "invalid_levels": 0,
-      "trades": 78,
-      "net_expectancy": "0.2772223794830992099283582851",
-      "net_profit_factor": "1.0397556754150429012032591415",
-      "win_rate": "37.179487179487179487179487180",
+      "trades": 80,
+      "net_expectancy": "0.2242136345414237899466622024",
+      "net_profit_factor": "1.0327562973247308605393821996",
+      "win_rate": "36.2500",
       "max_drawdown_pct": "8.930413374186030090961424720",
-      "expectancy_stderr": "1.791075415727705",
-      "net_pnl": "21.623345599681738374411946234"
+      "expectancy_stderr": "1.731903746622082",
+      "net_pnl": "17.937090763313903195732976195"
     },
     {
       "candidate": "max_age=4",
@@ -1946,12 +1946,12 @@
       "skipped_funds": 1,
       "invalid_levels": 0,
       "trades": 23,
-      "net_expectancy": "0.5925007547879098687156202577",
-      "net_profit_factor": "1.1143600256644343035961342863",
+      "net_expectancy": "0.6049101495513423204486266927",
+      "net_profit_factor": "1.1170355131084031580104554305",
       "win_rate": "34.782608695652173913043478260",
-      "max_drawdown_pct": "6.125884764586559020160485300",
-      "expectancy_stderr": "2.572605193834701",
-      "net_pnl": "13.627517360121926980459265927"
+      "max_drawdown_pct": "6.097343156630664381174570500",
+      "expectancy_stderr": "2.570739592346479",
+      "net_pnl": "13.912933439680873370318413931"
     },
     {
       "candidate": "max_age=4",
@@ -1959,19 +1959,19 @@
       "symbol_or_pooled": "ETH-USDT",
       "partition": "holdout",
       "signals": 39,
-      "filled": 24,
-      "capital_fill_rate": "0.6153846153846153846153846154",
-      "execution_fill_rate": "0.7741935483870967741935483871",
+      "filled": 26,
+      "capital_fill_rate": "0.6666666666666666666666666667",
+      "execution_fill_rate": "0.7878787878787878787878787879",
       "expired": 7,
-      "skipped_funds": 8,
+      "skipped_funds": 6,
       "invalid_levels": 0,
-      "trades": 24,
-      "net_expectancy": "-0.6492232511113502050451563371",
-      "net_profit_factor": "0.9133437429892256902147710275",
-      "win_rate": "37.500",
-      "max_drawdown_pct": "6.7220385364923747708064326200",
-      "expectancy_stderr": "3.1606522171257",
-      "net_pnl": "-15.581358026672404921083752090"
+      "trades": 26,
+      "net_expectancy": "-0.8579341501331037056755866463",
+      "net_profit_factor": "0.8804153902505824259544991149",
+      "win_rate": "34.615384615384615384615384620",
+      "max_drawdown_pct": "7.394531524171203913454582700",
+      "expectancy_stderr": "2.852456391772249",
+      "net_pnl": "-22.306287903460696347565252803"
     },
     {
       "candidate": "max_age=4",
@@ -1986,12 +1986,12 @@
       "skipped_funds": 7,
       "invalid_levels": 0,
       "trades": 31,
-      "net_expectancy": "0.760554395684910203710852658",
-      "net_profit_factor": "1.0962585237120495882003189103",
+      "net_expectancy": "0.8493692008739911668703166151",
+      "net_profit_factor": "1.1087213544243735163107156266",
       "win_rate": "38.709677419354838709677419350",
       "max_drawdown_pct": "8.930413374186030090961424720",
-      "expectancy_stderr": "3.263240833381265",
-      "net_pnl": "23.577186266232216315036432397"
+      "expectancy_stderr": "3.253472739785007",
+      "net_pnl": "26.330445227093726172979815067"
     }
   ],
   "decisions": [
@@ -2001,14 +2001,16 @@
       "validation_execution_fill_rate": "0.7563025210084033613445378151",
       "validation_capital_fill_rate": "0.6923076923076923076923076923",
       "validation_skipped_funds": 11,
-      "validation_net_expectancy": "1.0907327054573030220969024382",
+      "validation_net_expectancy": "0.951648845563369293525954315",
+      "validation_expectancy_stderr": "2.052153882899288",
       "market_validation_net_expectancy": "-0.3436145936252937114626498966",
-      "holdout_net_expectancy": "-0.2434571617546488307955391197",
-      "holdout_profit_factor": "0.965648223447710386193795873",
+      "holdout_net_expectancy": "-0.0679074682410188222106557594",
+      "holdout_expectancy_stderr": "1.659657435708607",
+      "holdout_profit_factor": "0.9901748960867207347994145578",
       "holdout_positive_symbols": 1,
       "holdout_symbols": 3,
       "rescues": false,
-      "rationale": "retest_2c_b2 passed validation (execution fill rate 75.63%, capital fill rate 69.23%, net expectancy 1.0907327054573030220969024382) but did not rescue execution: holdout net expectancy -0.2434571617546488307955391197 was not positive; holdout PF 0.97 was not above 1; only 1 of 3 symbols were positive on the holdout."
+      "rationale": "retest_2c_b2 passed validation (execution fill rate 75.63%, capital fill rate 69.23%, net expectancy 0.9516) but did not rescue execution: holdout net expectancy -0.0679 was not positive; holdout PF 0.99 was not above 1; only 1 of 3 symbols were positive on the holdout."
     },
     {
       "candidate": "joint-13",
@@ -2016,14 +2018,16 @@
       "validation_execution_fill_rate": "0.6565656565656565656565656566",
       "validation_capital_fill_rate": "0.4193548387096774193548387097",
       "validation_skipped_funds": 56,
-      "validation_net_expectancy": "5.6422555104013664153070190431",
+      "validation_net_expectancy": "5.6511768660080688730782343486",
+      "validation_expectancy_stderr": "4.173667511479421",
       "market_validation_net_expectancy": "5.15436703991241506000032691",
       "holdout_net_expectancy": "-1.1772995596408673943661853143",
+      "holdout_expectancy_stderr": "3.577354403447421",
       "holdout_profit_factor": "0.9034951103721755224519251193",
       "holdout_positive_symbols": 1,
       "holdout_symbols": 3,
       "rescues": false,
-      "rationale": "retest_2c_b2 passed validation (execution fill rate 65.66%, capital fill rate 41.94%, net expectancy 5.6422555104013664153070190431) but did not rescue execution: holdout net expectancy -1.1772995596408673943661853143 was not positive; holdout PF 0.90 was not above 1; only 1 of 3 symbols were positive on the holdout."
+      "rationale": "retest_2c_b2 passed validation (execution fill rate 65.66%, capital fill rate 41.94%, net expectancy 5.6512) but did not rescue execution: holdout net expectancy -1.1773 was not positive; holdout PF 0.90 was not above 1; only 1 of 3 symbols were positive on the holdout."
     },
     {
       "candidate": "max_age=4",
@@ -2031,14 +2035,16 @@
       "validation_execution_fill_rate": "0.7582417582417582417582417582",
       "validation_capital_fill_rate": "0.7113402061855670103092783505",
       "validation_skipped_funds": 6,
-      "validation_net_expectancy": "2.752786824416455135066205268",
+      "validation_net_expectancy": "2.4940732055642294022679672913",
+      "validation_expectancy_stderr": "2.438680250039244",
       "market_validation_net_expectancy": "1.6239219350009629295744950153",
-      "holdout_net_expectancy": "0.2772223794830992099283582851",
-      "holdout_profit_factor": "1.0397556754150429012032591415",
+      "holdout_net_expectancy": "0.2242136345414237899466622024",
+      "holdout_expectancy_stderr": "1.731903746622082",
+      "holdout_profit_factor": "1.0327562973247308605393821996",
       "holdout_positive_symbols": 2,
       "holdout_symbols": 3,
       "rescues": true,
-      "rationale": "retest_2c_b2 passed validation (execution fill rate 75.82%, capital fill rate 71.13%, net expectancy 2.752786824416455135066205268) and the holdout held up (net expectancy 0.2772223794830992099283582851, PF 1.04, 2 of 3 symbols positive)."
+      "rationale": "retest_2c_b2 passed validation (execution fill rate 75.82%, capital fill rate 71.13%, net expectancy 2.4941) and the holdout held up (net expectancy 0.2242, PF 1.03, 2 of 3 symbols positive)."
     }
   ],
   "decision": {
@@ -2053,14 +2059,16 @@
         "validation_execution_fill_rate": "0.7563025210084033613445378151",
         "validation_capital_fill_rate": "0.6923076923076923076923076923",
         "validation_skipped_funds": 11,
-        "validation_net_expectancy": "1.0907327054573030220969024382",
+        "validation_net_expectancy": "0.951648845563369293525954315",
+        "validation_expectancy_stderr": "2.052153882899288",
         "market_validation_net_expectancy": "-0.3436145936252937114626498966",
-        "holdout_net_expectancy": "-0.2434571617546488307955391197",
-        "holdout_profit_factor": "0.965648223447710386193795873",
+        "holdout_net_expectancy": "-0.0679074682410188222106557594",
+        "holdout_expectancy_stderr": "1.659657435708607",
+        "holdout_profit_factor": "0.9901748960867207347994145578",
         "holdout_positive_symbols": 1,
         "holdout_symbols": 3,
         "rescues": false,
-        "rationale": "retest_2c_b2 passed validation (execution fill rate 75.63%, capital fill rate 69.23%, net expectancy 1.0907327054573030220969024382) but did not rescue execution: holdout net expectancy -0.2434571617546488307955391197 was not positive; holdout PF 0.97 was not above 1; only 1 of 3 symbols were positive on the holdout."
+        "rationale": "retest_2c_b2 passed validation (execution fill rate 75.63%, capital fill rate 69.23%, net expectancy 0.9516) but did not rescue execution: holdout net expectancy -0.0679 was not positive; holdout PF 0.99 was not above 1; only 1 of 3 symbols were positive on the holdout."
       },
       {
         "candidate": "joint-13",
@@ -2068,14 +2076,16 @@
         "validation_execution_fill_rate": "0.6565656565656565656565656566",
         "validation_capital_fill_rate": "0.4193548387096774193548387097",
         "validation_skipped_funds": 56,
-        "validation_net_expectancy": "5.6422555104013664153070190431",
+        "validation_net_expectancy": "5.6511768660080688730782343486",
+        "validation_expectancy_stderr": "4.173667511479421",
         "market_validation_net_expectancy": "5.15436703991241506000032691",
         "holdout_net_expectancy": "-1.1772995596408673943661853143",
+        "holdout_expectancy_stderr": "3.577354403447421",
         "holdout_profit_factor": "0.9034951103721755224519251193",
         "holdout_positive_symbols": 1,
         "holdout_symbols": 3,
         "rescues": false,
-        "rationale": "retest_2c_b2 passed validation (execution fill rate 65.66%, capital fill rate 41.94%, net expectancy 5.6422555104013664153070190431) but did not rescue execution: holdout net expectancy -1.1772995596408673943661853143 was not positive; holdout PF 0.90 was not above 1; only 1 of 3 symbols were positive on the holdout."
+        "rationale": "retest_2c_b2 passed validation (execution fill rate 65.66%, capital fill rate 41.94%, net expectancy 5.6512) but did not rescue execution: holdout net expectancy -1.1773 was not positive; holdout PF 0.90 was not above 1; only 1 of 3 symbols were positive on the holdout."
       },
       {
         "candidate": "max_age=4",
@@ -2083,14 +2093,16 @@
         "validation_execution_fill_rate": "0.7582417582417582417582417582",
         "validation_capital_fill_rate": "0.7113402061855670103092783505",
         "validation_skipped_funds": 6,
-        "validation_net_expectancy": "2.752786824416455135066205268",
+        "validation_net_expectancy": "2.4940732055642294022679672913",
+        "validation_expectancy_stderr": "2.438680250039244",
         "market_validation_net_expectancy": "1.6239219350009629295744950153",
-        "holdout_net_expectancy": "0.2772223794830992099283582851",
-        "holdout_profit_factor": "1.0397556754150429012032591415",
+        "holdout_net_expectancy": "0.2242136345414237899466622024",
+        "holdout_expectancy_stderr": "1.731903746622082",
+        "holdout_profit_factor": "1.0327562973247308605393821996",
         "holdout_positive_symbols": 2,
         "holdout_symbols": 3,
         "rescues": true,
-        "rationale": "retest_2c_b2 passed validation (execution fill rate 75.82%, capital fill rate 71.13%, net expectancy 2.752786824416455135066205268) and the holdout held up (net expectancy 0.2772223794830992099283582851, PF 1.04, 2 of 3 symbols positive)."
+        "rationale": "retest_2c_b2 passed validation (execution fill rate 75.82%, capital fill rate 71.13%, net expectancy 2.4941) and the holdout held up (net expectancy 0.2242, PF 1.03, 2 of 3 symbols positive)."
       }
     ],
     "caveat": "The holdout has been scored in several earlier experiments, so it is no longer a clean out-of-sample test. Treat these holdout results as cautionary, and prefer the validation result for model selection."

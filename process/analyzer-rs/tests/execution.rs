@@ -106,6 +106,42 @@ fn run_short(candle_one: Candle) -> ExecOutcome {
 }
 
 #[test]
+fn market_model_matches_existing_simulator_on_short_gap() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        candle(1, 100, 101, 99, 100),
+        // Gaps through the short stop at the next open.
+        candle(2, 112, 115, 111, 114),
+        candle(3, 114, 116, 110, 111),
+    ];
+    let replay_signals = vec![replay_signal(0, Direction::Short, 100, 105, 90)];
+    let sim_signals: Vec<SimSignal> = replay_signals.iter().map(sim_signal).collect();
+    let model = ExecModel {
+        label: "market_zero".into(),
+        entry: EntryMode::Market,
+        maker_bps: Decimal::ZERO,
+        taker_bps: Decimal::ZERO,
+        slip_bps: Decimal::ZERO,
+    };
+
+    let exec = simulate_execution(&candles, &replay_signals, 1000, 0, &model);
+    let legacy = simulate(&candles, &sim_signals, 1000, 0);
+
+    assert_eq!(exec.trades.len(), legacy.trades.len());
+    assert_eq!(exec.trades.len(), 1);
+    for (exec_trade, legacy_trade) in exec.trades.iter().zip(legacy.trades.iter()) {
+        assert_eq!(exec_trade.fill, legacy_trade.fill);
+        assert_eq!(exec_trade.exit, legacy_trade.exit);
+        assert_eq!(exec_trade.entry_index, legacy_trade.entry_index);
+        assert_eq!(exec_trade.exit_index, legacy_trade.exit_index);
+        assert_eq!(exec_trade.gross_pnl, legacy_trade.pnl);
+        assert_eq!(exec_trade.net_pnl, legacy_trade.pnl);
+    }
+    assert_eq!(exec.trades[0].reason, "gap_sl");
+    assert_eq!(exec.expired, 0);
+}
+
+#[test]
 fn market_model_matches_existing_simulator_gross() {
     let candles = vec![
         candle(0, 100, 101, 99, 100),
@@ -200,7 +236,7 @@ fn buffer_requires_trade_through() {
 }
 
 #[test]
-fn limit_entry_does_not_exit_on_the_same_candle() {
+fn limit_entry_suppresses_same_candle_target() {
     let candles = vec![
         candle(0, 100, 101, 99, 100),
         // Fills at 100; the high would hit TP 105 on the same candle.
@@ -217,6 +253,102 @@ fn limit_entry_does_not_exit_on_the_same_candle() {
     assert_eq!(trade.exit_index, 2);
     assert_eq!(trade.reason, "SL");
     assert_eq!(trade.exit, d(95));
+}
+
+#[test]
+fn limit_entry_allows_same_candle_stop_after_fill() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Fills at the limit 100, then trades down through SL 95 on the same candle.
+        candle(1, 100, 101, 94, 96),
+        candle(2, 96, 100, 90, 95),
+    ];
+    let signals = vec![replay_signal(0, Direction::Long, 100, 95, 120)];
+    let outcome = simulate_execution(&candles, &signals, 1000, 0, &limit_model(1, 2, 0));
+
+    assert_eq!(outcome.trades.len(), 1);
+    let trade = &outcome.trades[0];
+    assert_eq!(trade.entry_index, 1);
+    assert_eq!(trade.exit_index, 1);
+    assert_eq!(trade.reason, "SL");
+    assert_eq!(trade.exit, d(95));
+}
+
+#[test]
+fn limit_entry_allows_same_candle_stop_after_open_fill() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Fills at the open 99 (price improvement), then trades down through SL 95.
+        candle(1, 99, 100, 94, 96),
+        candle(2, 96, 100, 90, 95),
+    ];
+    let signals = vec![replay_signal(0, Direction::Long, 100, 95, 120)];
+    let outcome = simulate_execution(&candles, &signals, 1000, 0, &limit_model(1, 2, 0));
+
+    assert_eq!(outcome.trades.len(), 1);
+    let trade = &outcome.trades[0];
+    assert_eq!(trade.entry_index, 1);
+    assert_eq!(trade.exit_index, 1);
+    assert_eq!(trade.reason, "SL");
+    assert_eq!(trade.exit, d(95));
+}
+
+#[test]
+fn short_limit_entry_allows_same_candle_stop_after_fill() {
+    let candles = vec![
+        candle(0, 100, 101, 99, 100),
+        // Fills at the limit 100, then trades up through SL 105 on the same candle.
+        candle(1, 100, 106, 99, 104),
+        candle(2, 104, 110, 100, 108),
+    ];
+    let signals = vec![replay_signal(0, Direction::Short, 100, 105, 80)];
+    let outcome = simulate_execution(&candles, &signals, 1000, 0, &limit_model(1, 2, 0));
+
+    assert_eq!(outcome.trades.len(), 1);
+    let trade = &outcome.trades[0];
+    assert_eq!(trade.entry_index, 1);
+    assert_eq!(trade.exit_index, 1);
+    assert_eq!(trade.reason, "SL");
+    assert_eq!(trade.exit, d(105));
+}
+
+#[test]
+fn retest_limit_beyond_stop_is_rejected() {
+    let long_candles = vec![
+        candle(0, 1000, 1001, 999, 1000),
+        candle(1, 997, 998, 996, 997),
+        candle(2, 997, 998, 996, 997),
+    ];
+    // limit = 1000 * (1 - 0.0025) = 997.5, which is below the long stop at 998.
+    let long_signals = vec![replay_signal(0, Direction::Long, 1000, 998, 1200)];
+    let long = simulate_execution(
+        &long_candles,
+        &long_signals,
+        1000,
+        0,
+        &limit_model(2, 2, 25),
+    );
+    assert!(long.trades.is_empty());
+    assert_eq!(long.filled, 0);
+    assert_eq!(long.invalid_levels, 1);
+
+    let short_candles = vec![
+        candle(0, 1000, 1001, 999, 1000),
+        candle(1, 1003, 1004, 1002, 1003),
+        candle(2, 1003, 1004, 1002, 1003),
+    ];
+    // limit = 1000 * (1 + 0.0025) = 1002.5, which is above the short stop at 1002.
+    let short_signals = vec![replay_signal(0, Direction::Short, 1000, 1002, 800)];
+    let short = simulate_execution(
+        &short_candles,
+        &short_signals,
+        1000,
+        0,
+        &limit_model(2, 2, 25),
+    );
+    assert!(short.trades.is_empty());
+    assert_eq!(short.filled, 0);
+    assert_eq!(short.invalid_levels, 1);
 }
 
 #[test]

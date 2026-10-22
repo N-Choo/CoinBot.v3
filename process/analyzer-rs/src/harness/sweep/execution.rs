@@ -170,6 +170,16 @@ struct Pending {
     signal_index: usize,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SameCandleExit {
+    /// Market entries may exit on their entry candle exactly like `sim.rs`.
+    All,
+    /// Limit entries may only exit through the stop on their entry candle.
+    StopOnly,
+    /// Limit entries may not exit on their entry candle.
+    None,
+}
+
 #[derive(Debug, Clone)]
 struct OpenPosition {
     signal_id: String,
@@ -181,7 +191,7 @@ struct OpenPosition {
     tp: Decimal,
     entry_index: usize,
     entry_cost: Decimal,
-    allow_same_candle_exit: bool,
+    same_candle_exit: SameCandleExit,
 }
 
 /// Simulates the execution models over `candles`.
@@ -233,7 +243,7 @@ pub fn simulate_execution(
                                 index,
                                 budget,
                                 model,
-                                true,
+                                SameCandleExit::All,
                             ));
                             filled += 1;
                         } else {
@@ -259,16 +269,28 @@ pub fn simulate_execution(
                         let fill = limit_fill(
                             order.side,
                             order.signal_entry,
+                            order.sl,
                             *offset_bps,
                             *buffer_bps,
                             candle,
                         );
                         match fill {
-                            Some(price) => {
+                            LimitFill::Filled { price } => {
                                 if available >= budget {
                                     available -= budget;
+                                    let same_candle_exit =
+                                        if stop_after_fill(order.side, order.sl, price, candle) {
+                                            SameCandleExit::StopOnly
+                                        } else {
+                                            SameCandleExit::None
+                                        };
                                     positions.push(open_position(
-                                        order, price, index, budget, model, false,
+                                        order,
+                                        price,
+                                        index,
+                                        budget,
+                                        model,
+                                        same_candle_exit,
                                     ));
                                     filled += 1;
                                 } else {
@@ -277,7 +299,8 @@ pub fn simulate_execution(
                                     skipped_funds += 1;
                                 }
                             }
-                            None => still_pending.push(order),
+                            LimitFill::NoFill => still_pending.push(order),
+                            LimitFill::BeyondStop => invalid_levels += 1,
                         }
                     }
                 }
@@ -285,14 +308,21 @@ pub fn simulate_execution(
         }
         pending = still_pending;
 
-        // 3. Exits. Limit entries are not allowed to exit on their entry candle.
+        // 3. Exits. Limit entries suppress targets on their entry candle because the target may
+        // have been touched before the limit filled; a stop that the candle traded through after
+        // the limit fill is still allowed.
         let mut still_open = Vec::with_capacity(positions.len());
         for position in positions.drain(..) {
-            if !position.allow_same_candle_exit && position.entry_index == index {
-                still_open.push(position);
-                continue;
-            }
-            match exit_for(&position, candle) {
+            let exit = if position.entry_index == index {
+                match position.same_candle_exit {
+                    SameCandleExit::All => exit_for(&position, candle),
+                    SameCandleExit::StopOnly => stop_exit_for(&position, candle),
+                    SameCandleExit::None => None,
+                }
+            } else {
+                exit_for(&position, candle)
+            };
+            match exit {
                 Some((reason, exit)) => close_position(
                     position,
                     exit,
@@ -374,7 +404,7 @@ fn open_position(
     entry_index: usize,
     e: Decimal,
     model: &ExecModel,
-    allow_same_candle_exit: bool,
+    same_candle_exit: SameCandleExit,
 ) -> OpenPosition {
     OpenPosition {
         signal_id: order.signal_id,
@@ -386,42 +416,69 @@ fn open_position(
         tp: order.tp,
         entry_index,
         entry_cost: model.entry_rate() * e,
-        allow_same_candle_exit,
+        same_candle_exit,
     }
+}
+
+enum LimitFill {
+    Filled {
+        price: Decimal,
+    },
+    NoFill,
+    /// The limit sits at or beyond the stop, so the entry would be beyond its stop.
+    BeyondStop,
 }
 
 fn limit_fill(
     side: Direction,
     entry: Decimal,
+    sl: Decimal,
     offset_bps: Decimal,
     buffer_bps: Decimal,
     candle: &Candle,
-) -> Option<Decimal> {
+) -> LimitFill {
     let offset = offset_bps / Decimal::from(10_000);
     let buffer = buffer_bps / Decimal::from(10_000);
     match side {
         Direction::Long => {
             let limit = entry * (Decimal::ONE - offset);
+            if limit <= sl {
+                return LimitFill::BeyondStop;
+            }
             let threshold = limit * (Decimal::ONE - buffer);
             if candle.open <= threshold {
-                Some(candle.open)
+                LimitFill::Filled { price: candle.open }
             } else if candle.low <= threshold {
-                Some(limit)
+                LimitFill::Filled { price: limit }
             } else {
-                None
+                LimitFill::NoFill
             }
         }
         Direction::Short => {
             let limit = entry * (Decimal::ONE + offset);
+            if limit >= sl {
+                return LimitFill::BeyondStop;
+            }
             let threshold = limit * (Decimal::ONE + buffer);
             if candle.open >= threshold {
-                Some(candle.open)
+                LimitFill::Filled { price: candle.open }
             } else if candle.high >= threshold {
-                Some(limit)
+                LimitFill::Filled { price: limit }
             } else {
-                None
+                LimitFill::NoFill
             }
         }
+    }
+}
+
+/// True when the entry candle traded through the stop after the fill.
+///
+/// The fill-price guard excludes open-through fills that already entered beyond their stop; in
+/// that case the stop cannot have occurred after the fill.
+fn stop_after_fill(side: Direction, sl: Decimal, fill: Decimal, candle: &Candle) -> bool {
+    match side {
+        Direction::Long => fill > sl && candle.low <= sl,
+        Direction::Short => fill < sl && candle.high >= sl,
     }
 }
 
@@ -450,6 +507,35 @@ fn exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal
                 Some((REASON_SL.into(), position.sl))
             } else if candle.low <= position.tp {
                 Some((REASON_TP.into(), position.tp))
+            } else {
+                None
+            }
+        }
+    }
+}
+
+/// Stop-only exit evaluation for a limit fill on its entry candle.
+///
+/// The caller only enables this when the candle traded through the stop after the limit filled,
+/// so the stop is necessarily after the entry. The target is still suppressed because it may
+/// have been touched before the limit was reached.
+fn stop_exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal)> {
+    let open = candle.open;
+    match position.side {
+        Direction::Long => {
+            if open <= position.sl {
+                Some((REASON_GAP_SL.into(), open))
+            } else if candle.low <= position.sl {
+                Some((REASON_SL.into(), position.sl))
+            } else {
+                None
+            }
+        }
+        Direction::Short => {
+            if open >= position.sl {
+                Some((REASON_GAP_SL.into(), open))
+            } else if candle.high >= position.sl {
+                Some((REASON_SL.into(), position.sl))
             } else {
                 None
             }

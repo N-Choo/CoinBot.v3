@@ -121,8 +121,10 @@ struct CandidateDecision {
     validation_capital_fill_rate: Option<Decimal>,
     validation_skipped_funds: Option<usize>,
     validation_net_expectancy: Option<Decimal>,
+    validation_expectancy_stderr: Option<Decimal>,
     market_validation_net_expectancy: Option<Decimal>,
     holdout_net_expectancy: Option<Decimal>,
+    holdout_expectancy_stderr: Option<Decimal>,
     holdout_profit_factor: Option<Decimal>,
     holdout_positive_symbols: usize,
     holdout_symbols: usize,
@@ -398,12 +400,13 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 if !expectancy_positive {
                     failures.push(format!(
                         "net expectancy {} was not positive",
-                        validation.metrics.net_expectancy
+                        display_decimal(validation.metrics.net_expectancy)
                     ));
                 } else if !beats_market {
                     failures.push(format!(
                         "net expectancy {} did not beat market {}",
-                        validation.metrics.net_expectancy, market_validation
+                        display_decimal(validation.metrics.net_expectancy),
+                        display_decimal(market_validation)
                     ));
                 }
                 rejected.push(format!("{} ({})", model.label, failures.join("; ")));
@@ -426,8 +429,10 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 validation_capital_fill_rate: None,
                 validation_skipped_funds: None,
                 validation_net_expectancy: None,
+                validation_expectancy_stderr: None,
                 market_validation_net_expectancy: Some(market_validation),
                 holdout_net_expectancy: None,
+                holdout_expectancy_stderr: None,
                 holdout_profit_factor: None,
                 holdout_positive_symbols: 0,
                 holdout_symbols: symbols.len(),
@@ -462,8 +467,8 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 model.label,
                 display_pct(validation.execution_fill_rate),
                 display_pct(validation.capital_fill_rate),
-                validation.metrics.net_expectancy,
-                holdout_net_expectancy,
+                display_decimal(validation.metrics.net_expectancy),
+                display_decimal(holdout_net_expectancy),
                 display_profit_factor(holdout_profit_factor),
                 holdout_positive_symbols,
                 symbols.len()
@@ -473,7 +478,7 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
             if holdout_net_expectancy <= Decimal::ZERO {
                 reasons.push(format!(
                     "holdout net expectancy {} was not positive",
-                    holdout_net_expectancy
+                    display_decimal(holdout_net_expectancy)
                 ));
             }
             if !holdout_pf_ok {
@@ -494,7 +499,7 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
                 model.label,
                 display_pct(validation.execution_fill_rate),
                 display_pct(validation.capital_fill_rate),
-                validation.metrics.net_expectancy,
+                display_decimal(validation.metrics.net_expectancy),
                 reasons.join("; ")
             )
         };
@@ -506,8 +511,10 @@ fn decide(runs: &[CandidateRun], models: &[ExecModel], symbols: &[String]) -> De
             validation_capital_fill_rate: Some(validation.capital_fill_rate),
             validation_skipped_funds: Some(validation.skipped_funds),
             validation_net_expectancy: Some(validation.metrics.net_expectancy),
+            validation_expectancy_stderr: Some(validation.metrics.expectancy_stderr),
             market_validation_net_expectancy: Some(market_validation),
             holdout_net_expectancy: Some(holdout_net_expectancy),
+            holdout_expectancy_stderr: holdout.map(|part| part.metrics.expectancy_stderr),
             holdout_profit_factor,
             holdout_positive_symbols,
             holdout_symbols: symbols.len(),
@@ -596,8 +603,22 @@ fn format_sl_cost(model: &ExecModel) -> String {
     taker_label(model)
 }
 
+fn display_decimal(value: Decimal) -> String {
+    value.round_dp(4).to_string()
+}
+
 fn display_pct(value: Decimal) -> String {
     format!("{}%", (value * Decimal::from(100)).round_dp(2))
+}
+
+/// 95% confidence interval for a mean, using the normal approximation (±1.96 standard errors).
+fn display_ci(expectancy: Decimal, stderr: Decimal) -> String {
+    let margin = stderr * Decimal::new(196, 2);
+    format!(
+        "{}..{}",
+        display_decimal(expectancy - margin),
+        display_decimal(expectancy + margin)
+    )
 }
 
 fn display_profit_factor(value: Option<Decimal>) -> String {
@@ -680,10 +701,10 @@ fn write_partition_table(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Model | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Skipped funds | Net expectancy | PF | Trades | Max DD % |"
+        "| Candidate | Model | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Skipped funds | Net expectancy | SE | 95% CI | PF | Trades | Max DD % |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
+    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|---|---|")
         .expect("writing to String cannot fail");
     for run in runs {
         for model in models {
@@ -692,7 +713,7 @@ fn write_partition_table(
             };
             writeln!(
                 out,
-                "| {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 run.label,
                 model.label,
                 display_pct(part.execution_fill_rate),
@@ -702,6 +723,8 @@ fn write_partition_table(
                 part.expired,
                 part.skipped_funds,
                 part.metrics.net_expectancy.round_dp(4),
+                part.metrics.expectancy_stderr.round_dp(4),
+                display_ci(part.metrics.net_expectancy, part.metrics.expectancy_stderr),
                 display_profit_factor(part.metrics.net_profit_factor),
                 part.metrics.trades,
                 part.metrics.max_drawdown_pct.round_dp(2)
@@ -756,6 +779,81 @@ fn write_per_symbol_table(
                 )
                 .expect("writing to String cannot fail");
             }
+        }
+    }
+    writeln!(out).expect("writing to String cannot fail");
+}
+
+/// Writes per-symbol validation and holdout expectancy for the selected model against `market`.
+///
+/// The table is only populated when the pre-registered rule selects a model; otherwise the section
+/// states that there is nothing to compare.
+fn write_relative_to_market(
+    out: &mut String,
+    decision: &DecisionSummary,
+    runs: &[CandidateRun],
+    symbols: &[String],
+) {
+    writeln!(out, "## 8. Relative to market (selected model)")
+        .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    let (Some(candidate_label), Some(model_label)) =
+        (&decision.selected_candidate, &decision.selected_model)
+    else {
+        writeln!(
+            out,
+            "No model met the pre-registered rescue rule, so there is no selected model to compare against `market`."
+        )
+        .expect("writing to String cannot fail");
+        writeln!(out).expect("writing to String cannot fail");
+        return;
+    };
+    let Some(run) = runs.iter().find(|run| &run.label == candidate_label) else {
+        writeln!(
+            out,
+            "Selected candidate `{candidate_label}` was not present in the evaluated runs."
+        )
+        .expect("writing to String cannot fail");
+        writeln!(out).expect("writing to String cannot fail");
+        return;
+    };
+
+    writeln!(
+        out,
+        "Selected model: `{candidate_label}` / `{model_label}`. Deltas are selected minus `market` on the same execution simulator."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "| Partition | Symbol | Market net expectancy | {model_label} net expectancy | Delta |"
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|---|---|").expect("writing to String cannot fail");
+    for partition in PARTITIONS {
+        for symbol in symbols {
+            let market = run
+                .per_symbol
+                .get(symbol)
+                .and_then(|models| models.get("market"))
+                .and_then(|partitions| partitions.get(partition));
+            let selected = run
+                .per_symbol
+                .get(symbol)
+                .and_then(|models| models.get(model_label))
+                .and_then(|partitions| partitions.get(partition));
+            let (Some(market), Some(selected)) = (market, selected) else {
+                continue;
+            };
+            let delta = selected.metrics.net_expectancy - market.metrics.net_expectancy;
+            writeln!(
+                out,
+                "| {partition} | {symbol} | {} | {} | {} |",
+                display_decimal(market.metrics.net_expectancy),
+                display_decimal(selected.metrics.net_expectancy),
+                display_decimal(delta)
+            )
+            .expect("writing to String cannot fail");
         }
     }
     writeln!(out).expect("writing to String cannot fail");
@@ -867,17 +965,25 @@ fn write_markdown(
 
     writeln!(out, "## 7. Decision").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
-    writeln!(out, "**{}**", decision.decision).expect("writing to String cannot fail");
+    if decision.rescues {
+        writeln!(out, "**nominal rescue — holdout edge is within noise**")
+            .expect("writing to String cannot fail");
+    } else {
+        writeln!(out, "**execution does not rescue**").expect("writing to String cannot fail");
+    }
     writeln!(out).expect("writing to String cannot fail");
     match (&decision.selected_candidate, &decision.selected_model) {
         (Some(candidate), Some(model)) if decision.rescues => {
-            writeln!(out, "Selected model: `{candidate}` / `{model}`.")
-                .expect("writing to String cannot fail");
+            writeln!(
+                out,
+                "Pre-registered rule result: **execution rescues**. Selected model: `{candidate}` / `{model}`."
+            )
+            .expect("writing to String cannot fail");
         }
         _ => {
             writeln!(
                 out,
-                "No limit model met the rescue criteria; retain the baseline."
+                "Pre-registered rule result: **execution does not rescue**; retain the baseline."
             )
             .expect("writing to String cannot fail");
         }
@@ -891,20 +997,38 @@ fn write_markdown(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Selected model | Validation exec fill rate | Validation capital fill rate | Validation skipped funds | Holdout net expectancy | Holdout PF | Positive symbols | Rescues | Rationale |"
+        "| Candidate | Selected model | Validation net expectancy | Val SE | Val 95% CI | Validation exec fill rate | Validation capital fill rate | Validation skipped funds | Holdout net expectancy | Holdout SE | Holdout 95% CI | Holdout PF | Positive symbols | Rescues | Rationale |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|")
-        .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    )
+    .expect("writing to String cannot fail");
     for candidate in &decision.candidates {
         writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {} | {}/{} | {} | {} |",
             candidate.candidate,
             candidate
                 .selected_model
                 .clone()
                 .unwrap_or_else(|| "-".to_string()),
+            candidate
+                .validation_net_expectancy
+                .map(display_decimal)
+                .unwrap_or_else(|| "-".to_string()),
+            candidate
+                .validation_expectancy_stderr
+                .map(display_decimal)
+                .unwrap_or_else(|| "-".to_string()),
+            match (
+                candidate.validation_net_expectancy,
+                candidate.validation_expectancy_stderr
+            ) {
+                (Some(mean), Some(stderr)) => display_ci(mean, stderr),
+                _ => "-".to_string(),
+            },
             candidate
                 .validation_execution_fill_rate
                 .map(display_pct)
@@ -919,8 +1043,19 @@ fn write_markdown(
                 .unwrap_or_else(|| "-".to_string()),
             candidate
                 .holdout_net_expectancy
-                .map(|value| value.round_dp(4).to_string())
+                .map(display_decimal)
                 .unwrap_or_else(|| "-".to_string()),
+            candidate
+                .holdout_expectancy_stderr
+                .map(display_decimal)
+                .unwrap_or_else(|| "-".to_string()),
+            match (
+                candidate.holdout_net_expectancy,
+                candidate.holdout_expectancy_stderr
+            ) {
+                (Some(mean), Some(stderr)) => display_ci(mean, stderr),
+                _ => "-".to_string(),
+            },
             display_profit_factor(candidate.holdout_profit_factor),
             candidate.holdout_positive_symbols,
             candidate.holdout_symbols,
@@ -930,11 +1065,25 @@ fn write_markdown(
         .expect("writing to String cannot fail");
     }
     writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "Both 95% CIs include zero; the validation→holdout decay is ~10×. This is not evidence of a durable edge."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "Multiple comparisons: 3 candidates × 3 limit models were tested, and the holdout has been reused across experiments; the nominal rescue should be read against that search."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
     writeln!(out, "**Holdout caveat:** {}", decision.caveat)
         .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
 
-    writeln!(out, "## 8. Capacity / capital constraint").expect("writing to String cannot fail");
+    write_relative_to_market(&mut out, decision, runs, symbols);
+
+    writeln!(out, "## 9. Capacity / capital constraint").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     if let Some(validation) = runs
         .iter()
@@ -960,7 +1109,7 @@ fn write_markdown(
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
 
-    writeln!(out, "## 9. Market control").expect("writing to String cannot fail");
+    writeln!(out, "## 10. Market control").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
@@ -969,7 +1118,7 @@ fn write_markdown(
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
 
-    writeln!(out, "## 10. Limitations").expect("writing to String cannot fail");
+    writeln!(out, "## 11. Limitations").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
@@ -979,6 +1128,16 @@ fn write_markdown(
     writeln!(
         out,
         "- Maker fills assume the limit is resting and filled when touched; adverse selection is approximated by the fill buffer."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "- Open-through limit fills use the open price (price improvement) with no placement latency or queue risk; this is optimistic on gap opens."
+    )
+    .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "- Costs are deducted from PnL but not from available capital for sizing; capacity-constrained configs are slightly optimistic."
     )
     .expect("writing to String cannot fail");
     writeln!(
