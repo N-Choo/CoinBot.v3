@@ -43,6 +43,13 @@ fn closed_candle_rule_excludes_the_forming_candle() {
 }
 
 #[test]
+fn one_hour_timeframe_is_supported() {
+    let tf = Timeframe::from_kucoin("1hour").expect("1hour supported");
+    assert_eq!(tf.as_kucoin(), "1hour");
+    assert_eq!(tf.millis(), 3_600_000);
+}
+
+#[test]
 fn timeframes_parse_ku_coin_names() {
     assert_eq!(Timeframe::from_kucoin("15min"), Some(Timeframe::M15));
     assert_eq!(Timeframe::from_kucoin("4hour"), Some(Timeframe::H4));
