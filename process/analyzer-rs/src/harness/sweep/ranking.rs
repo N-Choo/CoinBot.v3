@@ -140,7 +140,8 @@ fn rejection_reason(outcome: &CandidateOutcome, thresholds: &Thresholds) -> Opti
 ///
 /// Criteria are applied in order: positive pooled validation expectancy, per-symbol drawdown,
 /// positive folds, then trade count/symbol concentration/symbol consistency. Stress results do not
-/// affect selection; a qualifier with negative stress validation net PnL is flagged in `notes`.
+/// affect selection; a qualifier with negative stress validation net expectancy is flagged in
+/// `notes`, mirroring the base-selection criterion.
 pub fn rank(outcomes: &[CandidateOutcome], thresholds: &Thresholds) -> Selection {
     let mut qualifiers: Vec<&CandidateOutcome> = Vec::new();
     let mut notes: Vec<String> = Vec::new();
@@ -169,10 +170,10 @@ pub fn rank(outcomes: &[CandidateOutcome], thresholds: &Thresholds) -> Selection
 
     for outcome in &qualifiers {
         if let Some(stress) = outcome.stress.get("validation") {
-            if stress.net_pnl < Decimal::ZERO {
+            if stress.net_expectancy < Decimal::ZERO {
                 notes.push(format!(
-                    "{}: flagged: negative stress validation net PnL ({})",
-                    outcome.label, stress.net_pnl
+                    "{}: flagged: negative stress validation net expectancy ({})",
+                    outcome.label, stress.net_expectancy
                 ));
             }
         }

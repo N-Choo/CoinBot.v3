@@ -58,6 +58,32 @@ fn outcome(
     }
 }
 
+fn outcome_with_symbols(
+    label: &str,
+    trades: usize,
+    expectancy: i64,
+    dd_pct: i64,
+    fold_signs: [i64; 3],
+    symbols: Vec<(&str, PartitionMetrics)>,
+) -> CandidateOutcome {
+    CandidateOutcome {
+        label: label.to_string(),
+        origin: "joint".to_string(),
+        candidate: candidate(label),
+        pooled_validation: metrics(trades, expectancy, dd_pct),
+        per_symbol_validation: symbols
+            .into_iter()
+            .map(|(symbol, metrics)| (symbol.to_string(), metrics))
+            .collect(),
+        folds: fold_signs
+            .iter()
+            .map(|sign| metrics(trades / 3, *sign, dd_pct))
+            .collect(),
+        base: BTreeMap::new(),
+        stress: BTreeMap::new(),
+    }
+}
+
 #[test]
 fn rejects_candidates_below_trade_floor() {
     let thresholds = Thresholds::default();
@@ -110,6 +136,158 @@ fn rejects_candidates_above_drawdown_limit() {
 }
 
 #[test]
+fn rejects_on_per_symbol_drawdown_even_when_pooled_drawdown_is_within_limit() {
+    let bad = outcome_with_symbols(
+        "symbol-dd",
+        40,
+        8,
+        10,
+        [1, 1, -1],
+        vec![
+            ("AAA", metrics(14, 5, 10)),
+            ("BBB", metrics(14, 5, 25)),
+            ("CCC", metrics(12, 5, 10)),
+        ],
+    );
+    let selection = rank(&[bad], &Thresholds::default());
+
+    assert!(
+        selection.winners.is_empty(),
+        "per-symbol drawdown above the limit must reject the candidate"
+    );
+    assert!(
+        selection.notes.iter().any(|note| note.contains("symbol-dd")
+            && note.contains("BBB")
+            && note.contains("drawdown")),
+        "expected a per-symbol drawdown note, got {:?}",
+        selection.notes
+    );
+}
+
+#[test]
+fn rejects_concentrated_trades_and_accepts_the_exact_share_boundary() {
+    let thresholds = Thresholds::default();
+    let concentrated = outcome_with_symbols(
+        "concentrated",
+        40,
+        8,
+        10,
+        [1, 1, -1],
+        vec![
+            ("AAA", metrics(32, 5, 10)),
+            ("BBB", metrics(4, 5, 10)),
+            ("CCC", metrics(4, 5, 10)),
+        ],
+    );
+    let boundary = outcome_with_symbols(
+        "boundary",
+        40,
+        8,
+        10,
+        [1, 1, -1],
+        vec![
+            ("AAA", metrics(28, 5, 10)),
+            ("BBB", metrics(6, 5, 10)),
+            ("CCC", metrics(6, 5, 10)),
+        ],
+    );
+
+    let rejected = rank(&[concentrated], &thresholds);
+    assert!(rejected.winners.is_empty());
+    assert!(
+        rejected
+            .notes
+            .iter()
+            .any(|note| note.contains("concentrated") && note.contains("single symbol")),
+        "expected a concentration note, got {:?}",
+        rejected.notes
+    );
+
+    // Exactly 28/40 = 70% must pass: the limit is inclusive.
+    let accepted = rank(&[boundary], &thresholds);
+    assert_eq!(accepted.winners, vec!["boundary".to_string()]);
+}
+
+#[test]
+fn requires_enough_positive_symbols() {
+    let one_positive = outcome("one-positive", 40, 8, 10, [1, 1, -1], [1, -1, -1]);
+    let two_positive = outcome("two-positive", 40, 8, 10, [1, 1, -1], [1, 1, -1]);
+
+    let rejected = rank(&[one_positive], &Thresholds::default());
+    assert!(rejected.winners.is_empty());
+    assert!(
+        rejected
+            .notes
+            .iter()
+            .any(|note| note.contains("one-positive")
+                && note.contains("symbol")
+                && note.contains("positive")),
+        "expected a positive-symbol note, got {:?}",
+        rejected.notes
+    );
+
+    let accepted = rank(&[two_positive], &Thresholds::default());
+    assert_eq!(accepted.winners, vec!["two-positive".to_string()]);
+}
+
+#[test]
+fn reports_expectancy_first_when_multiple_criteria_fail() {
+    let bad = outcome("multi-fail", 40, -5, 25, [-1, -1, -1], [-1, -1, -1]);
+    let selection = rank(&[bad], &Thresholds::default());
+    let first = selection.notes.first().expect("a rejection note");
+
+    assert!(first.contains("multi-fail"));
+    assert!(
+        first.contains("net expectancy"),
+        "expectancy must be the first criterion checked, got {first:?}"
+    );
+    assert!(!first.contains("drawdown"));
+    assert!(!first.contains("fold"));
+}
+
+#[test]
+fn ranks_qualifiers_by_drawdown_folds_trades_then_label() {
+    let candidates = vec![
+        outcome("high_dd", 40, 10, 15, [1, 1, 1], [1, 1, 1]),
+        outcome("low_dd_low_folds", 40, 10, 10, [1, 1, -1], [1, 1, 1]),
+        outcome("few_trades", 35, 10, 10, [1, 1, 1], [1, 1, 1]),
+        outcome("more_trades", 40, 10, 10, [1, 1, 1], [1, 1, 1]),
+        outcome("beta", 40, 10, 10, [1, 1, 1], [1, 1, 1]),
+        outcome("alpha", 40, 10, 10, [1, 1, 1], [1, 1, 1]),
+    ];
+
+    let selection = rank(&candidates, &Thresholds::default());
+
+    assert_eq!(
+        selection.winners,
+        vec![
+            "alpha".to_string(),
+            "beta".to_string(),
+            "more_trades".to_string(),
+            "few_trades".to_string(),
+            "low_dd_low_folds".to_string(),
+            "high_dd".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn accepts_exact_threshold_boundaries() {
+    let boundary = outcome_with_symbols(
+        "boundary",
+        30,
+        5,
+        20,
+        [1, 1, -1],
+        vec![("AAA", metrics(15, 5, 20)), ("BBB", metrics(15, 5, 20))],
+    );
+
+    let selection = rank(&[boundary], &Thresholds::default());
+
+    assert_eq!(selection.winners, vec!["boundary".to_string()]);
+}
+
+#[test]
 fn rejects_candidates_with_too_few_positive_folds() {
     let bad = outcome("one-fold", 40, 8, 10, [1, -1, -1], [1, 1, 1]);
     let selection = rank(&[bad], &Thresholds::default());
@@ -144,7 +322,7 @@ fn reports_no_candidate_when_none_qualify() {
 #[test]
 fn flags_negative_stress_without_dropping_the_winner() {
     let mut strong = outcome("strong", 40, 8, 10, [1, 1, -1], [1, 1, -1]);
-    let mut stress = metrics(40, 6, 10);
+    let mut stress = metrics(40, -1, 10);
     stress.net_pnl = d(-5);
     strong.stress.insert("validation".to_string(), stress);
 
@@ -157,6 +335,24 @@ fn flags_negative_stress_without_dropping_the_winner() {
             .iter()
             .any(|note| note.contains("strong") && note.contains("stress")),
         "expected a stress flag note, got {:?}",
+        selection.notes
+    );
+}
+
+#[test]
+fn stress_flag_uses_expectancy_not_net_pnl() {
+    let mut strong = outcome("strong", 40, 8, 10, [1, 1, -1], [1, 1, -1]);
+    let mut stress = metrics(40, 3, 10);
+    // Negative net PnL but positive expectancy mirrors a few large open losses; it must not flag.
+    stress.net_pnl = d(-5);
+    strong.stress.insert("validation".to_string(), stress);
+
+    let selection = rank(&[strong], &Thresholds::default());
+
+    assert_eq!(selection.winners, vec!["strong".to_string()]);
+    assert!(
+        selection.notes.iter().all(|note| !note.contains("stress")),
+        "negative stress net PnL with positive expectancy must not flag, got {:?}",
         selection.notes
     );
 }
@@ -290,12 +486,175 @@ fn writes_markdown_with_required_sections() {
     assert!(text.contains("## 6. Walk-forward"));
     assert!(text.contains("## 7. Parameter sensitivity"));
     assert!(text.contains("## 8. Cost assumptions"));
-    assert!(text.contains("## 9. Commands executed"));
+    assert!(text.contains("## 9. Command (synthesized from run configuration)"));
     assert!(text.contains("## 10. Recommendation"));
+    assert!(text.contains("### Errors"));
     assert!(text.contains("validation"));
     assert!(text.contains("holdout"));
     assert!(text.contains("no candidate"));
     assert!(text.contains("SMA_PERIOD"));
 
     std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+fn results_with_selection(winners: &[&str]) -> SweepResults {
+    let mut results = sample_results();
+    results.selections.insert(
+        "1hour".to_string(),
+        Selection {
+            winners: winners.iter().map(|winner| winner.to_string()).collect(),
+            notes: Vec::new(),
+        },
+    );
+    results
+}
+
+fn markdown_for(results: &SweepResults, name: &str) -> (PathBuf, String) {
+    let path = temp_file(name);
+    write_markdown(&path, results).expect("markdown writes");
+    let text = std::fs::read_to_string(&path).expect("markdown readable");
+    (path, text)
+}
+
+#[test]
+fn recommends_retain_baseline_when_only_baseline_wins() {
+    let (path, text) = markdown_for(&results_with_selection(&["baseline"]), "retain.md");
+
+    assert!(
+        text.contains("**retain baseline**"),
+        "expected the exact retain-baseline label, got {text}"
+    );
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn recommends_larger_experiment_when_a_non_baseline_wins() {
+    let (path, text) = markdown_for(
+        &results_with_selection(&["baseline", "candidate"]),
+        "larger.md",
+    );
+
+    assert!(
+        text.contains("**larger experiment**"),
+        "expected the exact larger-experiment label, got {text}"
+    );
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn recommends_insufficient_evidence_when_no_candidate_wins() {
+    let (path, text) = markdown_for(&sample_results(), "insufficient.md");
+
+    assert!(
+        text.contains("**insufficient evidence**"),
+        "expected the exact insufficient-evidence label, got {text}"
+    );
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn recommends_insufficient_evidence_when_errors_are_recorded() {
+    let mut results = results_with_selection(&["baseline"]);
+    results.errors.push("fetch failed for BTC-USDT".to_string());
+    let (path, text) = markdown_for(&results, "errors.md");
+
+    assert!(text.contains("**insufficient evidence**"));
+    assert!(text.contains("### Errors"));
+    assert!(text.contains("fetch failed for BTC-USDT"));
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn recommends_insufficient_evidence_when_a_requested_timeframe_has_no_selection() {
+    let mut results = results_with_selection(&["baseline"]);
+    results.timeframes.push("4hour".to_string());
+    let (path, text) = markdown_for(&results, "missing-selection.md");
+
+    assert!(text.contains("**insufficient evidence**"));
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn report_lists_data_quality_warnings() {
+    let mut results = sample_results();
+    results.datasets[0].missing_candles = 2;
+    results.datasets[0].duplicates_dropped = 1;
+    let (path, text) = markdown_for(&results, "warnings.md");
+
+    assert!(text.contains("### Warnings"), "got {text}");
+    assert!(text.contains("Warning: BTC-USDT 1hour has 2 missing candle(s)"));
+    assert!(text.contains("Warning: BTC-USDT 1hour dropped 1 duplicate candle(s)"));
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn commands_join_symbols_without_spaces() {
+    let mut results = sample_results();
+    results.symbols = vec!["BTC-USDT".to_string(), "ETH-USDT".to_string()];
+    let (path, text) = markdown_for(&results, "commands.md");
+
+    assert!(text.contains("--symbols BTC-USDT,ETH-USDT"), "got {text}");
+    assert!(!text.contains("--symbols BTC-USDT, ETH-USDT"));
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+fn with_full_base(mut outcome: CandidateOutcome) -> CandidateOutcome {
+    outcome.base.insert("train".to_string(), metrics(40, 5, 8));
+    outcome
+        .base
+        .insert("validation".to_string(), metrics(40, 8, 10));
+    outcome
+        .base
+        .insert("holdout".to_string(), metrics(40, 6, 12));
+    for (index, fold) in outcome.folds.clone().iter().enumerate() {
+        outcome
+            .base
+            .insert(format!("fold{}_val", index + 1), fold.clone());
+    }
+    outcome
+}
+
+#[test]
+fn artifacts_are_byte_identical_across_writes() {
+    // Deliberately unsorted input must not leak into any artifact.
+    let mut results = sample_results();
+    results.outcomes.insert(
+        "1hour".to_string(),
+        vec![
+            with_full_base(outcome("zzz", 40, 8, 10, [1, 1, -1], [1, 1, -1])),
+            with_full_base(outcome("aaa", 40, 8, 10, [1, 1, -1], [1, 1, -1])),
+        ],
+    );
+    type ArtifactWriter = fn(&std::path::Path, &SweepResults) -> Result<(), String>;
+    let writers: [ArtifactWriter; 3] = [write_results_json, write_markdown, write_leaderboard_csv];
+    let extensions = ["json", "md", "csv"];
+
+    for (index, writer) in writers.iter().enumerate() {
+        let extension = extensions[index];
+        let first = temp_file(&format!("deterministic-1.{extension}"));
+        let second = temp_file(&format!("deterministic-2.{extension}"));
+
+        writer(&first, &results).expect("first write");
+        writer(&second, &results).expect("second write");
+        let first_bytes = std::fs::read(&first).expect("first readable");
+        let second_bytes = std::fs::read(&second).expect("second readable");
+        assert_eq!(
+            first_bytes, second_bytes,
+            "{extension} artifact ordering is not deterministic"
+        );
+        let text = String::from_utf8(first_bytes).expect("artifact is utf-8");
+        let aaa = text.find("aaa").expect("aaa outcome is present");
+        let zzz = text.find("zzz").expect("zzz outcome is present");
+        assert!(aaa < zzz, "{extension} outcomes are not sorted by label");
+
+        std::fs::remove_dir_all(first.parent().expect("parent")).ok();
+        std::fs::remove_dir_all(second.parent().expect("parent")).ok();
+    }
 }

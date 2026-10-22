@@ -1,6 +1,6 @@
 use crate::harness::sweep::evaluate::PartitionMetrics;
 use crate::harness::sweep::ranking::{CandidateOutcome, Selection, Thresholds};
-use crate::harness::sweep::sampling::Candidate;
+use crate::harness::sweep::sampling::{Candidate, SMA_PERIOD};
 use rust_decimal::Decimal;
 use serde::Serialize;
 use std::collections::BTreeMap;
@@ -109,12 +109,44 @@ fn ensure_parent(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Returns a copy with each timeframe's candidates ordered by label, keeping every artifact stable.
+fn sorted_results(results: &SweepResults) -> SweepResults {
+    let mut sorted = results.clone();
+    for outcomes in sorted.outcomes.values_mut() {
+        outcomes.sort_by(|a, b| a.label.cmp(&b.label));
+    }
+    sorted
+}
+
+/// Reports every base partition that an outcome is missing, so CSV output never silently drops rows.
+fn missing_base_partitions(results: &SweepResults) -> Vec<String> {
+    let mut missing = Vec::new();
+    for (timeframe, outcomes) in &results.outcomes {
+        for outcome in outcomes {
+            for partition in BASE_PARTITIONS {
+                if !outcome.base.contains_key(partition) {
+                    missing.push(format!("{timeframe}/{}: {partition}", outcome.label));
+                }
+            }
+        }
+    }
+    missing
+}
+
 /// Writes one row per timeframe × candidate × symbol-or-pooled × base partition.
 ///
 /// Per-symbol rows carry the validation partition only, because that is the per-symbol partition
 /// recorded by [`CandidateOutcome`]. Stress columns are populated for the pooled validation row;
 /// they are empty where no stress metrics were recorded.
 pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), String> {
+    let missing = missing_base_partitions(results);
+    if !missing.is_empty() {
+        return Err(format!(
+            "cannot write leaderboard; missing base partitions: {}",
+            missing.join(", ")
+        ));
+    }
+
     ensure_parent(path)?;
     let mut writer = csv::Writer::from_path(path).map_err(|error| error.to_string())?;
     writer
@@ -127,9 +159,14 @@ pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), 
 
         for outcome in sorted {
             for partition in BASE_PARTITIONS {
-                let Some(metrics) = outcome.base.get(partition) else {
-                    continue;
-                };
+                // The pooled validation row is `base["validation"]`, the same partition used for
+                // selection. Missing partitions are rejected above rather than silently skipped.
+                let metrics = outcome.base.get(partition).ok_or_else(|| {
+                    format!(
+                        "cannot write leaderboard; {timeframe}/{} is missing {partition}",
+                        outcome.label
+                    )
+                })?;
                 let stress = if partition == "validation" {
                     outcome.stress.get("validation")
                 } else {
@@ -228,12 +265,15 @@ fn write_leaderboard_row<W: std::io::Write>(
 /// Serializes the full results document, including thresholds and the per-timeframe candidate plan.
 pub fn write_results_json(path: &Path, results: &SweepResults) -> Result<(), String> {
     ensure_parent(path)?;
-    let json = serde_json::to_string_pretty(results).map_err(|error| error.to_string())?;
+    let sorted = sorted_results(results);
+    let json = serde_json::to_string_pretty(&sorted).map_err(|error| error.to_string())?;
     std::fs::write(path, json).map_err(|error| error.to_string())
 }
 
 pub fn write_markdown(path: &Path, results: &SweepResults) -> Result<(), String> {
     ensure_parent(path)?;
+    let sorted = sorted_results(results);
+    let results = &sorted;
     let mut out = String::new();
     writeln!(out, "# Analyzer Hyperparameter Screening Report")
         .expect("writing to String cannot fail");
@@ -326,6 +366,45 @@ fn write_data_quality(out: &mut String, results: &SweepResults) {
         .expect("writing to String cannot fail");
     }
     writeln!(out).expect("writing to String cannot fail");
+
+    writeln!(out, "### Errors").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    if results.errors.is_empty() {
+        writeln!(out, "No errors recorded.").expect("writing to String cannot fail");
+    } else {
+        for error in &results.errors {
+            writeln!(out, "- {error}").expect("writing to String cannot fail");
+        }
+    }
+    writeln!(out).expect("writing to String cannot fail");
+
+    let has_warnings = results
+        .datasets
+        .iter()
+        .any(|dataset| dataset.missing_candles > 0 || dataset.duplicates_dropped > 0);
+    if has_warnings {
+        writeln!(out, "### Warnings").expect("writing to String cannot fail");
+        writeln!(out).expect("writing to String cannot fail");
+        for dataset in &results.datasets {
+            if dataset.missing_candles > 0 {
+                writeln!(
+                    out,
+                    "- Warning: {} {} has {} missing candle(s).",
+                    dataset.symbol, dataset.timeframe, dataset.missing_candles
+                )
+                .expect("writing to String cannot fail");
+            }
+            if dataset.duplicates_dropped > 0 {
+                writeln!(
+                    out,
+                    "- Warning: {} {} dropped {} duplicate candle(s).",
+                    dataset.symbol, dataset.timeframe, dataset.duplicates_dropped
+                )
+                .expect("writing to String cannot fail");
+            }
+        }
+        writeln!(out).expect("writing to String cannot fail");
+    }
 }
 
 fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
@@ -633,7 +712,7 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
 
     writeln!(
         out,
-        "`SMA_PERIOD` was fixed at 20 for every candidate, so this study cannot rank 50/100/200."
+        "`SMA_PERIOD` was fixed at {SMA_PERIOD} for every candidate, so this study cannot rank 50/100/200."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -672,14 +751,21 @@ fn write_costs(out: &mut String, results: &SweepResults) {
 }
 
 fn write_commands(out: &mut String, results: &SweepResults) {
-    writeln!(out, "## 9. Commands executed").expect("writing to String cannot fail");
+    writeln!(out, "## 9. Command (synthesized from run configuration)")
+        .expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "The actual process argv was not captured; this invocation is synthesized from the recorded run configuration."
+    )
+    .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     writeln!(out, "```bash").expect("writing to String cannot fail");
     writeln!(
         out,
         "make analyzer-sweep ARGS=\"--symbols {} --timeframes {} --months {} --as-of {} --seed {} --fee-bps {} --slip-bps {} --stress-fee-bps {} --stress-slip-bps {} --init-fund {}\"",
-        join(&results.symbols),
-        join(&results.timeframes),
+        join_compact(&results.symbols),
+        join_compact(&results.timeframes),
         results.months,
         results.as_of_ms,
         results.seed,
@@ -726,14 +812,29 @@ fn recommendation(results: &SweepResults) -> (&'static str, String) {
         }
     }
 
-    if winner_count == 0 {
+    // A requested timeframe with no recorded selection (or no winners) makes the run incomplete.
+    let missing_selection =
+        results
+            .timeframes
+            .iter()
+            .any(|timeframe| match results.selections.get(timeframe) {
+                Some(selection) => selection.winners.is_empty(),
+                None => true,
+            });
+
+    if !results.errors.is_empty() {
         (
-            "evidence insufficient",
-            "No candidate met the validation criteria, so the screening produced no evidence strong enough to change the baseline. This is a provisional screening result, not a profitability claim; a larger or differently scoped experiment would be needed before revising defaults.".to_string(),
+            "insufficient evidence",
+            "The run recorded one or more errors, so the screening is incomplete. Resolve the listed errors and rerun before drawing any conclusion. This is a provisional screening result, not a profitability claim.".to_string(),
+        )
+    } else if missing_selection || winner_count == 0 {
+        (
+            "insufficient evidence",
+            "No candidate met the validation criteria for every requested timeframe, so the screening produced no evidence strong enough to change the baseline. This is a provisional screening result, not a profitability claim; a larger or differently scoped experiment would be needed before revising defaults.".to_string(),
         )
     } else if has_non_baseline_winner {
         (
-            "run a larger experiment",
+            "larger experiment",
             "At least one non-baseline candidate met the validation criteria, but the selection is validation-only and provisional. Run a larger experiment that also evaluates the holdout and the stress scenario before considering any default change. This is not a profitability claim.".to_string(),
         )
     } else {
@@ -757,6 +858,15 @@ fn join(values: &[String]) -> String {
         "none".to_string()
     } else {
         values.join(", ")
+    }
+}
+
+/// Joins command-line values with commas and no spaces, as they would be passed to argv.
+fn join_compact(values: &[String]) -> String {
+    if values.is_empty() {
+        "none".to_string()
+    } else {
+        values.join(",")
     }
 }
 
