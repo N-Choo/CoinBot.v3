@@ -15,6 +15,9 @@ use std::collections::BTreeMap;
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct PartitionMetrics {
     pub trades: usize,
+    pub wins: usize,
+    pub gross_profit: Decimal,
+    pub gross_loss: Decimal,
     pub open_at_end: usize,
     pub gross_pnl: Decimal,
     pub closed_net_pnl: Decimal,
@@ -194,6 +197,9 @@ pub fn metrics_from_outcome(
 
     PartitionMetrics {
         trades: outcome.trades.len(),
+        wins,
+        gross_profit,
+        gross_loss,
         open_at_end: outcome.open_positions.len(),
         gross_pnl: gross,
         closed_net_pnl: closed_net,
@@ -212,6 +218,74 @@ pub fn metrics_from_outcome(
         sl_hits: sl,
         other_exits: other,
     }
+}
+
+/// Pools per-symbol metrics into one summary for reporting.
+///
+/// Totals are summed. Expectancy and win rate are recomputed from the pooled totals, and R is the
+/// trade-weighted mean of the per-symbol values. Drawdown and time-in-market are the maximum
+/// per-symbol values: they are conservative for reporting because they cannot be reconstructed
+/// without the underlying equity curves. The standard error is a pooled within-symbol estimate;
+/// groups with fewer than two trades are excluded and insufficient input yields zero.
+pub fn pool(metrics: &[PartitionMetrics]) -> PartitionMetrics {
+    let mut pooled = PartitionMetrics::default();
+    let mut trade_weighted_r = Decimal::ZERO;
+    let mut stderr_groups: Vec<(usize, Decimal)> = Vec::new();
+
+    for metric in metrics {
+        pooled.trades += metric.trades;
+        pooled.open_at_end += metric.open_at_end;
+        pooled.wins += metric.wins;
+        pooled.gross_profit += metric.gross_profit;
+        pooled.gross_loss += metric.gross_loss;
+        pooled.closed_net_pnl += metric.closed_net_pnl;
+        pooled.open_net_pnl += metric.open_net_pnl;
+        pooled.net_pnl += metric.net_pnl;
+        pooled.gross_pnl += metric.gross_pnl;
+        pooled.tp_hits += metric.tp_hits;
+        pooled.sl_hits += metric.sl_hits;
+        pooled.other_exits += metric.other_exits;
+        pooled.exposure_candles += metric.exposure_candles;
+        pooled.max_drawdown = pooled.max_drawdown.max(metric.max_drawdown);
+        pooled.max_drawdown_pct = pooled.max_drawdown_pct.max(metric.max_drawdown_pct);
+        pooled.time_in_market_pct = pooled.time_in_market_pct.max(metric.time_in_market_pct);
+        trade_weighted_r += metric.net_expectancy_r * Decimal::from(metric.trades);
+        if metric.trades > 1 {
+            stderr_groups.push((metric.trades, metric.expectancy_stderr));
+        }
+    }
+
+    if pooled.trades > 0 {
+        let n = Decimal::from(pooled.trades);
+        pooled.net_expectancy = pooled.closed_net_pnl / n;
+        pooled.net_expectancy_r = trade_weighted_r / n;
+        pooled.win_rate = Decimal::from(pooled.wins) / n * Decimal::from(100);
+    }
+    pooled.net_profit_factor = if pooled.gross_loss.is_zero() {
+        None
+    } else {
+        Some(pooled.gross_profit / pooled.gross_loss.abs())
+    };
+
+    let group_count = stderr_groups.len();
+    if pooled.trades > 0 && group_count > 0 && pooled.trades > group_count {
+        // variance_i = (se_i * sqrt(n_i))^2. The square root only bridges the pooled variance
+        // through f64; the result is a reporting statistic, not an accounting value.
+        let numerator: f64 = stderr_groups
+            .iter()
+            .map(|(n, stderr)| {
+                let n = *n as f64;
+                let stderr = stderr.to_f64().unwrap_or(0.0);
+                let variance = (stderr * n.sqrt()).powi(2);
+                (n - 1.0) * variance
+            })
+            .sum();
+        let pooled_variance = numerator / (pooled.trades - group_count) as f64;
+        let standard_error = (pooled_variance / pooled.trades as f64).sqrt();
+        pooled.expectancy_stderr = Decimal::from_f64(standard_error).unwrap_or(Decimal::ZERO);
+    }
+
+    pooled
 }
 
 #[derive(Debug, Clone, Serialize, Default)]
@@ -298,4 +372,93 @@ pub fn evaluate_config(
     }
 
     Ok(result)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn d(value: i64) -> Decimal {
+        Decimal::from(value)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    fn partition(
+        trades: usize,
+        wins: usize,
+        gross_profit: i64,
+        gross_loss: i64,
+        closed_net_pnl: i64,
+        net_pnl: i64,
+        net_expectancy_r: i64,
+        max_drawdown: i64,
+        max_drawdown_pct: i64,
+        time_in_market_pct: i64,
+        expectancy_stderr: i64,
+    ) -> PartitionMetrics {
+        PartitionMetrics {
+            trades,
+            wins,
+            gross_profit: d(gross_profit),
+            gross_loss: d(gross_loss),
+            closed_net_pnl: d(closed_net_pnl),
+            net_pnl: d(net_pnl),
+            net_expectancy_r: d(net_expectancy_r),
+            max_drawdown: d(max_drawdown),
+            max_drawdown_pct: d(max_drawdown_pct),
+            time_in_market_pct: d(time_in_market_pct),
+            expectancy_stderr: d(expectancy_stderr),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn pool_recomputes_expectancy_and_ratios_from_totals() {
+        let first = partition(4, 3, 30, -10, 20, 20, 2, 5, 1, 20, 1);
+        let second = partition(2, 1, 10, -10, 0, -5, -1, 8, 2, 40, 2);
+
+        let pooled = pool(&[first, second]);
+
+        assert_eq!(pooled.trades, 6);
+        assert_eq!(pooled.wins, 4);
+        assert_eq!(pooled.gross_profit, d(40));
+        assert_eq!(pooled.gross_loss, d(-20));
+        assert_eq!(pooled.closed_net_pnl, d(20));
+        assert_eq!(pooled.net_pnl, d(15));
+        assert_eq!(pooled.net_expectancy, d(20) / d(6));
+        // Trade-weighted mean: (2 * 4 + -1 * 2) / 6.
+        assert_eq!(pooled.net_expectancy_r, Decimal::ONE);
+        assert_eq!(pooled.net_profit_factor, Some(d(2)));
+        assert_eq!(pooled.win_rate, d(4) / d(6) * d(100));
+        // Conservative maxima for reporting.
+        assert_eq!(pooled.max_drawdown, d(8));
+        assert_eq!(pooled.max_drawdown_pct, d(2));
+        assert_eq!(pooled.time_in_market_pct, d(40));
+    }
+
+    #[test]
+    fn pool_combines_per_symbol_standard_error() {
+        let first = partition(4, 2, 0, 0, 0, 0, 0, 0, 0, 0, 1);
+        let second = partition(6, 3, 0, 0, 0, 0, 0, 0, 0, 0, 2);
+
+        let pooled = pool(&[first, second]);
+
+        // Per-symbol sample variances are (se * sqrt(n))^2 -> 4 and 24.
+        // Pooled variance = (3 * 4 + 5 * 24) / (10 - 2) = 16.5, so se = sqrt(16.5 / 10).
+        let expected = (16.5f64 / 10.0).sqrt();
+        let actual = pooled.expectancy_stderr.to_f64().unwrap();
+        assert!((actual - expected).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pool_returns_zero_for_empty_input() {
+        let pooled = pool(&[]);
+
+        assert_eq!(pooled.trades, 0);
+        assert_eq!(pooled.net_expectancy, Decimal::ZERO);
+        assert_eq!(pooled.net_expectancy_r, Decimal::ZERO);
+        assert_eq!(pooled.net_profit_factor, None);
+        assert_eq!(pooled.win_rate, Decimal::ZERO);
+        assert_eq!(pooled.expectancy_stderr, Decimal::ZERO);
+    }
 }

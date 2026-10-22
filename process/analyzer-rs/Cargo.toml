@@ -38,6 +38,11 @@ name = "analyzer-replay"
 path = "src/bin/analyzer-replay.rs"
 required-features = ["harness"]
 
+[[bin]]
+name = "analyzer-sweep"
+path = "src/bin/analyzer-sweep.rs"
+required-features = ["harness"]
+
 [dev-dependencies]
 serde_json = "1"
 syn = { version = "2", features = ["full"] }

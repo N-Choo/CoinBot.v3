@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine strategy-analyzer analyzer-rs
 
-.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web analyzer-replay status seed seed-reset analyzer-rs-check analyzer-rs-test
+.PHONY: help clean ci clippy test strategy-check fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev prod proto prod-build logs logs-api-gateway restart test-api trade analyzer-test benchmark-test benchmark benchmark-web analyzer-replay analyzer-sweep status seed seed-reset analyzer-rs-check analyzer-rs-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -22,6 +22,7 @@ help:
 	@echo "  make benchmark-web  Backtest and write a self-contained HTML replay report"
 	@echo "  make analyzer-replay  Replay signals into a self-contained HTML report (live KuCoin fetch by default; fees excluded)"
 	@echo "                        make analyzer-replay ARGS='--symbol BTC-USDT --timeframe 1day --limit 500'"
+	@echo "  make analyzer-sweep   Screen analyzer hyperparameter candidates and write sweep artifacts"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -98,6 +99,9 @@ analyzer-rs-test:
 
 analyzer-replay:
 	cargo run -p analyzer-rs --features harness --bin analyzer-replay -- $(ARGS)
+
+analyzer-sweep:
+	cargo run -p analyzer-rs --features harness --bin analyzer-sweep -- $(ARGS)
 
 benchmark-test:
 	@cd process/analyzer && python3 -m pytest benchmark/tests/ -v
