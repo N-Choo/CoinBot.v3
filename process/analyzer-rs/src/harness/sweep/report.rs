@@ -788,11 +788,12 @@ fn write_commands(out: &mut String, results: &SweepResults) {
     writeln!(out, "```bash").expect("writing to String cannot fail");
     writeln!(
         out,
-        "make analyzer-sweep ARGS=\"--symbols {} --timeframes {} --months {} --as-of {} --seed {} --fee-bps {} --slip-bps {} --stress-fee-bps {} --stress-slip-bps {} --init-fund {}\"",
+        "make analyzer-sweep ARGS=\"--symbols {} --timeframes {} --months {} --as-of {} --generated-at {} --seed {} --fee-bps {} --slip-bps {} --stress-fee-bps {} --stress-slip-bps {} --init-fund {}\"",
         join_compact(&results.symbols),
         join_compact(&results.timeframes),
         results.months,
         results.as_of_ms,
+        results.generated_at,
         results.seed,
         results.fee_bps,
         results.slip_bps,

@@ -251,10 +251,13 @@ pub fn write_provenance(csv_path: &Path, provenance: &DatasetProvenance) -> Resu
 /// Writes `candles` to a temporary CSV, validates it through [`load_csv`], and
 /// only renames it into `path` when validation succeeds. A failed validation
 /// removes the temporary file so a bad fetch can never poison the cache.
+/// The provenance is written after the rename; if that fails the committed CSV
+/// is removed so the two files cannot disagree.
 #[allow(clippy::too_many_arguments)]
 fn commit_cache(
     path: &Path,
     candles: &[Candle],
+    provenance: &DatasetProvenance,
     symbol: &str,
     timeframe: Timeframe,
     as_of_ms: i64,
@@ -288,6 +291,11 @@ fn commit_cache(
     if let Err(error) = std::fs::rename(&temp_path, path) {
         let _ = std::fs::remove_file(&temp_path);
         return Err(error.to_string());
+    }
+    if let Err(error) = write_provenance(path, provenance) {
+        // Never leave the previous run's provenance paired with the new CSV.
+        let _ = std::fs::remove_file(path);
+        return Err(error);
     }
     Ok(())
 }
@@ -326,11 +334,17 @@ where
             if cache_matches(&provenance, symbol, timeframe, start_ms, end_ms) {
                 let mut candles = read_cache(cache_path)?;
                 retain_range(&mut candles, start_ms, end_ms);
-                return Ok(CachedCandles {
-                    candles,
-                    provenance,
-                    used_cache: true,
-                });
+                // A cache whose CSV no longer matches its provenance is treated
+                // as a miss so a truncated or corrupted file is refetched.
+                if candles.len() == provenance.candles
+                    && hash_candles(&candles) == provenance.content_sha256
+                {
+                    return Ok(CachedCandles {
+                        candles,
+                        provenance,
+                        used_cache: true,
+                    });
+                }
             }
         }
     }
@@ -341,9 +355,15 @@ where
         symbol, timeframe, start_ms, end_ms, duplicates, &candles, pages,
     );
     commit_cache(
-        cache_path, &candles, symbol, timeframe, end_ms, settle_ms, window,
+        cache_path,
+        &candles,
+        &data_provenance,
+        symbol,
+        timeframe,
+        end_ms,
+        settle_ms,
+        window,
     )?;
-    write_provenance(cache_path, &data_provenance)?;
     Ok(CachedCandles {
         candles,
         provenance: data_provenance,

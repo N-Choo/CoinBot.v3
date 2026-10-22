@@ -252,6 +252,90 @@ fn cache_round_trips_csv() {
 }
 
 #[test]
+fn valid_cache_with_matching_provenance_is_reused() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let dir = temp_dir("reuse");
+    let path = dir.join("BTC-USDT_1hour.csv");
+    let candles: Vec<Candle> = (0..8).map(|index| c(index * step)).collect();
+    let expected = provenance("BTC-USDT", tf, 0, 7 * step, 0, &candles, 1);
+    write_cache(&path, &candles).unwrap();
+    write_provenance(&path, &expected).unwrap();
+
+    let mut fetch_calls = 0;
+    let loaded = load_with_cache(&path, "BTC-USDT", tf, 0, 7 * step, false, 0, 5, || {
+        fetch_calls += 1;
+        Ok((candles.clone(), 1, 0))
+    })
+    .unwrap();
+
+    assert_eq!(fetch_calls, 0, "a valid cache must not call the fetcher");
+    assert!(loaded.used_cache);
+    assert_eq!(loaded.candles.len(), candles.len());
+    assert_eq!(loaded.provenance.content_sha256, expected.content_sha256);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_with_truncated_csv_is_refetched() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let dir = temp_dir("truncated");
+    let path = dir.join("BTC-USDT_1hour.csv");
+    let full: Vec<Candle> = (0..12).map(|index| c(index * step)).collect();
+    write_cache(&path, &full).unwrap();
+    write_provenance(
+        &path,
+        &provenance("BTC-USDT", tf, 0, 11 * step, 0, &full, 1),
+    )
+    .unwrap();
+
+    // Drop rows but keep the provenance that still describes the full range.
+    write_cache(&path, &full[..6]).unwrap();
+
+    let mut fetch_calls = 0;
+    let loaded = load_with_cache(&path, "BTC-USDT", tf, 0, 11 * step, false, 0, 5, || {
+        fetch_calls += 1;
+        Ok((full.clone(), 1, 0))
+    })
+    .unwrap();
+
+    assert_eq!(fetch_calls, 1, "a truncated cache must be refetched");
+    assert!(!loaded.used_cache);
+    assert_eq!(loaded.candles.len(), full.len());
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn cache_with_corrupted_values_is_refetched() {
+    let tf = Timeframe::H1;
+    let step = tf.millis();
+    let dir = temp_dir("corrupted");
+    let path = dir.join("BTC-USDT_1hour.csv");
+    let full: Vec<Candle> = (0..12).map(|index| c(index * step)).collect();
+    let expected = provenance("BTC-USDT", tf, 0, 11 * step, 0, &full, 1);
+    write_cache(&path, &full).unwrap();
+    write_provenance(&path, &expected).unwrap();
+
+    // Same row count, different content: only the hash can detect this.
+    let mut corrupted = full.clone();
+    corrupted[3].close = Decimal::TWO;
+    write_cache(&path, &corrupted).unwrap();
+
+    let mut fetch_calls = 0;
+    let loaded = load_with_cache(&path, "BTC-USDT", tf, 0, 11 * step, false, 0, 5, || {
+        fetch_calls += 1;
+        Ok((full.clone(), 1, 0))
+    })
+    .unwrap();
+
+    assert_eq!(fetch_calls, 1, "a corrupted cache must be refetched");
+    assert!(!loaded.used_cache);
+    assert_eq!(loaded.provenance.content_sha256, expected.content_sha256);
+    std::fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
 fn cache_csv_is_accepted_by_the_dataset_loader() {
     let tf = Timeframe::H1;
     let step = tf.millis();

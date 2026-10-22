@@ -487,6 +487,7 @@ fn writes_markdown_with_required_sections() {
     assert!(text.contains("## 7. Parameter sensitivity"));
     assert!(text.contains("## 8. Cost assumptions"));
     assert!(text.contains("## 9. Command (synthesized from run configuration)"));
+    assert!(text.contains("--generated-at 2026-10-22T00:00:00Z"));
     assert!(text.contains("## 10. Recommendation"));
     assert!(text.contains("### Errors"));
     assert!(text.contains("validation"));
