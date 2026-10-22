@@ -605,6 +605,20 @@ fn commands_join_symbols_without_spaces() {
     std::fs::remove_dir_all(path.parent().expect("parent")).ok();
 }
 
+#[test]
+fn reports_errors_when_every_dataset_fetch_failed() {
+    let mut results = sample_results();
+    results.datasets = Vec::new();
+    results.errors = vec!["fetch failed".to_string()];
+    let (path, text) = markdown_for(&results, "all-fetches-failed.md");
+
+    assert!(text.contains("No datasets recorded."), "got {text}");
+    assert!(text.contains("### Errors"), "got {text}");
+    assert!(text.contains("fetch failed"), "got {text}");
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
 fn with_full_base(mut outcome: CandidateOutcome) -> CandidateOutcome {
     outcome.base.insert("train".to_string(), metrics(40, 5, 8));
     outcome
@@ -657,4 +671,110 @@ fn artifacts_are_byte_identical_across_writes() {
         std::fs::remove_dir_all(first.parent().expect("parent")).ok();
         std::fs::remove_dir_all(second.parent().expect("parent")).ok();
     }
+}
+
+#[test]
+fn leaderboard_csv_rejects_outcomes_missing_base_partitions() {
+    let mut results = sample_results();
+    let mut incomplete = outcome("incomplete", 40, 8, 10, [1, 1, 1], [1, 1, 1]);
+    incomplete
+        .base
+        .insert("train".to_string(), metrics(40, 5, 8));
+    incomplete
+        .base
+        .insert("validation".to_string(), metrics(40, 8, 10));
+    // "holdout" and the fold partitions are deliberately absent.
+    results
+        .outcomes
+        .insert("1hour".to_string(), vec![incomplete]);
+    let path = temp_file("missing-partition.csv");
+
+    let error = write_leaderboard_csv(&path, &results).expect_err("missing partitions must fail");
+
+    assert!(
+        error.contains("missing base partitions"),
+        "expected a missing-base-partitions error, got {error}"
+    );
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn leaderboard_csv_pooled_validation_uses_base_partition_metrics() {
+    let mut results = sample_results();
+    let mut diverging = with_full_base(outcome("diverging", 40, 8, 10, [1, 1, -1], [1, 1, -1]));
+    // `pooled_validation` stays at 8; the recorded validation partition is clearly different.
+    diverging
+        .base
+        .insert("validation".to_string(), metrics(41, 99, 33));
+    results
+        .outcomes
+        .insert("1hour".to_string(), vec![diverging]);
+    let path = temp_file("base-validation.csv");
+    write_leaderboard_csv(&path, &results).expect("csv writes");
+
+    let mut reader = csv::Reader::from_path(&path).expect("csv readable");
+    let headers = reader.headers().expect("headers").clone();
+    let net_expectancy = headers
+        .iter()
+        .position(|column| column == "net_expectancy")
+        .expect("net_expectancy column");
+    let validation_row = reader
+        .records()
+        .map(|record| record.expect("record"))
+        .find(|record| {
+            record.get(1) == Some("pooled")
+                && record.get(2) == Some("diverging")
+                && record.get(11) == Some("validation")
+        })
+        .expect("pooled validation row");
+
+    assert_eq!(
+        validation_row.get(net_expectancy),
+        Some("99"),
+        "pooled validation must come from base[\"validation\"], not pooled_validation"
+    );
+
+    std::fs::remove_dir_all(path.parent().expect("parent")).ok();
+}
+
+#[test]
+fn drawdown_failure_takes_priority_over_folds_and_trades() {
+    // Positive expectancy, excessive drawdown, too few positive folds, and too few trades.
+    let bad = outcome("dd-first", 5, 8, 25, [-1, -1, -1], [-1, -1, -1]);
+    let selection = rank(&[bad], &Thresholds::default());
+
+    let reasons: Vec<&String> = selection
+        .notes
+        .iter()
+        .filter(|note| note.contains("dd-first"))
+        .collect();
+    assert_eq!(
+        reasons.len(),
+        1,
+        "expected exactly one rejection note, got {reasons:?}"
+    );
+    assert!(reasons[0].contains("drawdown"), "got {reasons:?}");
+    assert!(!reasons[0].contains("fold"), "got {reasons:?}");
+    assert!(!reasons[0].contains("trades"), "got {reasons:?}");
+}
+
+#[test]
+fn fold_failure_takes_priority_over_trades() {
+    // Positive expectancy, acceptable drawdown, too few positive folds, and too few trades.
+    let bad = outcome("fold-first", 5, 8, 10, [-1, -1, -1], [1, -1, -1]);
+    let selection = rank(&[bad], &Thresholds::default());
+
+    let reasons: Vec<&String> = selection
+        .notes
+        .iter()
+        .filter(|note| note.contains("fold-first"))
+        .collect();
+    assert_eq!(
+        reasons.len(),
+        1,
+        "expected exactly one rejection note, got {reasons:?}"
+    );
+    assert!(reasons[0].contains("fold"), "got {reasons:?}");
+    assert!(!reasons[0].contains("trades"), "got {reasons:?}");
 }

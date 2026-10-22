@@ -109,11 +109,17 @@ fn ensure_parent(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
-/// Returns a copy with each timeframe's candidates ordered by label, keeping every artifact stable.
+/// Returns a copy with candidates, per-symbol metrics, and selection notes in deterministic order.
 fn sorted_results(results: &SweepResults) -> SweepResults {
     let mut sorted = results.clone();
     for outcomes in sorted.outcomes.values_mut() {
         outcomes.sort_by(|a, b| a.label.cmp(&b.label));
+        for outcome in outcomes.iter_mut() {
+            outcome.per_symbol_validation.sort_by(|a, b| a.0.cmp(&b.0));
+        }
+    }
+    for selection in sorted.selections.values_mut() {
+        selection.notes.sort();
     }
     sorted
 }
@@ -139,6 +145,8 @@ fn missing_base_partitions(results: &SweepResults) -> Vec<String> {
 /// recorded by [`CandidateOutcome`]. Stress columns are populated for the pooled validation row;
 /// they are empty where no stress metrics were recorded.
 pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), String> {
+    let sorted = sorted_results(results);
+    let results = &sorted;
     let missing = missing_base_partitions(results);
     if !missing.is_empty() {
         return Err(format!(
@@ -154,10 +162,7 @@ pub fn write_leaderboard_csv(path: &Path, results: &SweepResults) -> Result<(), 
         .map_err(|error| error.to_string())?;
 
     for (timeframe, outcomes) in &results.outcomes {
-        let mut sorted: Vec<&CandidateOutcome> = outcomes.iter().collect();
-        sorted.sort_by(|a, b| a.label.cmp(&b.label));
-
-        for outcome in sorted {
+        for outcome in outcomes {
             for partition in BASE_PARTITIONS {
                 // The pooled validation row is `base["validation"]`, the same partition used for
                 // selection. Missing partitions are rejected above rather than silently skipped.
@@ -334,39 +339,39 @@ fn write_data_quality(out: &mut String, results: &SweepResults) {
     writeln!(out).expect("writing to String cannot fail");
     if results.datasets.is_empty() {
         writeln!(out, "No datasets recorded.").expect("writing to String cannot fail");
-        writeln!(out).expect("writing to String cannot fail");
-        return;
-    }
-
-    writeln!(
-        out,
-        "| Symbol | Timeframe | Requested range (ms) | Effective range (ms) | Candles | Requested | Expected | Missing | Duplicates | Pages | SHA-256 |"
-    )
-    .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
-        .expect("writing to String cannot fail");
-    for dataset in &results.datasets {
+    } else {
         writeln!(
             out,
-            "| {} | {} | {}..{} | {}..{} | {} | {} | {} | {} | {} | {} | {} |",
-            dataset.symbol,
-            dataset.timeframe,
-            dataset.requested_first_ms,
-            dataset.requested_last_ms,
-            dataset.first_open_time_ms,
-            dataset.last_open_time_ms,
-            dataset.candles,
-            dataset.requested_candles,
-            dataset.expected_candles,
-            dataset.missing_candles,
-            dataset.duplicates_dropped,
-            dataset.pages,
-            dataset.content_sha256
+            "| Symbol | Timeframe | Requested range (ms) | Effective range (ms) | Candles | Requested | Expected | Missing | Duplicates | Pages | SHA-256 |"
         )
         .expect("writing to String cannot fail");
+        writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
+            .expect("writing to String cannot fail");
+        for dataset in &results.datasets {
+            writeln!(
+                out,
+                "| {} | {} | {}..{} | {}..{} | {} | {} | {} | {} | {} | {} | {} |",
+                dataset.symbol,
+                dataset.timeframe,
+                dataset.requested_first_ms,
+                dataset.requested_last_ms,
+                dataset.first_open_time_ms,
+                dataset.last_open_time_ms,
+                dataset.candles,
+                dataset.requested_candles,
+                dataset.expected_candles,
+                dataset.missing_candles,
+                dataset.duplicates_dropped,
+                dataset.pages,
+                dataset.content_sha256
+            )
+            .expect("writing to String cannot fail");
+        }
     }
     writeln!(out).expect("writing to String cannot fail");
 
+    // Errors and warnings are always reported: an all-fetches-failed run has no datasets but the
+    // captured errors are exactly what the reader needs to see.
     writeln!(out, "### Errors").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
     if results.errors.is_empty() {
@@ -378,13 +383,13 @@ fn write_data_quality(out: &mut String, results: &SweepResults) {
     }
     writeln!(out).expect("writing to String cannot fail");
 
+    writeln!(out, "### Warnings").expect("writing to String cannot fail");
+    writeln!(out).expect("writing to String cannot fail");
     let has_warnings = results
         .datasets
         .iter()
         .any(|dataset| dataset.missing_candles > 0 || dataset.duplicates_dropped > 0);
     if has_warnings {
-        writeln!(out, "### Warnings").expect("writing to String cannot fail");
-        writeln!(out).expect("writing to String cannot fail");
         for dataset in &results.datasets {
             if dataset.missing_candles > 0 {
                 writeln!(
@@ -403,8 +408,10 @@ fn write_data_quality(out: &mut String, results: &SweepResults) {
                 .expect("writing to String cannot fail");
             }
         }
-        writeln!(out).expect("writing to String cannot fail");
+    } else {
+        writeln!(out, "No warnings recorded.").expect("writing to String cannot fail");
     }
+    writeln!(out).expect("writing to String cannot fail");
 }
 
 fn write_baseline_vs_candidates(out: &mut String, results: &SweepResults) {
