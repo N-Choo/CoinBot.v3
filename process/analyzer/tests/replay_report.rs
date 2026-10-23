@@ -38,7 +38,7 @@ fn run(symbol: &str, fixture_name: &str, cfg: &Config) -> Run {
         0,
     )
     .unwrap();
-    let replay = build_replay(&dataset, cfg, None).unwrap();
+    let replay = build_replay(&dataset, cfg).unwrap();
     let signals: Vec<SimSignal> = replay
         .signals
         .iter()
@@ -120,7 +120,6 @@ fn payload_has_two_symbols_and_report_fields() {
         let candles = run.replay.candles.len();
         assert_eq!(symbol["candles"].as_array().unwrap().len(), candles);
         assert_eq!(symbol["rsi"].as_array().unwrap().len(), candles);
-        assert_eq!(symbol["sma"].as_array().unwrap().len(), candles);
         assert_eq!(
             symbol["events"].as_array().unwrap().len(),
             run.replay.events.len()
@@ -141,7 +140,9 @@ fn payload_has_two_symbols_and_report_fields() {
             assert!(matches!(signal["action"].as_str(), Some("Long" | "Short")));
             assert!(signal["candle_index"].is_u64());
             assert!(signal["confidence"].is_string());
-            assert!(signal["divergence_kind"].is_string());
+            assert!(signal["reason"].is_string());
+            assert!(signal["sl"].is_null() || signal["sl"].is_string());
+            assert!(signal["tp"].is_null() || signal["tp"].is_string());
             assert!(signal["signal_candle_open_time_ms"].is_i64());
         }
         for trade in symbol["trades"].as_array().unwrap() {
@@ -173,6 +174,15 @@ fn payload_has_two_symbols_and_report_fields() {
     assert_eq!(payload["config"]["window"], cfg.window);
     assert_eq!(payload["config"]["fees"], false);
     assert_eq!(payload["config"]["rsi_period"], cfg.rsi_period);
+    assert_eq!(
+        payload["config"]["rsi_long_threshold"],
+        cfg.rsi_long_threshold.to_string()
+    );
+    assert_eq!(
+        payload["config"]["rsi_short_threshold"],
+        cfg.rsi_short_threshold.to_string()
+    );
+    assert_eq!(payload["config"]["atr_enabled"], cfg.atr_enabled);
     assert!(payload["failures"].as_array().unwrap().is_empty());
 }
 
@@ -311,8 +321,8 @@ fn payload_includes_signal_ids_account_and_exit_counts() {
             assert!(matches!(open["side"].as_str(), Some("Long" | "Short")));
             assert!(open["fill"].is_string());
             assert!(open["e"].is_string());
-            assert!(open["sl"].is_string());
-            assert!(open["tp"].is_string());
+            assert!(open["sl"].is_null() || open["sl"].is_string());
+            assert!(open["tp"].is_null() || open["tp"].is_string());
             assert!(open["unrealized"].is_string());
         }
     }

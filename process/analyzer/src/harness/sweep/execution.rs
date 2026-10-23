@@ -1,7 +1,7 @@
 use crate::harness::dataset::Dataset;
 use crate::harness::replay::{build_replay, ReplaySignal};
 use crate::harness::sim::{
-    ClosedTrade, SimOutcome, REASON_GAP_SL, REASON_GAP_TP, REASON_SL, REASON_TP,
+    ClosedTrade, SimOutcome, REASON_GAP_SL, REASON_GAP_TP, REASON_REVERSAL, REASON_SL, REASON_TP,
 };
 use crate::harness::sweep::costs::CostScenario;
 use crate::harness::sweep::evaluate::{metrics_from_outcome, pool, PartitionMetrics};
@@ -119,6 +119,7 @@ pub struct ExecOutcome {
     pub expired: usize,
     pub skipped_funds: usize,
     pub invalid_levels: usize,
+    pub same_side: usize,
 }
 
 impl ExecOutcome {
@@ -217,6 +218,7 @@ pub fn simulate_execution(
     let mut expired = 0usize;
     let mut skipped_funds = 0usize;
     let mut invalid_levels = 0usize;
+    let mut same_side = 0usize;
     let mut cursor = 0usize;
 
     for (index, candle) in candles.iter().enumerate() {
@@ -235,17 +237,30 @@ pub fn simulate_execution(
             match &model.entry {
                 EntryMode::Market => {
                     if index == order.signal_index + 1 {
-                        if available >= budget {
+                        if positions.iter().any(|position| position.side == order.side) {
+                            same_side += 1;
+                        } else if available >= budget {
+                            let side = order.side;
+                            let price = candle.open;
                             available -= budget;
                             positions.push(open_position(
                                 order,
-                                candle.open,
+                                price,
                                 index,
                                 budget,
                                 model,
                                 SameCandleExit::All,
                             ));
                             filled += 1;
+                            reconcile_positions(
+                                &mut positions,
+                                side,
+                                price,
+                                index,
+                                model,
+                                &mut available,
+                                &mut trades,
+                            );
                         } else {
                             skipped_funds += 1;
                         }
@@ -276,14 +291,17 @@ pub fn simulate_execution(
                         );
                         match fill {
                             LimitFill::Filled { price } => {
-                                if available >= budget {
-                                    available -= budget;
+                                if positions.iter().any(|position| position.side == order.side) {
+                                    same_side += 1;
+                                } else if available >= budget {
+                                    let side = order.side;
                                     let same_candle_exit =
                                         if stop_after_fill(order.side, order.sl, price, candle) {
                                             SameCandleExit::StopOnly
                                         } else {
                                             SameCandleExit::None
                                         };
+                                    available -= budget;
                                     positions.push(open_position(
                                         order,
                                         price,
@@ -293,6 +311,15 @@ pub fn simulate_execution(
                                         same_candle_exit,
                                     ));
                                     filled += 1;
+                                    reconcile_positions(
+                                        &mut positions,
+                                        side,
+                                        price,
+                                        index,
+                                        model,
+                                        &mut available,
+                                        &mut trades,
+                                    );
                                 } else {
                                     // The touch consumed the opportunity; the order does not
                                     // wait for funds to free up later in its validity window.
@@ -343,16 +370,21 @@ pub fn simulate_execution(
             cursor += 1;
             signals_total += 1;
             let signal = &replay_signal.signal;
-            let geometry_ok = match signal.action {
-                Direction::Long => {
-                    signal.sl_price < signal.entry_price && signal.tp_price > signal.entry_price
-                }
-                Direction::Short => {
-                    signal.sl_price > signal.entry_price && signal.tp_price < signal.entry_price
-                }
+            let geometry_ok = match (signal.sl_price, signal.tp_price) {
+                (None, None) => true,
+                (Some(sl), Some(tp)) => match signal.action {
+                    Direction::Long => sl < signal.entry_price && tp > signal.entry_price,
+                    Direction::Short => sl > signal.entry_price && tp < signal.entry_price,
+                },
+                _ => false,
             };
             if !geometry_ok {
                 invalid_levels += 1;
+            } else if positions
+                .iter()
+                .any(|position| position.side == signal.action)
+            {
+                same_side += 1;
             } else if index + 1 >= candles.len() {
                 expired += 1;
             } else {
@@ -360,8 +392,8 @@ pub fn simulate_execution(
                     signal_id: replay_signal.signal_id.clone(),
                     side: signal.action,
                     signal_entry: signal.entry_price,
-                    sl: signal.sl_price,
-                    tp: signal.tp_price,
+                    sl: signal.sl_price.unwrap_or(Decimal::ZERO),
+                    tp: signal.tp_price.unwrap_or(Decimal::ZERO),
                     signal_index: index,
                 });
             }
@@ -395,6 +427,7 @@ pub fn simulate_execution(
         expired,
         skipped_funds,
         invalid_levels,
+        same_side,
     }
 }
 
@@ -442,7 +475,7 @@ fn limit_fill(
     match side {
         Direction::Long => {
             let limit = entry * (Decimal::ONE - offset);
-            if limit <= sl {
+            if sl > Decimal::ZERO && limit <= sl {
                 return LimitFill::BeyondStop;
             }
             let threshold = limit * (Decimal::ONE - buffer);
@@ -455,7 +488,7 @@ fn limit_fill(
             };
             // An open through the limit can gap beyond the stop; reject the actual fill rather
             // than booking a phantom profitable `gap_sl` on the next candle.
-            if price <= sl {
+            if sl > Decimal::ZERO && price <= sl {
                 LimitFill::BeyondStop
             } else {
                 LimitFill::Filled { price }
@@ -463,7 +496,7 @@ fn limit_fill(
         }
         Direction::Short => {
             let limit = entry * (Decimal::ONE + offset);
-            if limit >= sl {
+            if sl > Decimal::ZERO && limit >= sl {
                 return LimitFill::BeyondStop;
             }
             let threshold = limit * (Decimal::ONE + buffer);
@@ -476,7 +509,7 @@ fn limit_fill(
             };
             // An open through the limit can gap beyond the stop; reject the actual fill rather
             // than booking a phantom profitable `gap_sl` on the next candle.
-            if price >= sl {
+            if sl > Decimal::ZERO && price >= sl {
                 LimitFill::BeyondStop
             } else {
                 LimitFill::Filled { price }
@@ -491,6 +524,9 @@ fn limit_fill(
 /// fill reaching this point sits on the correct side of `sl`. The guard is retained as a
 /// defensive check against an invalid fill being passed in.
 fn stop_after_fill(side: Direction, sl: Decimal, fill: Decimal, candle: &Candle) -> bool {
+    if sl <= Decimal::ZERO {
+        return false;
+    }
     match side {
         Direction::Long => fill > sl && candle.low <= sl,
         Direction::Short => fill < sl && candle.high >= sl,
@@ -498,6 +534,9 @@ fn stop_after_fill(side: Direction, sl: Decimal, fill: Decimal, candle: &Candle)
 }
 
 fn exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal)> {
+    if position.sl <= Decimal::ZERO || position.tp <= Decimal::ZERO {
+        return None;
+    }
     let open = candle.open;
     match position.side {
         Direction::Long => {
@@ -535,6 +574,9 @@ fn exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal
 /// so the stop is necessarily after the entry. The target is still suppressed because it may
 /// have been touched before the limit was reached.
 fn stop_exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal)> {
+    if position.sl <= Decimal::ZERO {
+        return None;
+    }
     let open = candle.open;
     match position.side {
         Direction::Long => {
@@ -559,11 +601,43 @@ fn stop_exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, De
 }
 
 fn risk_reward_for(side: Direction, sl: Decimal, tp: Decimal, fill: Decimal) -> Option<Decimal> {
+    if sl <= Decimal::ZERO || tp <= Decimal::ZERO {
+        return None;
+    }
     match side {
         Direction::Long if fill > sl && tp > fill => Some((tp - fill) / (fill - sl)),
         Direction::Short if sl > fill && fill > tp => Some((fill - tp) / (sl - fill)),
         _ => None,
     }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn reconcile_positions(
+    positions: &mut Vec<OpenPosition>,
+    target: Direction,
+    price: Decimal,
+    index: usize,
+    model: &ExecModel,
+    available: &mut Decimal,
+    trades: &mut Vec<ExecTrade>,
+) {
+    let mut kept = Vec::new();
+    for position in positions.drain(..) {
+        if position.side == target {
+            kept.push(position);
+        } else {
+            close_position(
+                position,
+                price,
+                index,
+                REASON_REVERSAL,
+                model,
+                available,
+                trades,
+            );
+        }
+    }
+    *positions = kept;
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -617,22 +691,25 @@ pub struct ExecPartition {
     pub expired: usize,
     pub skipped_funds: usize,
     pub invalid_levels: usize,
+    pub same_side: usize,
     /// `filled / signals_total`, including signals dropped for insufficient funds.
     pub capital_fill_rate: Decimal,
-    /// `filled / (signals_total - skipped_funds - invalid_levels)`.
+    /// `filled / (signals_total - skipped_funds - invalid_levels - same_side)`.
     /// This measures limit-fill quality among orders that were actually executable.
     pub execution_fill_rate: Decimal,
 }
 
 /// Computes the capital-constrained and execution-only fill rates.
 ///
-/// The execution rate excludes signals rejected for insufficient capital or invalid levels so
-/// that capital scarcity is not mistaken for a limit-fill failure.
+/// The execution rate excludes signals rejected for insufficient capital, invalid levels, or
+/// because the target side was already held, so those cases are not mistaken for limit-fill
+/// failures.
 fn fill_rates(
     filled: usize,
     signals: usize,
     skipped_funds: usize,
     invalid_levels: usize,
+    same_side: usize,
 ) -> (Decimal, Decimal) {
     let capital_fill_rate = if signals == 0 {
         Decimal::ZERO
@@ -641,7 +718,8 @@ fn fill_rates(
     };
     let executable = signals
         .saturating_sub(skipped_funds)
-        .saturating_sub(invalid_levels);
+        .saturating_sub(invalid_levels)
+        .saturating_sub(same_side);
     let execution_fill_rate = if executable == 0 {
         Decimal::ZERO
     } else {
@@ -660,6 +738,7 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         expired: 0,
         skipped_funds: 0,
         invalid_levels: 0,
+        same_side: 0,
         capital_fill_rate: Decimal::ZERO,
         execution_fill_rate: Decimal::ZERO,
     };
@@ -669,12 +748,14 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         pooled.expired += part.expired;
         pooled.skipped_funds += part.skipped_funds;
         pooled.invalid_levels += part.invalid_levels;
+        pooled.same_side += part.same_side;
     }
     let (capital_fill_rate, execution_fill_rate) = fill_rates(
         pooled.filled,
         pooled.signals,
         pooled.skipped_funds,
         pooled.invalid_levels,
+        pooled.same_side,
     );
     pooled.capital_fill_rate = capital_fill_rate;
     pooled.execution_fill_rate = execution_fill_rate;
@@ -688,7 +769,6 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
 pub fn evaluate_execution_config(
     dataset: &Dataset,
     cfg: &Config,
-    max_age: Option<usize>,
     splits: &Splits,
     window: usize,
     init_fund: i64,
@@ -724,7 +804,7 @@ pub fn evaluate_execution_config(
             .last()
             .ok_or_else(|| format!("partition {name} has no candles"))?
             .close;
-        let replay = build_replay(&slice_dataset, cfg, max_age)
+        let replay = build_replay(&slice_dataset, cfg)
             .map_err(|error| format!("partition {name}: {error}"))?;
         let signals: Vec<ReplaySignal> = replay
             .signals
@@ -749,6 +829,7 @@ pub fn evaluate_execution_config(
                 outcome.signals_total,
                 outcome.skipped_funds,
                 outcome.invalid_levels,
+                outcome.same_side,
             );
             result.entry(model.label.clone()).or_default().insert(
                 name.to_string(),
@@ -759,6 +840,7 @@ pub fn evaluate_execution_config(
                     expired: outcome.expired,
                     skipped_funds: outcome.skipped_funds,
                     invalid_levels: outcome.invalid_levels,
+                    same_side: outcome.same_side,
                     capital_fill_rate,
                     execution_fill_rate,
                 },

@@ -143,7 +143,7 @@ trade:
 		sleep 2 && \
 		(GRPC_ADDR=127.0.0.1:50051 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo run -p trade-engine & \
 		PID=$$!; sleep 5 && \
-		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT KUCOIN_TIMEFRAME=15min \
+		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT KUCOIN_TIMEFRAME=4hour \
 		cargo run -p analyzer --features "live grpc" --bin analyzer-serve; st=$$?; \
 		kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \

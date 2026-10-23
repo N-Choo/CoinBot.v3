@@ -10,70 +10,37 @@ fn d(value: i64, scale: u32) -> Decimal {
 #[test]
 fn frozen_candidates_are_baseline_first_and_include_the_four_winners() {
     let candidates = frozen_candidates();
-
     assert_eq!(candidates.len(), 5);
     assert_eq!(candidates[0].label, "baseline");
-    let labels: Vec<&str> = candidates
-        .iter()
-        .map(|candidate| candidate.label.as_str())
-        .collect();
+    let labels: Vec<&str> = candidates.iter().map(|c| c.label.as_str()).collect();
     assert_eq!(
         labels,
         [
             "baseline",
-            "joint-13",
-            "joint-24",
-            "max_age=4",
-            "atr_tp=4.0"
+            "long65-short50",
+            "long60-short45",
+            "long70-short50",
+            "atr-on-tp4.0"
         ]
     );
-
-    // The frozen winners come from the 4hour screening and hold SMA at period 20.
+    assert_eq!(candidates[0].origin, "baseline");
+    let expected = [
+        (60, 50, false),
+        (65, 50, false),
+        (60, 45, false),
+        (70, 50, false),
+        (60, 50, true),
+    ];
+    for (candidate, (long, short, atr)) in candidates.iter().zip(expected) {
+        assert_eq!(candidate.rsi_period, 21);
+        assert_eq!(candidate.rsi_long_threshold, Decimal::from(long));
+        assert_eq!(candidate.rsi_short_threshold, Decimal::from(short));
+        assert_eq!(candidate.atr_enabled, atr);
+    }
     for candidate in &candidates[1..] {
         assert_eq!(candidate.origin, "screening-4hour");
-        assert!(candidate.sma_enabled);
-        assert_eq!(candidate.sma_period, 20);
     }
-    assert_eq!(
-        (
-            candidates[1].rsi_period,
-            candidates[1].rsi_order,
-            candidates[1].max_age,
-            candidates[1].atr_sl_multiplier,
-            candidates[1].atr_tp_multiplier,
-        ),
-        (10, 5, None, d(25, 1), d(40, 1))
-    );
-    assert_eq!(
-        (
-            candidates[2].rsi_period,
-            candidates[2].rsi_order,
-            candidates[2].max_age,
-            candidates[2].atr_sl_multiplier,
-            candidates[2].atr_tp_multiplier,
-        ),
-        (21, 5, Some(12), d(20, 1), d(40, 1))
-    );
-    assert_eq!(
-        (
-            candidates[3].rsi_period,
-            candidates[3].rsi_order,
-            candidates[3].max_age,
-            candidates[3].atr_sl_multiplier,
-            candidates[3].atr_tp_multiplier,
-        ),
-        (14, 5, Some(4), d(15, 1), d(20, 1))
-    );
-    assert_eq!(
-        (
-            candidates[4].rsi_period,
-            candidates[4].rsi_order,
-            candidates[4].max_age,
-            candidates[4].atr_sl_multiplier,
-            candidates[4].atr_tp_multiplier,
-        ),
-        (14, 5, Some(12), d(15, 1), d(40, 1))
-    );
+    assert_eq!(candidates[4].atr_tp_multiplier, Decimal::new(40, 1));
 }
 
 #[test]

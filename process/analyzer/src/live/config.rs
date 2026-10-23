@@ -4,13 +4,13 @@ use std::collections::BTreeSet;
 
 #[derive(Debug, thiserror::Error)]
 pub enum LiveConfigError {
-    #[error("unsupported KUCOIN_TIMEFRAME {0:?} (use 15min, 4hour, or 1day)")]
+    #[error("unsupported KUCOIN_TIMEFRAME {0:?} (use 15min, 1hour, 4hour, or 1day)")]
     UnsupportedTimeframe(String),
     #[error("invalid {0}={1}")]
     Invalid(&'static str, String),
     #[error("window must be >= 8")]
     WindowTooSmall,
-    #[error("window {window} is below the strategy minimum {need}")]
+    #[error("window {window} is below the strategy window {need}")]
     WindowBelowStrategy { window: usize, need: usize },
     #[error("poll interval must be > 0")]
     PollIntervalZero,
@@ -30,7 +30,6 @@ pub struct LiveConfig {
     pub activation_poll_ms: u64,
     pub endpoint: String,
     pub base_url: String,
-    pub max_divergence_age_candles: Option<usize>,
 }
 
 impl LiveConfig {
@@ -77,7 +76,6 @@ impl LiveConfig {
             activation_poll_ms,
             endpoint,
             base_url,
-            max_divergence_age_candles: None,
         })
     }
 
@@ -87,7 +85,7 @@ impl LiveConfig {
             .split(',')
             .map(str::to_string)
             .collect();
-        let timeframe = env_string("KUCOIN_TIMEFRAME").unwrap_or_else(|| "15min".into());
+        let timeframe = env_string("KUCOIN_TIMEFRAME").unwrap_or_else(|| "4hour".into());
         let window = parse("ANALYZER_WINDOW_CANDLES", 100)?;
         let settle_ms = parse("ANALYZER_CANDLE_SETTLE_MS", 5_000)?;
         let poll_ms = parse("ANALYZER_POLL_INTERVAL_MS", 1_000)?;
@@ -97,7 +95,7 @@ impl LiveConfig {
         let base_url =
             env_string("KUCOIN_BASE_URL").unwrap_or_else(|| "https://api.kucoin.com".into());
 
-        let mut cfg = Self::new(
+        Self::new(
             symbols,
             &timeframe,
             window,
@@ -106,21 +104,12 @@ impl LiveConfig {
             activation_poll_ms,
             endpoint,
             base_url,
-        )?;
-        cfg.max_divergence_age_candles = match env_string("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
-            Some(value) => crate::config_env::parse_optional_usize_str(
-                "ANALYZER_MAX_DIVERGENCE_AGE_CANDLES",
-                &value,
-            )
-            .map_err(|_| LiveConfigError::Invalid("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", value))?,
-            None => None,
-        };
-        Ok(cfg)
+        )
     }
 
-    /// Reject a live window that cannot satisfy the strategy's indicator warm-up.
+    /// Reject a live window smaller than the driver's strategy window.
     pub fn validate_strategy(&self, strategy: &Config) -> Result<(), LiveConfigError> {
-        let need = strategy.min_window();
+        let need = strategy.window;
         if self.window < need {
             return Err(LiveConfigError::WindowBelowStrategy {
                 window: self.window,
@@ -158,9 +147,7 @@ fn parse<T: std::str::FromStr>(key: &'static str, default: T) -> Result<T, LiveC
 
 #[cfg(test)]
 mod tests {
-    use crate::config_env::{
-        parse_bool_str, parse_decimal_str, parse_optional_usize_str, ConfigEnvError,
-    };
+    use crate::config_env::{parse_bool_str, parse_decimal_str, ConfigEnvError};
     use rust_decimal::Decimal;
 
     #[test]
@@ -190,17 +177,6 @@ mod tests {
         );
         assert!(matches!(
             parse_decimal_str("TEST", "nope"),
-            Err(ConfigEnvError::Invalid("TEST", _))
-        ));
-    }
-
-    #[test]
-    fn optional_age_cap_treats_empty_as_none() {
-        assert_eq!(parse_optional_usize_str("TEST", "").unwrap(), None);
-        assert_eq!(parse_optional_usize_str("TEST", "   ").unwrap(), None);
-        assert_eq!(parse_optional_usize_str("TEST", "5").unwrap(), Some(5));
-        assert!(matches!(
-            parse_optional_usize_str("TEST", "-1"),
             Err(ConfigEnvError::Invalid("TEST", _))
         ));
     }

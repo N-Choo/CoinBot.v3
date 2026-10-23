@@ -3,11 +3,51 @@
 use analyzer::driver::CandleDriver;
 use analyzer::live::config::{LiveConfig, LiveConfigError};
 use analyzer::live::sink::Sink;
-use analyzer::live::symbol_task::process_batch;
+use analyzer::live::symbol_task::{process_batch, run_symbol_once};
 use analyzer::strategy::config::Config;
-use analyzer::strategy::types::Signal;
+use analyzer::strategy::types::{Candle, Signal};
+use rust_decimal::Decimal;
+use std::io::{Read, Write};
+use std::net::TcpListener;
+use std::path::PathBuf;
+use std::str::FromStr;
+use std::thread;
 
-mod common;
+fn synthetic_candles() -> Vec<Candle> {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/synthetic_1day.csv");
+    let text = std::fs::read_to_string(&path)
+        .unwrap_or_else(|error| panic!("read {}: {error}", path.display()));
+    let mut lines = text.lines();
+    let header: Vec<&str> = lines.next().unwrap_or_default().split(',').collect();
+    let column = |name: &str| {
+        header
+            .iter()
+            .position(|value| value.trim() == name)
+            .unwrap_or_else(|| panic!("missing column {name}"))
+    };
+    let open_time = column("open_time_ms");
+    let open = column("open");
+    let high = column("high");
+    let low = column("low");
+    let close = column("close");
+    let volume = column("volume");
+
+    lines
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            let fields: Vec<&str> = line.split(',').collect();
+            let decimal = |index: usize| Decimal::from_str(fields[index]).unwrap();
+            Candle {
+                open_time_ms: fields[open_time].parse().unwrap(),
+                open: decimal(open),
+                high: decimal(high),
+                low: decimal(low),
+                close: decimal(close),
+                volume: decimal(volume),
+            }
+        })
+        .collect()
+}
 
 fn new_config(
     symbols: Vec<&str>,
@@ -92,36 +132,28 @@ fn live_config_rejects_a_window_below_eight() {
 }
 
 #[test]
-fn live_config_rejects_a_window_below_the_strategy_minimum() {
+fn live_config_rejects_a_window_below_the_driver_window() {
     let strategy = Config::default();
-    let window = strategy.min_window() - 1;
+    let window = strategy.window - 1;
     let cfg = new_config(vec!["BTC/USDT"], window, 5_000, 1_000, 30_000).unwrap();
 
     assert!(matches!(
         cfg.validate_strategy(&strategy),
         Err(LiveConfigError::WindowBelowStrategy { window: got, need })
-            if got == window && need == strategy.min_window()
+            if got == window && need == strategy.window
     ));
 }
 
 #[test]
-fn live_config_accepts_a_window_at_the_strategy_minimum() {
+fn live_config_accepts_a_window_at_the_driver_window() {
     let strategy = Config::default();
-    let cfg = new_config(
-        vec!["BTC/USDT"],
-        strategy.min_window(),
-        5_000,
-        1_000,
-        30_000,
-    )
-    .unwrap();
+    let cfg = new_config(vec!["BTC/USDT"], strategy.window, 5_000, 1_000, 30_000).unwrap();
     assert!(cfg.validate_strategy(&strategy).is_ok());
 }
 
 #[test]
 fn process_batch_emits_signals_through_the_sink() {
-    let f = common::load_fixture("synthetic_1day");
-    let candles = f.candles();
+    let candles = synthetic_candles();
     let strategy = Config::default();
     let mut driver = CandleDriver::new("SYNTH-USDT", strategy.clone());
     let sink = Sink::Collect(Default::default());
@@ -129,4 +161,80 @@ fn process_batch_emits_signals_through_the_sink() {
     let emitted = process_batch(&mut driver, &candles, &sink).unwrap();
     assert_eq!(emitted, collected(&sink).len());
     assert!(emitted > 0);
+}
+
+/// Closed 15-minute candles ending well in the past.
+fn closed_candles(count: usize) -> Vec<Candle> {
+    let interval = 900_000i64;
+    let now_ms = chrono::Utc::now().timestamp_millis();
+    let last_open = (now_ms / interval - 2) * interval;
+    (0..count)
+        .map(|i| Candle {
+            open_time_ms: last_open - (count as i64 - 1 - i as i64) * interval,
+            open: Decimal::from(100),
+            high: Decimal::from(101),
+            low: Decimal::from(99),
+            close: Decimal::from(100),
+            volume: Decimal::from(1),
+        })
+        .collect()
+}
+
+/// Serve one kline response from a throwaway local HTTP server.
+fn kline_server(candles: &[Candle]) -> (String, thread::JoinHandle<()>) {
+    let rows: Vec<String> = candles
+        .iter()
+        .map(|c| {
+            format!(
+                r#"["{}","{}","{}","{}","{}","{}"]"#,
+                c.open_time_ms / 1_000,
+                c.open,
+                c.close,
+                c.high,
+                c.low,
+                c.volume
+            )
+        })
+        .collect();
+    let body = format!(r#"{{"code":"200000","data":[{}]}}"#, rows.join(","));
+
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let mut request = Vec::new();
+        let mut chunk = [0u8; 1024];
+        while let Ok(read) = stream.read(&mut chunk) {
+            if read == 0 {
+                break;
+            }
+            request.extend_from_slice(&chunk[..read]);
+            if request.windows(4).any(|window| window == b"\r\n\r\n") {
+                break;
+            }
+        }
+        let response = format!(
+            "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(),
+            body
+        );
+        stream.write_all(response.as_bytes()).unwrap();
+        stream.flush().unwrap();
+    });
+    (format!("http://{addr}"), handle)
+}
+
+#[tokio::test]
+async fn run_symbol_once_uses_the_strategy_window_when_the_live_window_is_larger() {
+    let strategy = Config::default();
+    let mut cfg = new_config(vec!["BTC/USDT"], strategy.window + 10, 0, 1_000, 30_000).unwrap();
+    let (base_url, server) = kline_server(&closed_candles(strategy.window + 1));
+    cfg.base_url = base_url;
+    let sink = Sink::Collect(Default::default());
+
+    let (window, _emitted) = run_symbol_once(&cfg, &strategy, "BTC-USDT", &sink)
+        .await
+        .unwrap();
+    assert_eq!(window, strategy.window);
+    server.join().unwrap();
 }

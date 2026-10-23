@@ -1,4 +1,4 @@
-use analyzer::config_env::{env_string, load_dotenv, parse_optional_usize_str, strategy_from_env};
+use analyzer::config_env::{env_string, load_dotenv, strategy_from_env};
 use analyzer::exchange::timeframes::Timeframe;
 use analyzer::harness::dataset::{fetch_dataset, load_csv, Dataset};
 use analyzer::harness::replay::build_replay;
@@ -15,7 +15,7 @@ struct Cli {
     /// Symbol to replay; repeat for multiple symbols. Defaults to --data keys, then BENCHMARK_TICKERS.
     #[arg(long = "symbol")]
     symbols: Vec<String>,
-    /// Candle interval (15min, 4hour, 1day); defaults to KUCOIN_TIMEFRAME, then 15min.
+    /// Candle interval (15min, 1hour, 4hour, 1day); defaults to KUCOIN_TIMEFRAME, then 4hour.
     #[arg(long)]
     timeframe: Option<String>,
     /// Fetch request size; offline --data still replays every closed row.
@@ -110,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .timeframe
         .clone()
         .or_else(|| env_string("KUCOIN_TIMEFRAME"))
-        .unwrap_or_else(|| "15min".into());
+        .unwrap_or_else(|| "4hour".into());
     let timeframe = Timeframe::from_kucoin(&timeframe_name)
         .ok_or_else(|| format!("unsupported timeframe {timeframe_name:?}"))?;
     let init_fund = match cli.init_fund {
@@ -136,10 +136,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .into());
     }
     let base_url = env_string("KUCOIN_BASE_URL").unwrap_or_else(|| "https://api.kucoin.com".into());
-    let max_age_candles = match env_string("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES") {
-        Some(value) => parse_optional_usize_str("ANALYZER_MAX_DIVERGENCE_AGE_CANDLES", &value)?,
-        None => None,
-    };
     let settle_ms = match env_string("ANALYZER_CANDLE_SETTLE_MS") {
         Some(value) => value.parse::<i64>().map_err(|_| {
             format!("invalid ANALYZER_CANDLE_SETTLE_MS={value:?}: expected milliseconds")
@@ -190,7 +186,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 continue;
             }
         };
-        let replay = build_replay(&dataset, &strategy, max_age_candles)?;
+        let replay = build_replay(&dataset, &strategy)?;
         let sim_signals: Vec<SimSignal> = replay
             .signals
             .iter()

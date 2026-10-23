@@ -276,8 +276,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             fund,
-            Decimal::ZERO,
-            Decimal::ZERO,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -397,8 +397,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Decimal::ZERO,
-            Decimal::ZERO,
+            None,
+            None,
         )
         .await
         .unwrap();
@@ -439,8 +439,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Decimal::ZERO,
-            Decimal::ZERO,
+            None,
+            None,
         )
         .await
         .unwrap();

@@ -94,8 +94,8 @@ pub fn to_proto_signal(
         seq,
         expires_at_ms: now_ms + ttl_ms,
         trigger_time_ms: signal.signal_candle_open_time_ms + timeframe.millis(),
-        sl_price: price_f64(signal.sl_price)?,
-        tp_price: price_f64(signal.tp_price)?,
+        sl_price: signal.sl_price.and_then(price_f64).unwrap_or(0.0),
+        tp_price: signal.tp_price.and_then(price_f64).unwrap_or(0.0),
         zone_id: String::new(),
         reason: signal.reason.clone(),
     })

@@ -37,7 +37,7 @@ flowchart TB
         GW["api_gateway"]
         DW["deposit-worker"]
         TE["trade-engine<br/>(gRPC server: EngineService)"]
-        SA["analyzer<br/>(RSI divergence)<br/>[ Closed - not profitable ]"]
+        SA["analyzer<br/>(RSI momentum)<br/>[ Unvalidated ]"]
     end
 
     DB[("PostgreSQL")]
@@ -68,8 +68,8 @@ flowchart TB
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                           | [README](process/api_gateway/README.md)    |
 | `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                    | [README](process/deposit-worker/README.md) |
-| `trade-engine`   | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL. Also serves the gRPC `EngineService` that `analyzer` calls. Sole writer of order rows and contract funds (via its `ledger`).                                                                | [README](process/trade-engine/README.md)   |
-| `analyzer`       | **[ Closed - not profitable ]** RSI-divergence strategy (Rust): a pure deterministic core, an offline backtest harness, and a live path. Runs one loop per symbol on KuCoin public market data and pushes entry signals to `trade-engine` over gRPC. Pulls its active symbol set from the engine, so it never binds a port. | [README](process/analyzer/README.md)       |
+| `trade-engine`   | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `analyzer` calls. Sole writer of order rows and contract funds (via its `ledger`).       | [README](process/trade-engine/README.md)   |
+| `analyzer`       | **[ Unvalidated ]** RSI momentum strategy (Rust): long above RSI 60, short/exit below RSI 50 on 4hour candles by default, with optional ATR SL/TP. Has a deterministic core, an offline backtest harness, and a live path that pushes target-side signals to `trade-engine` over gRPC.                                      | [README](process/analyzer/README.md)       |
 | `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                   | [README](react/README.md)                  |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`). **Redis** holds gateway sessions (DB 0) and login nonces (DB 1).

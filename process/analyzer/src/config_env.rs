@@ -34,10 +34,9 @@ pub fn env_string(key: &'static str) -> Option<String> {
 pub fn strategy_from_env() -> Result<Config, ConfigEnvError> {
     let mut cfg = Config::default();
     cfg.rsi_period = parse("RSI_PERIOD", cfg.rsi_period)?;
-    cfg.rsi_order = parse("RSI_DIVERGENCE_ORDER", cfg.rsi_order)?;
-    cfg.price_diff_threshold = parse_decimal("PRICE_DIFF_THRESHOLD", cfg.price_diff_threshold)?;
-    cfg.sma_enabled = parse_bool("SMA_ENABLED", cfg.sma_enabled)?;
-    cfg.sma_period = parse("SMA_PERIOD", cfg.sma_period)?;
+    cfg.rsi_long_threshold = parse_decimal("RSI_LONG_THRESHOLD", cfg.rsi_long_threshold)?;
+    cfg.rsi_short_threshold = parse_decimal("RSI_SHORT_THRESHOLD", cfg.rsi_short_threshold)?;
+    cfg.atr_enabled = parse_bool("ATR_ENABLED", cfg.atr_enabled)?;
     cfg.atr_period = parse("ATR_PERIOD", cfg.atr_period)?;
     cfg.atr_sl_multiplier = parse_decimal("ATR_SL_MULTIPLIER", cfg.atr_sl_multiplier)?;
     cfg.atr_tp_multiplier = parse_decimal("ATR_TP_MULTIPLIER", cfg.atr_tp_multiplier)?;
@@ -60,20 +59,6 @@ pub fn parse_bool_str(key: &'static str, value: &str) -> Result<bool, ConfigEnvE
 
 pub fn parse_decimal_str(key: &'static str, value: &str) -> Result<Decimal, ConfigEnvError> {
     Decimal::from_str(value.trim()).map_err(|_| ConfigEnvError::Invalid(key, value.to_string()))
-}
-
-pub fn parse_optional_usize_str(
-    key: &'static str,
-    value: &str,
-) -> Result<Option<usize>, ConfigEnvError> {
-    let trimmed = value.trim();
-    if trimmed.is_empty() {
-        return Ok(None);
-    }
-    trimmed
-        .parse()
-        .map(Some)
-        .map_err(|_| ConfigEnvError::Invalid(key, value.to_string()))
 }
 
 fn parse<T: FromStr>(key: &'static str, default: T) -> Result<T, ConfigEnvError> {
@@ -115,12 +100,6 @@ mod tests {
     fn booleans_are_case_and_space_insensitive() {
         assert!(parse_bool_str("X", " ON ").unwrap());
         assert!(!parse_bool_str("X", " Off ").unwrap());
-    }
-
-    #[test]
-    fn empty_optional_is_none() {
-        assert_eq!(parse_optional_usize_str("X", "  ").unwrap(), None);
-        assert_eq!(parse_optional_usize_str("X", " 7 ").unwrap(), Some(7));
     }
 
     #[test]

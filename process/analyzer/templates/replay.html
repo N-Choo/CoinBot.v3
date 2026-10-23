@@ -249,6 +249,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   const el = (id) => document.getElementById(id);
 
   function num(value) { return Number(value); }
+  function isNum(value) { return value != null && Number.isFinite(Number(value)); }
   function escapeHtml(value) {
     return String(value == null ? "" : value)
       .replaceAll("&", "&amp;")
@@ -270,7 +271,6 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
         c: num(c.c),
       })),
       rsi: (symbol.rsi || []).map((v) => (v === null ? null : num(v))),
-      sma: (symbol.sma || []).map((v) => (v === null ? null : num(v))),
       events: symbol.events || [],
       signals: (symbol.signals || []).map((s) => ({
         i: s.candle_index,
@@ -279,11 +279,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
         side: sideOf(s.action),
         reason: s.reason,
         entry: num(s.signal_entry),
-        sl: num(s.sl),
-        tp: num(s.tp),
-        age: s.age,
-        divergenceIndex: s.divergence_index,
-        divergenceTime: s.divergence_open_time_ms,
+        sl: s.sl == null ? null : num(s.sl),
+        tp: s.tp == null ? null : num(s.tp),
       })),
       trades: (symbol.trades || []).map((t) => ({
         entryIndex: t.entry_index,
@@ -306,8 +303,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
         signalEntry: num(p.signal_entry),
         fill: num(p.fill),
         e: num(p.E),
-        sl: num(p.sl),
-        tp: num(p.tp),
+        sl: p.sl == null ? null : num(p.sl),
+        tp: p.tp == null ? null : num(p.tp),
       })),
       account: (symbol.account || []).map((a) => ({
         i: a.i,
@@ -321,8 +318,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           fill: num(o.fill),
           e: num(o.e),
           entryIndex: o.entry_index == null ? null : num(o.entry_index),
-          sl: num(o.sl),
-          tp: num(o.tp),
+          sl: o.sl == null ? null : num(o.sl),
+          tp: o.tp == null ? null : num(o.tp),
           unrealized: num(o.unrealized),
         })),
       })),
@@ -357,6 +354,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     return Math.max(0, currentStep() - windowFor(tab) + 1);
   }
   function fmtPrice(value) {
+    if (value == null) return "—";
     const n = Number(value);
     if (!Number.isFinite(n)) return "—";
     const abs = Math.abs(n);
@@ -418,14 +416,14 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     return tab.account[idx];
   }
   function isBeyond(side, price, level, kind) {
-    if (!Number.isFinite(price) || !Number.isFinite(level)) return false;
+    if (!isNum(price) || !isNum(level)) return false;
     if (kind === "tp") {
       return side === "BUY" ? price >= level : price <= level;
     }
     return side === "BUY" ? price <= level : price >= level;
   }
   function distanceText(side, price, level, kind) {
-    if (!Number.isFinite(price) || !Number.isFinite(level)) return "—";
+    if (!isNum(price) || !isNum(level)) return "—";
     if (isBeyond(side, price, level, kind)) {
       return "beyond " + kind.toUpperCase();
     }
@@ -498,8 +496,11 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     }
     for (const signal of tab.signals) {
       if (signal.i < start || signal.i > step) continue;
-      lo = Math.min(lo, signal.sl, signal.tp, signal.entry);
-      hi = Math.max(hi, signal.sl, signal.tp, signal.entry);
+      for (const value of [signal.entry, signal.sl, signal.tp]) {
+        if (!isNum(value)) continue;
+        lo = Math.min(lo, value);
+        hi = Math.max(hi, value);
+      }
     }
     const pad = (hi - lo) * 0.06 || 1;
     lo -= pad;
@@ -572,22 +573,6 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
       ctx.fillRect(x - cw / 2, bodyTop, cw, Math.max(1, bodyBot - bodyTop));
     }
 
-    ctx.strokeStyle = "rgba(0,224,255,.75)";
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    let started = false;
-    for (const candle of view) {
-      const value = tab.sma[candle.i];
-      if (value === null || !Number.isFinite(value)) continue;
-      if (!started) {
-        ctx.moveTo(xFor(candle.i), yFor(value));
-        started = true;
-      } else {
-        ctx.lineTo(xFor(candle.i), yFor(value));
-      }
-    }
-    ctx.stroke();
-
     // Signal markers, distinct signal-entry ticks, fill dots, TP/SL and exits.
     for (const signal of tab.signals) {
       if (signal.i < start || signal.i > step) continue;
@@ -619,30 +604,32 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
     }
 
     function levels(sl, tp, fromIndex, toIndex) {
-      if (!Number.isFinite(sl) || !Number.isFinite(tp)) return;
       const from = Math.max(fromIndex, start);
       const to = Math.min(toIndex, step);
       if (to < from) return;
       ctx.globalAlpha = 0.55;
       ctx.setLineDash([3, 4]);
 
-      ctx.strokeStyle = "#1dcd9f";
-      ctx.beginPath();
-      ctx.moveTo(xFor(from), yFor(tp));
-      ctx.lineTo(xFor(to), yFor(tp));
-      ctx.stroke();
+      if (isNum(tp)) {
+        ctx.strokeStyle = "#1dcd9f";
+        ctx.beginPath();
+        ctx.moveTo(xFor(from), yFor(tp));
+        ctx.lineTo(xFor(to), yFor(tp));
+        ctx.stroke();
+        queueLabel(tp, "TP " + fmtPrice(tp), "#1dcd9f", fromIndex, toIndex);
+      }
 
-      ctx.strokeStyle = "#ff4d4d";
-      ctx.beginPath();
-      ctx.moveTo(xFor(from), yFor(sl));
-      ctx.lineTo(xFor(to), yFor(sl));
-      ctx.stroke();
+      if (isNum(sl)) {
+        ctx.strokeStyle = "#ff4d4d";
+        ctx.beginPath();
+        ctx.moveTo(xFor(from), yFor(sl));
+        ctx.lineTo(xFor(to), yFor(sl));
+        ctx.stroke();
+        queueLabel(sl, "SL " + fmtPrice(sl), "#ff4d4d", fromIndex, toIndex);
+      }
 
       ctx.setLineDash([]);
       ctx.globalAlpha = 1;
-
-      queueLabel(tp, "TP " + fmtPrice(tp), "#1dcd9f", fromIndex, toIndex);
-      queueLabel(sl, "SL " + fmtPrice(sl), "#ff4d4d", fromIndex, toIndex);
     }
 
     for (const trade of tab.trades) {
@@ -805,8 +792,8 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
           html:
             '<div class="event"><div class="top"><span>candle ' + (event.i + 1) +
             '</span><span class="badge neutral">warm-up</span></div>' +
-            '<div class="what">Window warmed · dedup state seeded</div>' +
-            '<div class="meta">' + escapeHtml(event.seeded_keys) + ' keys seeded · no historical signals published</div></div>',
+            '<div class="what">Window warmed · no historical signals published</div>' +
+            '<div class="meta">RSI window filled · replay emits new crossings only</div></div>',
         });
       } else if (event.kind === "signal") {
         const signal = tab.signals[event.signal_index];
@@ -819,7 +806,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
             '</span><span class="badge ' + (signal.side === "BUY" ? "buy" : "sell") + '">' + signal.side +
             '</span></div><div class="what">' + escapeHtml(String(signal.reason).replaceAll("_", " ")) + '</div>' +
             '<div class="meta">signal entry ' + fmtPrice(signal.entry) + ' · SL ' + fmtPrice(signal.sl) +
-            ' · TP ' + fmtPrice(signal.tp) + ' · age ' + escapeHtml(signal.age) + '</div></div>',
+            ' · TP ' + fmtPrice(signal.tp) + '</div></div>',
         });
       } else if (event.kind === "suppressed") {
         items.push({
@@ -937,7 +924,7 @@ td .side{font-size:9px;letter-spacing:.1em;text-transform:uppercase}
   }
 
   function positionBar(side, price, sl, tp) {
-    if (!Number.isFinite(price) || !Number.isFinite(sl) || !Number.isFinite(tp)) {
+    if (!isNum(price) || !isNum(sl) || !isNum(tp)) {
       return '<span class="bar-track"><span class="bar-fill" style="width:0"></span></span><span class="bar-label">—</span>';
     }
     const beyondTp = isBeyond(side, price, tp, "tp");

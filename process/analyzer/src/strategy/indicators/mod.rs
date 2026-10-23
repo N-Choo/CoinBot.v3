@@ -3,9 +3,7 @@ use crate::strategy::error::{Error, Result};
 use rust_decimal::Decimal;
 
 pub mod atr;
-pub mod peaks;
 pub mod rsi;
-pub mod sma;
 
 pub type Series = Vec<Option<Decimal>>;
 

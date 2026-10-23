@@ -95,8 +95,8 @@ fn open_position_metrics_include_estimated_exit_cost() {
             signal_entry: d(100),
             fill: d(100),
             e: d(500),
-            sl: d(90),
-            tp: d(120),
+            sl: Some(d(90)),
+            tp: Some(d(120)),
             entry_index: 0,
         }],
         ..Default::default()
@@ -132,17 +132,8 @@ fn evaluate_config_produces_all_partitions_for_both_scenarios() {
     let cfg = baseline.to_config();
     let scenarios = [CostScenario::base(), CostScenario::stress()];
 
-    let result = evaluate_config(
-        &dataset,
-        &cfg,
-        baseline.max_age,
-        &splits,
-        100,
-        1000,
-        &scenarios,
-        true,
-    )
-    .expect("evaluation runs");
+    let result = evaluate_config(&dataset, &cfg, &splits, 100, 1000, &scenarios, true)
+        .expect("evaluation runs");
 
     assert!(result.partitions.contains_key("base"));
     assert!(result.partitions.contains_key("stress"));
@@ -205,7 +196,6 @@ fn holdout_partition_is_omitted_unless_requested() {
     let without = evaluate_config(
         &dataset,
         &baseline.to_config(),
-        baseline.max_age,
         &splits,
         100,
         1000,
@@ -216,7 +206,6 @@ fn holdout_partition_is_omitted_unless_requested() {
     let with = evaluate_config(
         &dataset,
         &baseline.to_config(),
-        baseline.max_age,
         &splits,
         100,
         1000,

@@ -58,7 +58,7 @@ pub async fn warm_driver(
 ) -> Result<(CandleDriver, i64), LiveError> {
     let cfg_owned = cfg.clone();
     let symbol_owned = symbol.to_string();
-    let limit = cfg.window + 2;
+    let limit = strategy.window + 2;
     let candles =
         tokio::task::spawn_blocking(move || fetch_blocking(&cfg_owned, &symbol_owned, limit))
             .await
@@ -71,17 +71,16 @@ pub async fn warm_driver(
                 .is_closed(c.open_time_ms, now_ms, cfg.settle_ms)
         })
         .collect();
-    if closed.len() < cfg.window {
+    if closed.len() < strategy.window {
         return Err(LiveError::InsufficientHistory {
             symbol: symbol.to_string(),
             got: closed.len(),
-            need: cfg.window,
+            need: strategy.window,
         });
     }
     closed.sort_by_key(|c| c.open_time_ms);
-    let cutoff = closed.len() - cfg.window;
-    let mut driver =
-        CandleDriver::new(symbol, strategy.clone()).with_max_age(cfg.max_divergence_age_candles);
+    let cutoff = closed.len() - strategy.window;
+    let mut driver = CandleDriver::new(symbol, strategy.clone());
     let warm_sink = Sink::Collect(Default::default());
     process_batch(&mut driver, &closed[cutoff..], &warm_sink)?;
     let cursor = closed.last().map(|c| c.open_time_ms).unwrap_or(0);
@@ -146,7 +145,7 @@ pub async fn run_symbol_once(
 ) -> Result<(usize, usize), LiveError> {
     let cfg_owned = cfg.clone();
     let symbol_owned = symbol.to_string();
-    let limit = cfg.window + 3;
+    let limit = strategy.window + 3;
     let candles =
         tokio::task::spawn_blocking(move || fetch_blocking(&cfg_owned, &symbol_owned, limit))
             .await
@@ -159,21 +158,20 @@ pub async fn run_symbol_once(
                 .is_closed(c.open_time_ms, now_ms, cfg.settle_ms)
         })
         .collect();
-    if closed.len() < cfg.window + 1 {
+    if closed.len() < strategy.window + 1 {
         return Err(LiveError::InsufficientHistory {
             symbol: symbol.to_string(),
             got: closed.len(),
-            need: cfg.window + 1,
+            need: strategy.window + 1,
         });
     }
     closed.sort_by_key(|c| c.open_time_ms);
-    let mut driver =
-        CandleDriver::new(symbol, strategy.clone()).with_max_age(cfg.max_divergence_age_candles);
+    let mut driver = CandleDriver::new(symbol, strategy.clone());
     process_batch(
         &mut driver,
-        &closed[..cfg.window],
+        &closed[..strategy.window],
         &Sink::Collect(Default::default()),
     )?;
-    let emitted = process_batch(&mut driver, &closed[cfg.window..], sink)?;
+    let emitted = process_batch(&mut driver, &closed[strategy.window..], sink)?;
     Ok((driver.window().len(), emitted))
 }

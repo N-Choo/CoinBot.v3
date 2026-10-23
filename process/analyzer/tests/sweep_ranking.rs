@@ -455,6 +455,10 @@ fn writes_leaderboard_csv_with_expected_columns() {
     let text = std::fs::read_to_string(&path).expect("csv readable");
     let header = text.lines().next().expect("header");
     assert!(header.starts_with("timeframe,symbol_or_pooled,label,origin"));
+    assert_eq!(header.split(',').count(), 30);
+    assert!(header.contains("rsi_long_threshold"));
+    assert!(header.contains("rsi_short_threshold"));
+    assert!(header.contains("atr_enabled"));
     assert!(header.contains("stress_validation_net_pnl"));
     assert!(header.contains("stress_validation_expectancy"));
     assert!(text.contains("validation"));
@@ -499,7 +503,7 @@ fn writes_markdown_with_required_sections() {
     assert!(text.contains("validation"));
     assert!(text.contains("holdout"));
     assert!(text.contains("no candidate"));
-    assert!(text.contains("SMA_PERIOD"));
+    assert!(text.contains("ATR enabled"));
 
     std::fs::remove_dir_all(path.parent().expect("parent")).ok();
 }
@@ -726,13 +730,17 @@ fn leaderboard_csv_pooled_validation_uses_base_partition_metrics() {
         .iter()
         .position(|column| column == "net_expectancy")
         .expect("net_expectancy column");
+    let partition = headers
+        .iter()
+        .position(|column| column == "partition")
+        .expect("partition column");
     let validation_row = reader
         .records()
         .map(|record| record.expect("record"))
         .find(|record| {
             record.get(1) == Some("pooled")
                 && record.get(2) == Some("diverging")
-                && record.get(11) == Some("validation")
+                && record.get(partition) == Some("validation")
         })
         .expect("pooled validation row");
 

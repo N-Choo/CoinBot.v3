@@ -42,7 +42,6 @@ pub fn build_payload(
                     "c": c.close.to_string(),
                 })).collect::<Vec<_>>(),
                 "rsi": input.replay.rsi.iter().map(|v| v.map(|d| d.to_string())).collect::<Vec<_>>(),
-                "sma": input.replay.sma.iter().map(|v| v.map(|d| d.to_string())).collect::<Vec<_>>(),
                 "events": input.replay.events.iter().map(event_json).collect::<Vec<_>>(),
                 "signals": input.replay.signals.iter().map(|s| json!({
                     "candle_index": s.candle_index,
@@ -51,13 +50,9 @@ pub fn build_payload(
                     "reason": s.signal.reason,
                     "confidence": s.signal.confidence.to_string(),
                     "signal_entry": s.signal.entry_price.to_string(),
-                    "sl": s.signal.sl_price.to_string(),
-                    "tp": s.signal.tp_price.to_string(),
-                    "divergence_index": s.signal.divergence_index,
-                    "divergence_kind": s.signal.divergence_kind.as_str(),
-                    "divergence_open_time_ms": s.signal.divergence_open_time_ms,
+                    "sl": s.signal.sl_price.map(|v| v.to_string()),
+                    "tp": s.signal.tp_price.map(|v| v.to_string()),
                     "signal_candle_open_time_ms": s.signal.signal_candle_open_time_ms,
-                    "age": s.signal.divergence_age_candles,
                 })).collect::<Vec<_>>(),
                 "trades": input.sim.trades.iter().map(|t| json!({
                     "entry_index": t.entry_index,
@@ -80,8 +75,8 @@ pub fn build_payload(
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
-                    "sl": p.sl.to_string(),
-                    "tp": p.tp.to_string(),
+                    "sl": p.sl.map(|v| v.to_string()),
+                    "tp": p.tp.map(|v| v.to_string()),
                     "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
                 "account": account_payload(&input.replay.signals, input.sim),
@@ -102,10 +97,9 @@ pub fn build_payload(
             "as_of_ms": 0,
             "fees": false,
             "rsi_period": config.rsi_period,
-            "rsi_order": config.rsi_order,
-            "price_diff_threshold": config.price_diff_threshold.to_string(),
-            "sma_enabled": config.sma_enabled,
-            "sma_period": config.sma_period,
+            "rsi_long_threshold": config.rsi_long_threshold.to_string(),
+            "rsi_short_threshold": config.rsi_short_threshold.to_string(),
+            "atr_enabled": config.atr_enabled,
             "atr_period": config.atr_period,
             "atr_sl_multiplier": config.atr_sl_multiplier.to_string(),
             "atr_tp_multiplier": config.atr_tp_multiplier.to_string(),
@@ -176,8 +170,8 @@ fn account_payload(signals: &[ReplaySignal], sim: &SimOutcome) -> Vec<Value> {
                         "fill": fill.map(|v| v.to_string()),
                         "e": e.map(|v| v.to_string()),
                         "entry_index": entry_index,
-                        "sl": signal.map(|s| s.signal.sl_price.to_string()),
-                        "tp": signal.map(|s| s.signal.tp_price.to_string()),
+                        "sl": signal.and_then(|s| s.signal.sl_price).map(|v| v.to_string()),
+                        "tp": signal.and_then(|s| s.signal.tp_price).map(|v| v.to_string()),
                         "unrealized": o.unrealized.to_string(),
                     })
                 }).collect::<Vec<_>>(),
@@ -192,18 +186,11 @@ fn position_unrealized(position: &Position, last_close: Decimal) -> Decimal {
 
 fn event_json(event: &ReplayEvent) -> Value {
     match event {
-        ReplayEvent::Warmup {
-            candle_index,
-            seeded_keys,
-        } => json!({"i": candle_index, "kind": "warmup", "seeded_keys": seeded_keys}),
+        ReplayEvent::Warmup { candle_index } => json!({"i": candle_index, "kind": "warmup"}),
         ReplayEvent::Signal {
             candle_index,
             signal_index,
         } => json!({"i": candle_index, "kind": "signal", "signal_index": signal_index}),
-        ReplayEvent::Suppressed {
-            candle_index,
-            reason,
-        } => json!({"i": candle_index, "kind": "suppressed", "reason": reason}),
     }
 }
 
@@ -315,8 +302,8 @@ mod tests {
             signal_entry: Decimal::from(100),
             fill: Decimal::from(100),
             e: Decimal::from(500),
-            sl: Decimal::from(90),
-            tp: Decimal::from(120),
+            sl: Some(Decimal::from(90)),
+            tp: Some(Decimal::from(120)),
             entry_index: 0,
         };
         assert_eq!(
@@ -341,7 +328,6 @@ mod tests {
             symbol: "TEST-USDT".into(),
             candles: Vec::new(),
             rsi: Vec::new(),
-            sma: Vec::new(),
             events: Vec::new(),
             signals: Vec::new(),
             provenance: provenance.clone(),
@@ -367,8 +353,8 @@ mod tests {
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 e: Decimal::ONE,
-                sl: Decimal::ONE,
-                tp: Decimal::ONE,
+                sl: Some(Decimal::ONE),
+                tp: Some(Decimal::ONE),
                 entry_index: 0,
             }],
             ..SimOutcome::default()

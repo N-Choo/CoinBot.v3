@@ -1,7 +1,7 @@
 use crate::harness::sweep::evaluate::PartitionMetrics;
 use crate::harness::sweep::partition::{chronological_splits, Slice};
 use crate::harness::sweep::ranking::{CandidateOutcome, Selection, Thresholds};
-use crate::harness::sweep::sampling::{Candidate, SMA_PERIOD};
+use crate::harness::sweep::sampling::Candidate;
 use crate::strategy::types::Candle;
 use rust_decimal::Decimal;
 use serde::Serialize;
@@ -106,15 +106,13 @@ fn iso_open_time(candles: &[Candle], index: usize) -> String {
         .unwrap_or_default()
 }
 
-/// Full resolved baseline configuration, including the `max_age` value that is
-/// not part of [`crate::strategy::config::Config`].
+/// Full resolved baseline configuration.
 #[derive(Debug, Clone, Serialize)]
 pub struct BaselineConfig {
     pub rsi_period: usize,
-    pub rsi_order: usize,
-    pub price_diff_threshold: Decimal,
-    pub sma_enabled: bool,
-    pub sma_period: usize,
+    pub rsi_long_threshold: Decimal,
+    pub rsi_short_threshold: Decimal,
+    pub atr_enabled: bool,
     pub atr_period: usize,
     pub atr_sl_multiplier: Decimal,
     pub atr_tp_multiplier: Decimal,
@@ -122,7 +120,6 @@ pub struct BaselineConfig {
     pub atr_high_adjust: Decimal,
     pub atr_sl_max_pct: Decimal,
     pub window: usize,
-    pub max_age: Option<usize>,
 }
 
 impl BaselineConfig {
@@ -130,10 +127,9 @@ impl BaselineConfig {
         let config = candidate.to_config();
         Self {
             rsi_period: config.rsi_period,
-            rsi_order: config.rsi_order,
-            price_diff_threshold: config.price_diff_threshold,
-            sma_enabled: config.sma_enabled,
-            sma_period: config.sma_period,
+            rsi_long_threshold: config.rsi_long_threshold,
+            rsi_short_threshold: config.rsi_short_threshold,
+            atr_enabled: config.atr_enabled,
             atr_period: config.atr_period,
             atr_sl_multiplier: config.atr_sl_multiplier,
             atr_tp_multiplier: config.atr_tp_multiplier,
@@ -141,7 +137,6 @@ impl BaselineConfig {
             atr_high_adjust: config.atr_high_adjust,
             atr_sl_max_pct: config.atr_sl_max_pct,
             window: config.window,
-            max_age: candidate.max_age,
         }
     }
 }
@@ -166,7 +161,7 @@ pub struct SweepResults {
     pub baseline: Candidate,
     /// Human-readable description of where the baseline came from.
     pub baseline_source: String,
-    /// Fully resolved baseline configuration, including `max_age`.
+    /// Fully resolved baseline configuration.
     pub baseline_config: BaselineConfig,
     /// timeframe -> candidate outcomes (sorted by label)
     pub outcomes: BTreeMap<String, Vec<CandidateOutcome>>,
@@ -180,16 +175,15 @@ pub struct SweepResults {
     pub candidate_plan: BTreeMap<String, CandidatePlan>,
 }
 
-const LEADERBOARD_COLUMNS: [&str; 31] = [
+const LEADERBOARD_COLUMNS: [&str; 30] = [
     "timeframe",
     "symbol_or_pooled",
     "label",
     "origin",
     "rsi_period",
-    "rsi_order",
-    "max_age",
-    "sma_enabled",
-    "sma_period",
+    "rsi_long_threshold",
+    "rsi_short_threshold",
+    "atr_enabled",
     "atr_sl_multiplier",
     "atr_tp_multiplier",
     "partition",
@@ -358,10 +352,6 @@ fn write_leaderboard_row<W: std::io::Write>(
     stress_validation: Option<&PartitionMetrics>,
 ) -> Result<(), String> {
     let candidate = &outcome.candidate;
-    let max_age = candidate
-        .max_age
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "none".to_string());
     let stress_net_pnl = stress_validation
         .map(|stress| stress.net_pnl.to_string())
         .unwrap_or_default();
@@ -374,10 +364,9 @@ fn write_leaderboard_row<W: std::io::Write>(
         outcome.label.clone(),
         outcome.origin.clone(),
         candidate.rsi_period.to_string(),
-        candidate.rsi_order.to_string(),
-        max_age,
-        candidate.sma_enabled.to_string(),
-        candidate.sma_period.to_string(),
+        candidate.rsi_long_threshold.to_string(),
+        candidate.rsi_short_threshold.to_string(),
+        candidate.atr_enabled.to_string(),
         candidate.atr_sl_multiplier.to_string(),
         candidate.atr_tp_multiplier.to_string(),
         partition.to_string(),
@@ -495,18 +484,12 @@ fn write_baseline_config(out: &mut String, results: &SweepResults) {
     writeln!(out, "| Parameter | Values | Role |").expect("writing to String cannot fail");
     writeln!(out, "|---|---|---|").expect("writing to String cannot fail");
     let rows = [
-        ("RSI period", "10, 14, 21".to_string(), "varied"),
-        ("RSI order", "3, 5, 7".to_string(), "varied"),
-        ("Max age", "4, 8, 12, uncapped".to_string(), "varied"),
-        ("SMA enabled", "true, false".to_string(), "varied"),
-        ("SMA period", config.sma_period.to_string(), "held constant"),
+        ("RSI period", "14, 21".to_string(), "varied"),
+        ("RSI long threshold", "55, 60, 65, 70".to_string(), "varied"),
+        ("RSI short threshold", "40, 45, 50".to_string(), "varied"),
+        ("ATR enabled", "false, true".to_string(), "varied"),
         ("ATR SL multiplier", "1.5, 2.0, 2.5".to_string(), "varied"),
         ("ATR TP multiplier", "2.0, 3.0, 4.0".to_string(), "varied"),
-        (
-            "Price diff threshold",
-            config.price_diff_threshold.to_string(),
-            "held constant",
-        ),
         ("ATR period", config.atr_period.to_string(), "held constant"),
         (
             "ATR pct high",
@@ -787,23 +770,21 @@ fn write_configurations(out: &mut String, results: &SweepResults) {
 
         writeln!(
             out,
-            "| Label | Origin | RSI period | RSI order | Max age | SMA enabled | SMA period | ATR SL | ATR TP |"
+            "| Label | Origin | RSI period | Long threshold | Short threshold | ATR enabled | ATR SL | ATR TP |"
         )
         .expect("writing to String cannot fail");
-        writeln!(out, "|---|---|---|---|---|---|---|---|---|")
-            .expect("writing to String cannot fail");
+        writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
         for outcome in outcomes {
             let candidate = &outcome.candidate;
             writeln!(
                 out,
-                "| {} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} | {} | {} | {} |",
                 outcome.label,
                 outcome.origin,
                 candidate.rsi_period,
-                candidate.rsi_order,
-                age_text(candidate),
-                candidate.sma_enabled,
-                candidate.sma_period,
+                candidate.rsi_long_threshold,
+                candidate.rsi_short_threshold,
+                candidate.atr_enabled,
                 candidate.atr_sl_multiplier,
                 candidate.atr_tp_multiplier
             )
@@ -966,14 +947,18 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
             lexical_order,
         ),
         (
-            "RSI order",
-            |candidate| candidate.rsi_order.to_string(),
+            "RSI long threshold",
+            |candidate| candidate.rsi_long_threshold.to_string(),
             lexical_order,
         ),
-        ("Max age", age_text, max_age_order),
         (
-            "SMA enabled",
-            |candidate| candidate.sma_enabled.to_string(),
+            "RSI short threshold",
+            |candidate| candidate.rsi_short_threshold.to_string(),
+            lexical_order,
+        ),
+        (
+            "ATR enabled",
+            |candidate| candidate.atr_enabled.to_string(),
             lexical_order,
         ),
         (
@@ -1023,7 +1008,7 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
 
     writeln!(
         out,
-        "`SMA_PERIOD` was fixed at {SMA_PERIOD} for every candidate, so this study cannot rank 50/100/200."
+        "ATR SL and TP multipliers only affect candidates with ATR enabled; otherwise positions have no protective levels."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1107,7 +1092,7 @@ fn write_limitations(out: &mut String) {
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "The neighbor-median-within-one-standard-error stability check from the study spec is approximated by fold and symbol consistency: only 30 of the 648 grid points are sampled, so a candidate's one-step grid neighbors are usually absent. No bootstrap confidence interval is reported; only the pooled standard error of validation net expectancy is shown. The single chronological 60/20/20 split is regime-sensitive, and the holdout is a one-shot evaluation rather than a rolling out-of-sample test."
+        "The neighbor-median-within-one-standard-error stability check from the study spec is approximated by fold and symbol consistency: only 30 of the 432 grid points are sampled, so a candidate's one-step grid neighbors are usually absent. No bootstrap confidence interval is reported; only the pooled standard error of validation net expectancy is shown. The single chronological 60/20/20 split is regime-sensitive, and the holdout is a one-shot evaluation rather than a rolling out-of-sample test."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1237,21 +1222,13 @@ fn code_list(values: &[String]) -> String {
     }
 }
 
-fn age_text(candidate: &Candidate) -> String {
-    candidate
-        .max_age
-        .map(|value| value.to_string())
-        .unwrap_or_else(|| "uncapped".to_string())
-}
-
 fn config_summary(candidate: &Candidate) -> String {
     format!(
-        "RSI {}/o{} age {} SMA {} ({}) SL {}x TP {}x",
+        "RSI {}/{}:{} ATR {} SL {}x TP {}x",
         candidate.rsi_period,
-        candidate.rsi_order,
-        age_text(candidate),
-        if candidate.sma_enabled { "on" } else { "off" },
-        candidate.sma_period,
+        candidate.rsi_long_threshold,
+        candidate.rsi_short_threshold,
+        if candidate.atr_enabled { "on" } else { "off" },
         candidate.atr_sl_multiplier,
         candidate.atr_tp_multiplier
     )
@@ -1278,17 +1255,6 @@ fn selection_status(label: &str, selection: Option<&Selection>) -> String {
 
 fn lexical_order(a: &str, b: &str) -> std::cmp::Ordering {
     a.cmp(b)
-}
-
-/// Orders max-age values numerically with the uncapped option last.
-fn max_age_order(a: &str, b: &str) -> std::cmp::Ordering {
-    use std::cmp::Ordering;
-    match (a.parse::<usize>(), b.parse::<usize>()) {
-        (Ok(left), Ok(right)) => left.cmp(&right),
-        (Ok(_), Err(_)) => Ordering::Less,
-        (Err(_), Ok(_)) => Ordering::Greater,
-        (Err(_), Err(_)) => a.cmp(b),
-    }
 }
 
 fn group_values(

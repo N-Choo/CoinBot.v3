@@ -25,6 +25,8 @@ pub async fn signal_handler(
         .execute(&db)
         .await?;
 
+    let mut first_error: Option<ProcessError> = None;
+
     for c in contracts {
         let wallet = match User::wallet_for_uid(&db, c.user_uid).await {
             Ok(w) => w,
@@ -52,10 +54,13 @@ pub async fn signal_handler(
 
         // Only trade when the available fund covers the per-order budget
         // (half of the initial fund).
-        if c.available_fund >= trader::order_budget(c.init_fund)
-            && let Err(e) = trader::execute(&kcc, &db, signal, &c).await
-        {
-            log::error!("trade execution failed on contract {}: {e}", c.id);
+        if c.available_fund >= trader::order_budget(c.init_fund) {
+            // Target-side execution is idempotent, so a failure is surfaced to
+            // the caller for retry without stopping the remaining contracts.
+            if let Err(e) = trader::execute(&kcc, &db, signal, &c).await {
+                log::error!("trade execution failed on contract {}: {e}", c.id);
+                first_error.get_or_insert(e);
+            }
         }
 
         log::info!(
@@ -67,5 +72,8 @@ pub async fn signal_handler(
         );
     }
 
-    Ok(())
+    match first_error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }

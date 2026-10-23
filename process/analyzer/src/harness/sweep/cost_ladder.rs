@@ -8,50 +8,48 @@ pub const LEVELS_TENTHS_BPS: [u32; 7] = [0, 25, 50, 75, 100, 150, 300];
 /// Baseline plus the four 4hour screening candidates frozen for the cost ladder.
 pub fn frozen_candidates() -> Vec<Candidate> {
     let mut out = vec![baseline()];
-    let mut push =
-        |label: &str, rsi: usize, order: usize, age: Option<usize>, sl: Decimal, tp: Decimal| {
-            out.push(Candidate {
-                label: label.into(),
-                origin: "screening-4hour".into(),
-                rsi_period: rsi,
-                rsi_order: order,
-                max_age: age,
-                sma_enabled: true,
-                sma_period: 20,
-                atr_sl_multiplier: sl,
-                atr_tp_multiplier: tp,
-            });
-        };
+    let mut push = |label: &str, long: i64, short: i64, atr: bool, sl: Decimal, tp: Decimal| {
+        out.push(Candidate {
+            label: label.into(),
+            origin: "screening-4hour".into(),
+            rsi_period: 21,
+            rsi_long_threshold: Decimal::from(long),
+            rsi_short_threshold: Decimal::from(short),
+            atr_enabled: atr,
+            atr_sl_multiplier: sl,
+            atr_tp_multiplier: tp,
+        });
+    };
     push(
-        "joint-13",
-        10,
-        5,
-        None,
-        Decimal::new(25, 1),
-        Decimal::new(40, 1),
-    );
-    push(
-        "joint-24",
-        21,
-        5,
-        Some(12),
+        "long65-short50",
+        65,
+        50,
+        false,
         Decimal::new(20, 1),
-        Decimal::new(40, 1),
+        Decimal::new(30, 1),
     );
     push(
-        "max_age=4",
-        14,
-        5,
-        Some(4),
-        Decimal::new(15, 1),
+        "long60-short45",
+        60,
+        45,
+        false,
         Decimal::new(20, 1),
+        Decimal::new(30, 1),
     );
     push(
-        "atr_tp=4.0",
-        14,
-        5,
-        Some(12),
-        Decimal::new(15, 1),
+        "long70-short50",
+        70,
+        50,
+        false,
+        Decimal::new(20, 1),
+        Decimal::new(30, 1),
+    );
+    push(
+        "atr-on-tp4.0",
+        60,
+        50,
+        true,
+        Decimal::new(20, 1),
         Decimal::new(40, 1),
     );
     out

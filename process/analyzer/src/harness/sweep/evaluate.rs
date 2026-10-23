@@ -307,7 +307,6 @@ pub struct ConfigResult {
 pub fn evaluate_config(
     dataset: &Dataset,
     cfg: &Config,
-    max_age: Option<usize>,
     splits: &Splits,
     window: usize,
     init_fund: i64,
@@ -342,7 +341,7 @@ pub fn evaluate_config(
             candles: partition.candles,
             provenance: dataset.provenance.clone(),
         };
-        let replay = build_replay(&slice_dataset, cfg, max_age)
+        let replay = build_replay(&slice_dataset, cfg)
             .map_err(|error| format!("partition {name}: {error}"))?;
         let sim_signals: Vec<SimSignal> = replay
             .signals

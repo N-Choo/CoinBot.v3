@@ -4,19 +4,18 @@ use sha2::{Digest, Sha256};
 
 pub fn config_version(cfg: &Config) -> String {
     format!(
-        "rsi-v1|w={}|rsi={}:{}|pdt={}|sma={}:{}|atr={}:{}:{}:{}:{}:{}",
+        "rsi-mom-v1|w={}|rsi={}:{}:{}|atr={}:{}:{}:{}:{}:{}:{}",
         cfg.window,
         cfg.rsi_period,
-        cfg.rsi_order,
-        cfg.price_diff_threshold,
-        cfg.sma_enabled,
-        cfg.sma_period,
+        cfg.rsi_long_threshold.normalize(),
+        cfg.rsi_short_threshold.normalize(),
+        cfg.atr_enabled,
         cfg.atr_period,
-        cfg.atr_sl_multiplier,
-        cfg.atr_tp_multiplier,
-        cfg.atr_pct_high,
-        cfg.atr_high_adjust,
-        cfg.atr_sl_max_pct,
+        cfg.atr_sl_multiplier.normalize(),
+        cfg.atr_tp_multiplier.normalize(),
+        cfg.atr_pct_high.normalize(),
+        cfg.atr_high_adjust.normalize(),
+        cfg.atr_sl_max_pct.normalize(),
     )
 }
 
@@ -30,7 +29,7 @@ pub fn now_ms() -> i64 {
 pub fn signal_id(signal: &Signal, config_version: &str) -> String {
     const SEP: u8 = 0;
     let mut hasher = Sha256::new();
-    hasher.update(b"analyzer-signal-v1");
+    hasher.update(b"analyzer-signal-v2");
     hasher.update([SEP]);
     hasher.update(signal.ticker.as_bytes());
     hasher.update([SEP]);
@@ -39,13 +38,11 @@ pub fn signal_id(signal: &Signal, config_version: &str) -> String {
         Direction::Short => b'S',
     }]);
     hasher.update([SEP]);
-    hasher.update(signal.divergence_kind.as_str().as_bytes());
-    hasher.update([SEP]);
-    hasher.update(signal.divergence_open_time_ms.to_be_bytes());
+    hasher.update(signal.signal_candle_open_time_ms.to_be_bytes());
     hasher.update([SEP]);
     hasher.update(config_version.as_bytes());
     let digest = hasher.finalize();
-    let mut id = String::from("v1:");
+    let mut id = String::from("v2:");
     for byte in digest {
         id.push_str(&format!("{byte:02x}"));
     }

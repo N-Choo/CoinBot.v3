@@ -2,52 +2,50 @@ use crate::strategy::config::Config;
 use rust_decimal::Decimal;
 use serde::Serialize;
 
-pub const SEED_DEFAULT: u64 = 20261022;
-pub const SMA_PERIOD: usize = 20;
+pub const SEED_DEFAULT: u64 = 20261023;
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct Candidate {
     pub label: String,
     pub origin: String,
     pub rsi_period: usize,
-    pub rsi_order: usize,
-    pub max_age: Option<usize>, // None = uncapped
-    pub sma_enabled: bool,
-    pub sma_period: usize,
+    pub rsi_long_threshold: Decimal,
+    pub rsi_short_threshold: Decimal,
+    pub atr_enabled: bool,
     pub atr_sl_multiplier: Decimal,
     pub atr_tp_multiplier: Decimal,
 }
 
 impl Candidate {
     pub fn key(&self) -> String {
+        let (sl, tp) = if self.atr_enabled {
+            (
+                self.atr_sl_multiplier.normalize().to_string(),
+                self.atr_tp_multiplier.normalize().to_string(),
+            )
+        } else {
+            ("off".to_string(), "off".to_string())
+        };
         format!(
-            "{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}",
             self.rsi_period,
-            self.rsi_order,
-            self.max_age
-                .map(|v| v.to_string())
-                .unwrap_or_else(|| "none".into()),
-            self.sma_enabled,
-            self.sma_period,
-            self.atr_sl_multiplier.normalize(),
-            self.atr_tp_multiplier.normalize()
+            self.rsi_long_threshold.normalize(),
+            self.rsi_short_threshold.normalize(),
+            self.atr_enabled,
+            sl,
+            tp
         )
     }
 
     pub fn to_config(&self) -> Config {
         Config {
             rsi_period: self.rsi_period,
-            rsi_order: self.rsi_order,
-            price_diff_threshold: Decimal::new(5, 2),
-            sma_enabled: self.sma_enabled,
-            sma_period: self.sma_period,
-            atr_period: 14,
+            rsi_long_threshold: self.rsi_long_threshold,
+            rsi_short_threshold: self.rsi_short_threshold,
+            atr_enabled: self.atr_enabled,
             atr_sl_multiplier: self.atr_sl_multiplier,
             atr_tp_multiplier: self.atr_tp_multiplier,
-            atr_pct_high: Decimal::new(50, 1),
-            atr_high_adjust: Decimal::new(15, 1),
-            atr_sl_max_pct: Decimal::ZERO,
-            window: 100,
+            ..Config::default()
         }
     }
 }
@@ -56,13 +54,12 @@ pub fn baseline() -> Candidate {
     Candidate {
         label: "baseline".into(),
         origin: "baseline".into(),
-        rsi_period: 14,
-        rsi_order: 5,
-        max_age: Some(12),
-        sma_enabled: true,
-        sma_period: SMA_PERIOD,
-        atr_sl_multiplier: Decimal::new(15, 1),
-        atr_tp_multiplier: Decimal::new(20, 1),
+        rsi_period: 21,
+        rsi_long_threshold: Decimal::from(60),
+        rsi_short_threshold: Decimal::from(50),
+        atr_enabled: false,
+        atr_sl_multiplier: Decimal::new(20, 1),
+        atr_tp_multiplier: Decimal::new(30, 1),
     }
 }
 
@@ -72,7 +69,6 @@ pub fn generate(seed: u64) -> Vec<Candidate> {
     let mut seen = std::collections::HashSet::new();
     seen.insert(base.key());
 
-    // OFAT anchors.
     let mut anchor = |label: String, f: &dyn Fn(&mut Candidate)| {
         let mut c = base.clone();
         c.label = label.clone();
@@ -82,37 +78,51 @@ pub fn generate(seed: u64) -> Vec<Candidate> {
             out.push(c);
         }
     };
-    for v in [10usize, 21] {
+    for v in [14usize, 21] {
         anchor(format!("rsi_period={v}"), &|c| c.rsi_period = v);
     }
-    for v in [3usize, 7] {
-        anchor(format!("rsi_order={v}"), &|c| c.rsi_order = v);
+    for v in [
+        Decimal::from(55),
+        Decimal::from(60),
+        Decimal::from(65),
+        Decimal::from(70),
+    ] {
+        anchor(format!("rsi_long={v}"), &|c| c.rsi_long_threshold = v);
     }
-    for v in [Some(4usize), Some(8), None] {
-        let label = format!(
-            "max_age={}",
-            v.map(|x| x.to_string())
-                .unwrap_or_else(|| "uncapped".into())
-        );
-        anchor(label, &|c| c.max_age = v);
+    for v in [Decimal::from(40), Decimal::from(45), Decimal::from(50)] {
+        anchor(format!("rsi_short={v}"), &|c| c.rsi_short_threshold = v);
     }
-    anchor("sma_enabled=false".into(), &|c| c.sma_enabled = false);
-    for v in [Decimal::new(20, 1), Decimal::new(25, 1)] {
+    anchor("atr_enabled=true".into(), &|c| c.atr_enabled = true);
+    for v in [
+        Decimal::new(15, 1),
+        Decimal::new(20, 1),
+        Decimal::new(25, 1),
+    ] {
         anchor(format!("atr_sl={v}"), &|c| {
+            c.atr_enabled = true;
             c.atr_sl_multiplier = v;
         });
     }
-    for v in [Decimal::new(30, 1), Decimal::new(40, 1)] {
+    for v in [
+        Decimal::new(20, 1),
+        Decimal::new(30, 1),
+        Decimal::new(40, 1),
+    ] {
         anchor(format!("atr_tp={v}"), &|c| {
+            c.atr_enabled = true;
             c.atr_tp_multiplier = v;
         });
     }
 
-    // Deterministic seeded joint draws.
-    let rsi = [10usize, 14, 21];
-    let order = [3usize, 5, 7];
-    let age = [Some(4usize), Some(8), Some(12), None];
-    let sma = [false, true];
+    let periods = [14usize, 21];
+    let longs = [
+        Decimal::from(55),
+        Decimal::from(60),
+        Decimal::from(65),
+        Decimal::from(70),
+    ];
+    let shorts = [Decimal::from(40), Decimal::from(45), Decimal::from(50)];
+    let atr = [false, true];
     let sl = [
         Decimal::new(15, 1),
         Decimal::new(20, 1),
@@ -132,29 +142,69 @@ pub fn generate(seed: u64) -> Vec<Candidate> {
     };
     while out.len() < 30 {
         let pick = |n: usize, next: &mut dyn FnMut() -> u64| (next() % n as u64) as usize;
-        // Pull each index into a local first so the mutable borrow of `next`
-        // ends before the candidate is constructed.
-        let a = pick(rsi.len(), &mut next);
-        let b = pick(order.len(), &mut next);
-        let c = pick(age.len(), &mut next);
-        let d = pick(sma.len(), &mut next);
+        let a = pick(periods.len(), &mut next);
+        let b = pick(longs.len(), &mut next);
+        let c = pick(shorts.len(), &mut next);
+        let d = pick(atr.len(), &mut next);
         let e = pick(sl.len(), &mut next);
         let f = pick(tp.len(), &mut next);
         let mut cand = Candidate {
             label: String::new(),
             origin: "joint".into(),
-            rsi_period: rsi[a],
-            rsi_order: order[b],
-            max_age: age[c],
-            sma_enabled: sma[d],
-            sma_period: SMA_PERIOD,
+            rsi_period: periods[a],
+            rsi_long_threshold: longs[b],
+            rsi_short_threshold: shorts[c],
+            atr_enabled: atr[d],
             atr_sl_multiplier: sl[e],
             atr_tp_multiplier: tp[f],
         };
+        if cand.rsi_short_threshold >= cand.rsi_long_threshold {
+            continue;
+        }
         if seen.insert(cand.key()) {
             cand.label = format!("joint-{:02}", out.len());
             out.push(cand);
         }
     }
     out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn baseline_is_the_researched_profile() {
+        let c = baseline();
+        assert_eq!(c.rsi_period, 21);
+        assert_eq!(c.rsi_long_threshold, Decimal::from(60));
+        assert_eq!(c.rsi_short_threshold, Decimal::from(50));
+        assert!(!c.atr_enabled);
+    }
+
+    #[test]
+    fn atr_off_keys_ignore_level_multipliers() {
+        let base = baseline();
+        let mut different_levels = baseline();
+        different_levels.atr_sl_multiplier = Decimal::new(99, 0);
+        different_levels.atr_tp_multiplier = Decimal::new(88, 0);
+        assert_eq!(base.key(), different_levels.key());
+
+        let enabled = Candidate {
+            atr_enabled: true,
+            ..base
+        };
+        assert_ne!(different_levels.key(), enabled.key());
+    }
+
+    #[test]
+    fn generated_candidates_are_unique_and_valid() {
+        let candidates = generate(SEED_DEFAULT);
+        let mut keys = std::collections::HashSet::new();
+        for candidate in &candidates {
+            assert!(keys.insert(candidate.key()));
+            assert!(candidate.rsi_short_threshold < candidate.rsi_long_threshold);
+            assert!(candidate.to_config().validate().is_ok());
+        }
+    }
 }

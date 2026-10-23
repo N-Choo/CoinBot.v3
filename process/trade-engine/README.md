@@ -7,14 +7,15 @@ Rust process that turns analyzer signals into KuCoin cross-margin orders and kee
 
 ## Components
 
-Four background tasks, spawned in `src/main.rs`:
+Three background tasks, spawned in `src/main.rs`:
 
-| Task              | Entry                                              | Purpose                                                              |
-| ----------------- | -------------------------------------------------- | -------------------------------------------------------------------- |
-| Signal generator  | `signals::signal_generator`                        | every 24h, publishes the distinct tickers of active contracts        |
-| Signal subscriber | `signals::signal_handler`, called for each signal on `signals:result` | verifies each contract and executes the signal |
-| Reconciler        | `reconciler::run`                                  | every 30s, resolves pending orders and settles open orders and funds |
-| Position exit     | `position_exit::run`                               | every 12s, exits held positions at TP or SL (backs off on 429)       |
+| Task            | Entry                 | Purpose                                                                  |
+| --------------- | --------------------- | ------------------------------------------------------------------------ |
+| gRPC server     | `grpc_handler::serve` | serves `EngineService`; the analyzer pulls symbols and publishes signals |
+| Reconciler      | `reconciler::run`     | every 30s, resolves pending orders and settles open orders and funds     |
+| Position exit   | `position_exit::run`  | every 12s, exits held positions at TP or SL (backs off on 429)           |
+
+`signals::signal_handler` verifies and executes each published signal; the gRPC server calls it for every `Publish`.
 
 Terms:
 
@@ -25,13 +26,14 @@ Terms:
 
 Modules (`src/`):
 
-- `main.rs`: config, shared state, spawns the four tasks
-- `signals.rs`: `signal_generator`, `signal_handler`
+- `main.rs`: config, shared state, spawns the three tasks
+- `signals.rs`: `signal_handler`
+- `grpc_handler.rs`: `EngineService` (active symbols + signal publish)
 - `trader/`: signal to order (`mod`, `order`, `sizing`)
 - `ledger/`: only writer of order rows and contract funds (`orders`, `funds`)
 - `reconciler/`: settlement (`pending`, `settle`, `pnl`, `exchange`)
 - `position_exit/`: TP/SL polling and exits (`mod`, `decision`, `price`, `exit`)
-- `app_state.rs`: DB pool, Redis cache, KuCoin client
+- `app_state.rs`: DB pool and KuCoin client
 - `app_config.rs`: env config (secrets redacted in Debug)
 - `symbol.rs`: `margin_symbol()`
 
@@ -44,21 +46,19 @@ Signal path:
 ```mermaid
 flowchart LR
     subgraph TE["trade-engine"]
-        SG["signal generator"]
-        SH["signal subscriber<br/>(signal_handler)"]
+        GR["gRPC server<br/>(EngineService)"]
+        SH["signal handler"]
         TR["trader"]
     end
     subgraph EXT["external"]
-        RD[("Redis")]
-        AN["analyzer (Python)"]
+        AN["analyzer (Rust gRPC client)"]
         PG[("PostgreSQL")]
     end
 
-    SG -->|"PUB tickers:analyze"| RD
-    SG -->|"read active tickers"| PG
-    RD -->|"tickers:analyze"| AN
-    AN -->|"PUB signals:result"| RD
-    RD -->|"signals:result"| SH
+    AN -->|"GetActiveSymbols"| GR
+    GR -->|"read active tickers"| PG
+    AN -->|"Publish(Signal)"| GR
+    GR -->|"dedup + signal_handler"| SH
     SH -->|"read contracts · wallet"| PG
     SH -->|"execute"| TR
 ```
@@ -96,37 +96,43 @@ Exact calls behind the ledger edges:
 - `exit writes` (position_exit): `reserve_exit`, `record_failed`, `record_placed`
 - `order status lookups` (reconciler): `get_order`, `get_order_by_client_oid`
 
-## Channel names
+## gRPC interface
 
-| Channel           | Direction         | Payload                                                                     |
-| ----------------- | ----------------- | --------------------------------------------------------------------------- |
-| `tickers:analyze` | engine → analyzer | `["BTC/USDT", …]`                                                           |
-| `signals:result`  | analyzer → engine | `[{ ticker, action, confidence, entry_price, sl_price, tp_price, reason }]` |
+`EngineService` is defined in `process/proto/analyzer.proto`; the analyzer is the client.
 
-- The engine hardcodes both names (`src/main.rs:58`, `src/signals.rs:85`). The analyzer reads `TICKER_CHANNEL` and `RESULT_CHANNEL` (same defaults). Renaming one side silently breaks the flow.
+| RPC                | Direction         | Payload                                                                                                              |
+| ------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
+| `GetActiveSymbols` | analyzer → engine | returns the distinct tickers of active contracts                                                                     |
+| `Publish`          | analyzer → engine | `Signal { ticker, action, entry_price, signal_id, seq, expires_at_ms, trigger_time_ms, sl_price, tp_price, reason }` |
+
 - `action` is uppercased; anything other than `BUY` or `SELL` is logged and ignored.
+- `Publish` deduplicates on `signal_id` for the process lifetime and returns an `Ack`.
+- `sl_price`/`tp_price` of zero mean "no protective level".
+- `BUY`/`SELL` are target-side: the engine closes an opposite held entry before opening the target side.
 
 ## Signal → execution
 
-Signal generator (every 24h) publishes tickers; the analyzer replies on `signals:result`:
+The analyzer pulls active symbols, then publishes target-side signals over gRPC:
 
 ```mermaid
 sequenceDiagram
     autonumber
+    participant A as analyzer (Rust)
     participant TE as trade-engine
-    participant R as Redis
-    participant A as analyzer
     participant DB as PostgreSQL
     participant K as KuCoin
-    Note over TE: signal_generator loop (every 24h)
+    A->>TE: GetActiveSymbols
     TE->>DB: active contracts → distinct tickers
-    TE->>R: PUB tickers:analyze
-    R-->>A: tickers
+    DB-->>TE: tickers
+    TE-->>A: tickers
     A->>K: fetch klines per ticker
     K-->>A: klines
-    A->>A: RSI / SMA / ATR → signals
-    A->>R: PUB signals:result
-    R-->>TE: signals (list of TradeSignal)
+    A->>A: RSI / ATR → target-side signals
+    A->>TE: Publish(Signal)
+    Note over TE: dedup on signal_id
+    TE->>DB: verify contract + wallet
+    TE->>TE: trader::execute
+    TE-->>A: Ack
 ```
 
 Each signal is checked against every active contract on its ticker. Failing contracts are skipped:
@@ -242,7 +248,14 @@ Settlement rules:
 - **Idempotent:** `mark_filled` and `mark_cancelled` update only `open` rows. A repeat settle fails its transaction and is logged.
 - **Caveat:** a partly filled, then cancelled order settles as a full fill at the partial `deal_size`.
 
-## Position exit (TP/SL)
+## Position exit (TP/SL and reversals)
+
+The TP/SL loop below is separate from signal-driven reversals: `trader::execute` closes an
+opposite held entry through `position_exit::close_at_market` before opening the target side.
+
+**Operator note.** A pre-existing hedged position (both target and opposite legs held) is
+recovered by the first target-side signal: the engine closes the opposite leg and does not
+open another target position. Duplicate-close prevention is atomic.
 
 Every 12 seconds, `position_exit::run` performs one sweep:
 
@@ -262,7 +275,7 @@ Every 12 seconds, `position_exit::run` performs one sweep:
 
 **Backoff.** On `429 Too Many Requests` from the price request, the sweep stops and places no exits. Waits: 30, 60, 120, 240, then 300 seconds. A successful sweep resets the wait to 12 seconds. Other errors neither reset nor extend it. A 429 on `place_order` is an ordinary exit failure.
 
-**One live exit per position.** Migration `process/migrations/20261016_order_reconcile_and_deposit_sweep.sql` creates partial unique index `idx_trade_orders_active_close` (at most one `pending` or `open` close row per entry). `reserve_exit` uses `ON CONFLICT DO NOTHING`; a conflict returns no row and the position is skipped. Blocks duplicate exits across engine instances.
+**One live exit per position.** Migration `process/migrations/20261016_order_reconcile_and_deposit_sweep.sql` creates partial unique index `idx_trade_orders_active_close` (at most one `pending` or `open` close row per entry). `reserve_exit` uses `ON CONFLICT DO NOTHING`; a conflict returns no row and the position is skipped. Blocks duplicate exits across engine instances. The reservation also requires the parent entry to still be `filled` and no close in `pending`/`open`/`filled` to exist, so a position settling between `held_entries` and `reserve_exit` cannot be closed twice.
 
 ## Fund accounting
 

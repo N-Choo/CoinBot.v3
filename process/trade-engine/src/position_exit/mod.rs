@@ -2,9 +2,10 @@
 //!
 //! Polls the exchange for last prices, compares them against each held
 //! position's stored TP/SL, and places a market exit order on the opposite side
-//! when one is reached. The exit is recorded as a `close` row linked to its
-//! entry via `parent_order_id`, which the reconciler then settles (mark filled +
-//! credit realized PnL).
+//! when one is reached. It also closes a position at market when a target-side
+//! signal reverses direction (see [`close_at_market`]). Every exit is recorded
+//! as a `close` row linked to its entry via `parent_order_id`, which the
+//! reconciler then settles (mark filled + credit realized PnL).
 
 mod decision;
 mod exit;
@@ -14,11 +15,12 @@ use std::time::Duration;
 
 use kucoin::client::rest::KuCoinClient;
 use log::{error, warn};
-use share::db::trade::TradeOrders;
+use rust_decimal::Decimal;
+use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
 
 use crate::symbol::margin_symbol;
-use decision::evaluate_exit;
+use decision::{ExitReason, evaluate_exit};
 use exit::exit_position;
 use price::fetch_last_prices;
 
@@ -103,4 +105,17 @@ async fn sweep_once(pool: &Pool<Postgres>, kcc: &KuCoinClient) -> Result<(), Swe
     }
 
     Ok(())
+}
+
+/// Close `entry` at market when a signal targets the opposite side.
+///
+/// `reference_price` only estimates the close row's notional; the order sent to
+/// the exchange is a market order.
+pub(crate) async fn close_at_market(
+    pool: &Pool<Postgres>,
+    kcc: &KuCoinClient,
+    entry: &TradeOrder,
+    reference_price: Decimal,
+) -> Result<(), String> {
+    exit::exit_position(pool, kcc, entry, ExitReason::Reversal, reference_price).await
 }

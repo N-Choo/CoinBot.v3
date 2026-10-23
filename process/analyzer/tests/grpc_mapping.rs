@@ -3,7 +3,7 @@
 use analyzer::exchange::timeframes::Timeframe;
 use analyzer::live::grpc::{config_version, to_proto_signal};
 use analyzer::strategy::config::Config;
-use analyzer::strategy::types::{Direction, DivergenceKind, Signal};
+use analyzer::strategy::types::{Direction, Signal};
 use rust_decimal::Decimal;
 use std::str::FromStr;
 
@@ -13,13 +13,9 @@ fn sample() -> Signal {
         action: Direction::Long,
         confidence: Decimal::from_str("0.8").unwrap(),
         entry_price: Decimal::from_str("100").unwrap(),
-        reason: "regular_bullish_divergence".into(),
-        sl_price: Decimal::from_str("95").unwrap(),
-        tp_price: Decimal::from_str("110").unwrap(),
-        divergence_index: 10,
-        divergence_kind: DivergenceKind::RegularBullish,
-        divergence_open_time_ms: 1_700_000_000_000,
-        divergence_age_candles: 3,
+        reason: "rsi_momentum".into(),
+        sl_price: Some(Decimal::from_str("95").unwrap()),
+        tp_price: Some(Decimal::from_str("110").unwrap()),
         signal_candle_open_time_ms: 1_700_001_800_000,
     }
 }
@@ -46,18 +42,17 @@ fn maps_signal_to_proto() {
         proto.trigger_time_ms,
         signal.signal_candle_open_time_ms + 900_000
     );
-    assert_eq!(proto.reason, "regular_bullish_divergence");
+    assert_eq!(proto.reason, "rsi_momentum");
     assert_eq!(proto.seq, 7);
     assert_eq!(proto.expires_at_ms, 1_060_000);
     assert_eq!(proto.schema_version, 1);
-    assert!(proto.signal_id.starts_with("v1:"));
+    assert!(proto.signal_id.starts_with("v2:"));
 }
 
 #[test]
 fn short_maps_to_sell() {
     let mut signal = sample();
     signal.action = Direction::Short;
-    signal.divergence_kind = DivergenceKind::RegularBearish;
 
     let proto = to_proto_signal(
         &signal,
@@ -70,6 +65,24 @@ fn short_maps_to_sell() {
     .unwrap();
 
     assert_eq!(proto.action, "SELL");
+}
+
+#[test]
+fn absent_levels_map_to_zero() {
+    let mut signal = sample();
+    signal.sl_price = None;
+    signal.tp_price = None;
+    let proto = to_proto_signal(
+        &signal,
+        1,
+        0,
+        0,
+        &config_version(&Config::default()),
+        Timeframe::M15,
+    )
+    .unwrap();
+    assert_eq!(proto.sl_price, 0.0);
+    assert_eq!(proto.tp_price, 0.0);
 }
 
 #[test]
@@ -93,27 +106,22 @@ fn ttl_and_trigger_use_the_dequeue_time_and_timeframe() {
 }
 
 #[test]
-fn signal_id_is_stable_and_depends_on_the_divergence() {
+fn signal_id_is_stable_and_depends_on_the_candle() {
     let cv = config_version(&Config::default());
     let first = to_proto_signal(&sample(), 1, 0, 0, &cv, Timeframe::M15).unwrap();
     let second = to_proto_signal(&sample(), 2, 999, 123, &cv, Timeframe::M15).unwrap();
     assert_eq!(first.signal_id, second.signal_id);
 
     let mut moved = sample();
-    moved.divergence_open_time_ms += 1;
+    moved.signal_candle_open_time_ms += 1;
     let third = to_proto_signal(&moved, 1, 0, 0, &cv, Timeframe::M15).unwrap();
     assert_ne!(first.signal_id, third.signal_id);
 }
 
 #[test]
-fn signal_id_depends_on_kind_and_config() {
+fn signal_id_depends_on_config() {
     let cv = config_version(&Config::default());
     let base = to_proto_signal(&sample(), 1, 0, 0, &cv, Timeframe::M15).unwrap();
-
-    let mut hidden = sample();
-    hidden.divergence_kind = DivergenceKind::HiddenBullish;
-    let by_kind = to_proto_signal(&hidden, 1, 0, 0, &cv, Timeframe::M15).unwrap();
-    assert_ne!(base.signal_id, by_kind.signal_id);
 
     let changed_config = Config {
         rsi_period: 15,
@@ -144,19 +152,15 @@ fn config_version_covers_every_strategy_field() {
             ..Config::default()
         },
         Config {
-            rsi_order: 6,
+            rsi_long_threshold: Decimal::from(61),
             ..Config::default()
         },
         Config {
-            price_diff_threshold: Decimal::new(6, 2),
+            rsi_short_threshold: Decimal::from(49),
             ..Config::default()
         },
         Config {
-            sma_enabled: true,
-            ..Config::default()
-        },
-        Config {
-            sma_period: 21,
+            atr_enabled: true,
             ..Config::default()
         },
         Config {

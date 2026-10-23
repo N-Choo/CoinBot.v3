@@ -67,6 +67,7 @@ struct ExecutionRow {
     expired: usize,
     skipped_funds: usize,
     invalid_levels: usize,
+    same_side: usize,
     trades: usize,
     net_expectancy: Decimal,
     net_profit_factor: Option<Decimal>,
@@ -96,6 +97,7 @@ impl ExecutionRow {
             expired: part.expired,
             skipped_funds: part.skipped_funds,
             invalid_levels: part.invalid_levels,
+            same_side: part.same_side,
             trades: part.metrics.trades,
             net_expectancy: part.metrics.net_expectancy,
             net_profit_factor: part.metrics.net_profit_factor,
@@ -205,7 +207,7 @@ fn focused_candidates() -> Vec<Candidate> {
         .filter(|candidate| {
             matches!(
                 candidate.label.as_str(),
-                "baseline" | "joint-13" | "max_age=4"
+                "baseline" | "long65-short50" | "long60-short45"
             )
         })
         .collect()
@@ -261,7 +263,6 @@ fn evaluate_candidates(
             let result = evaluate_execution_config(
                 dataset,
                 &candidate.to_config(),
-                candidate.max_age,
                 &splits,
                 WINDOW,
                 init_fund,
@@ -627,7 +628,7 @@ fn display_profit_factor(value: Option<Decimal>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-const CSV_COLUMNS: [&str; 18] = [
+const CSV_COLUMNS: [&str; 19] = [
     "candidate",
     "model",
     "symbol_or_pooled",
@@ -639,6 +640,7 @@ const CSV_COLUMNS: [&str; 18] = [
     "expired",
     "skipped_funds",
     "invalid_levels",
+    "same_side",
     "trades",
     "net_expectancy",
     "net_profit_factor",
@@ -667,6 +669,7 @@ fn write_csv(path: &Path, rows: &[ExecutionRow]) -> Result<(), String> {
             row.expired.to_string(),
             row.skipped_funds.to_string(),
             row.invalid_levels.to_string(),
+            row.same_side.to_string(),
             row.trades.to_string(),
             row.net_expectancy.to_string(),
             row.net_profit_factor
@@ -701,11 +704,14 @@ fn write_partition_table(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Model | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Skipped funds | Net expectancy | SE | 95% CI | PF | Trades | Max DD % |"
+        "| Candidate | Model | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Skipped funds | Same side | Net expectancy | SE | 95% CI | PF | Trades | Max DD % |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|---|---|")
-        .expect("writing to String cannot fail");
+    writeln!(
+        out,
+        "|---|---|---|---|---|---|---|---|---|---|---|---|---|---|"
+    )
+    .expect("writing to String cannot fail");
     for run in runs {
         for model in models {
             let Some(part) = part(run, &model.label, partition) else {
@@ -713,7 +719,7 @@ fn write_partition_table(
             };
             writeln!(
                 out,
-                "| {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {}/{} | {} | {} | {} | {} | {} | {} | {} | {} | {} |",
                 run.label,
                 model.label,
                 display_pct(part.execution_fill_rate),
@@ -722,6 +728,7 @@ fn write_partition_table(
                 part.signals,
                 part.expired,
                 part.skipped_funds,
+                part.same_side,
                 part.metrics.net_expectancy.round_dp(4),
                 part.metrics.expectancy_stderr.round_dp(4),
                 display_ci(part.metrics.net_expectancy, part.metrics.expectancy_stderr),
@@ -747,10 +754,10 @@ fn write_per_symbol_table(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Candidate | Model | Symbol | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Net expectancy | PF | Trades |"
+        "| Candidate | Model | Symbol | Exec fill rate | Capital fill rate | Filled/Signals | Expired | Same side | Net expectancy | PF | Trades |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|")
+    writeln!(out, "|---|---|---|---|---|---|---|---|---|---|---|")
         .expect("writing to String cannot fail");
     for run in runs {
         for model in models {
@@ -765,7 +772,7 @@ fn write_per_symbol_table(
                 };
                 writeln!(
                     out,
-                    "| {} | {} | {symbol} | {} | {} | {}/{} | {} | {} | {} | {} |",
+                    "| {} | {} | {symbol} | {} | {} | {}/{} | {} | {} | {} | {} | {} |",
                     run.label,
                     model.label,
                     display_pct(part.execution_fill_rate),
@@ -773,6 +780,7 @@ fn write_per_symbol_table(
                     part.filled,
                     part.signals,
                     part.expired,
+                    part.same_side,
                     part.metrics.net_expectancy.round_dp(4),
                     display_profit_factor(part.metrics.net_profit_factor),
                     part.metrics.trades
@@ -1083,28 +1091,36 @@ fn write_markdown(
 
     write_relative_to_market(&mut out, decision, runs, symbols);
 
-    writeln!(out, "## 9. Capacity / capital constraint").expect("writing to String cannot fail");
+    writeln!(out, "## 9. Signal accounting").expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
-    if let Some(validation) = runs
+    writeln!(
+        out,
+        "Under the one-position target-side model, `skipped_funds` is expected to be zero: the half-fund budget is not binding once at most one position is open."
+    )
+    .expect("writing to String cannot fail");
+    if let Some((label, validation)) = runs
         .iter()
-        .find(|run| run.label == "joint-13")
-        .and_then(|run| part(run, "market", "validation"))
+        .find(|run| run.label == "long65-short50")
+        .and_then(|run| {
+            part(run, "limit_2c_b2", "validation")
+                .map(|validation| (run.label.as_str(), validation))
+        })
     {
         writeln!(
             out,
-            "- `joint-13` produced {} validation signals but only {} were funded (`E = init_fund / 2`, max two concurrent positions); {} were skipped for funds.",
-            validation.signals, validation.filled, validation.skipped_funds
+            "- `{label}` / `limit_2c_b2` validation: {} signals, {} filled, {} same-side no-ops, {} expired limit orders, {} invalid levels, {} skipped for funds.",
+            validation.signals,
+            validation.filled,
+            validation.same_side,
+            validation.expired,
+            validation.invalid_levels,
+            validation.skipped_funds
         )
         .expect("writing to String cannot fail");
     }
     writeln!(
         out,
-        "- This is a strategy-capacity issue, not an execution-model failure."
-    )
-    .expect("writing to String cannot fail");
-    writeln!(
-        out,
-        "- A larger `--init-fund` or smaller `E` would change the comparison; not tested here."
+        "- The filled-vs-signals gap is therefore explained by same-side no-ops, expired limit orders, and invalid levels, not by capacity."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");

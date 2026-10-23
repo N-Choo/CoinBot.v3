@@ -5,6 +5,7 @@ pub const REASON_TP: &str = "TP";
 pub const REASON_GAP_TP: &str = "gap_tp";
 pub const REASON_SL: &str = "SL";
 pub const REASON_GAP_SL: &str = "gap_sl";
+pub const REASON_REVERSAL: &str = "reversal";
 
 #[derive(Debug, Clone)]
 pub struct SimSignal {
@@ -36,8 +37,8 @@ pub struct Position {
     pub signal_entry: Decimal,
     pub fill: Decimal,
     pub e: Decimal,
-    pub sl: Decimal,
-    pub tp: Decimal,
+    pub sl: Option<Decimal>,
+    pub tp: Option<Decimal>,
     pub entry_index: usize,
 }
 
@@ -68,11 +69,6 @@ pub struct SimOutcome {
     pub invalid_levels: usize,
 }
 
-/// One account per symbol; engine sizing; no fees.
-///
-/// Callers must supply candles whose `open`, `high`, `low`, and `close` prices are
-/// strictly positive; the simulator divides by these values and assumes nonzero
-/// denominators.
 pub fn simulate(
     candles: &[Candle],
     signals: &[SimSignal],
@@ -86,87 +82,63 @@ pub fn simulate(
     let mut trades: Vec<ClosedTrade> = Vec::new();
     let mut account: Vec<AccountStep> = Vec::new();
     let mut skipped_funds = 0usize;
-    let mut invalid_levels = 0usize;
 
     for (index, candle) in candles.iter().enumerate() {
         if index < window {
             continue;
         }
 
-        // 1. Fill the pending entry from the signal at index - 1 at this candle's open.
         if let Some(sim_signal) = signals.iter().find(|s| s.candle_index + 1 == index) {
             let signal = &sim_signal.signal;
-            let geometry_ok = match signal.action {
-                Direction::Long => {
-                    signal.sl_price < signal.entry_price && signal.tp_price > signal.entry_price
+
+            let mut kept = Vec::new();
+            for position in positions.drain(..) {
+                if position.side == signal.action {
+                    kept.push(position);
+                } else {
+                    close_position(
+                        &mut trades,
+                        &mut available,
+                        position,
+                        candle.open,
+                        REASON_REVERSAL,
+                        index,
+                    );
                 }
-                Direction::Short => {
-                    signal.sl_price > signal.entry_price && signal.tp_price < signal.entry_price
+            }
+            positions = kept;
+
+            let already_target = positions.iter().any(|p| p.side == signal.action);
+            if !already_target {
+                if available < budget {
+                    skipped_funds += 1;
+                } else {
+                    available -= budget;
+                    positions.push(Position {
+                        side: signal.action,
+                        signal_id: sim_signal.signal_id.clone(),
+                        signal_entry: signal.entry_price,
+                        fill: candle.open,
+                        e: budget,
+                        sl: signal.sl_price,
+                        tp: signal.tp_price,
+                        entry_index: index,
+                    });
                 }
-            };
-            if !geometry_ok {
-                invalid_levels += 1;
-            } else if available < budget {
-                skipped_funds += 1;
-            } else {
-                available -= budget;
-                positions.push(Position {
-                    side: signal.action,
-                    signal_id: sim_signal.signal_id.clone(),
-                    signal_entry: signal.entry_price,
-                    fill: candle.open,
-                    e: budget,
-                    sl: signal.sl_price,
-                    tp: signal.tp_price,
-                    entry_index: index,
-                });
             }
         }
 
-        // 2. Exits, including a position just filled.
         let mut still_open = Vec::new();
         for position in positions.drain(..) {
             match exit_for(&position, candle) {
                 Some((reason, exit)) => {
-                    let proceeds = position.e * (exit / position.fill);
-                    let mut pnl = match position.side {
-                        Direction::Long => proceeds - position.e,
-                        Direction::Short => position.e - proceeds,
-                    };
-                    if pnl < -position.e {
-                        pnl = -position.e;
-                    }
-                    available += position.e + pnl;
-                    trades.push(ClosedTrade {
-                        side: position.side,
-                        signal_id: position.signal_id.clone(),
-                        signal_entry: position.signal_entry,
-                        fill: position.fill,
-                        exit,
-                        e: position.e,
-                        pnl,
-                        pnl_pct: if position.e.is_zero() {
-                            Decimal::ZERO
-                        } else {
-                            pnl / position.e * Decimal::from(100)
-                        },
-                        risk_reward: risk_reward_for(
-                            position.side,
-                            position.sl,
-                            position.tp,
-                            position.fill,
-                        ),
-                        reason,
-                        entry_index: position.entry_index,
-                        exit_index: index,
-                    });
+                    close_position(&mut trades, &mut available, position, exit, &reason, index);
                 }
                 None => still_open.push(position),
             }
         }
         positions = still_open;
 
-        // 3. Record account state after this candle's fills/exits.
         let close = candle.close;
         let mut reserved = Decimal::ZERO;
         let mut unrealized = Decimal::ZERO;
@@ -202,35 +174,75 @@ pub fn simulate(
         available_fund: available,
         skipped_funds,
         unfilled_at_end,
-        invalid_levels,
+        invalid_levels: 0,
     }
 }
 
+fn close_position(
+    trades: &mut Vec<ClosedTrade>,
+    available: &mut Decimal,
+    position: Position,
+    exit: Decimal,
+    reason: &str,
+    index: usize,
+) {
+    let proceeds = position.e * (exit / position.fill);
+    let mut pnl = match position.side {
+        Direction::Long => proceeds - position.e,
+        Direction::Short => position.e - proceeds,
+    };
+    if pnl < -position.e {
+        pnl = -position.e;
+    }
+    *available += position.e + pnl;
+    trades.push(ClosedTrade {
+        side: position.side,
+        signal_id: position.signal_id.clone(),
+        signal_entry: position.signal_entry,
+        fill: position.fill,
+        exit,
+        e: position.e,
+        pnl,
+        pnl_pct: if position.e.is_zero() {
+            Decimal::ZERO
+        } else {
+            pnl / position.e * Decimal::from(100)
+        },
+        risk_reward: risk_reward_for(position.side, position.sl, position.tp, position.fill),
+        reason: reason.to_string(),
+        entry_index: position.entry_index,
+        exit_index: index,
+    });
+}
+
 fn exit_for(position: &Position, candle: &Candle) -> Option<(String, Decimal)> {
+    let (Some(sl), Some(tp)) = (position.sl, position.tp) else {
+        return None;
+    };
     let open = candle.open;
     match position.side {
         Direction::Long => {
-            if open <= position.sl {
+            if open <= sl {
                 Some((REASON_GAP_SL.into(), open))
-            } else if open >= position.tp {
+            } else if open >= tp {
                 Some((REASON_GAP_TP.into(), open))
-            } else if candle.low <= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else if candle.high >= position.tp {
-                Some((REASON_TP.into(), position.tp))
+            } else if candle.low <= sl {
+                Some((REASON_SL.into(), sl))
+            } else if candle.high >= tp {
+                Some((REASON_TP.into(), tp))
             } else {
                 None
             }
         }
         Direction::Short => {
-            if open >= position.sl {
+            if open >= sl {
                 Some((REASON_GAP_SL.into(), open))
-            } else if open <= position.tp {
+            } else if open <= tp {
                 Some((REASON_GAP_TP.into(), open))
-            } else if candle.high >= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else if candle.low <= position.tp {
-                Some((REASON_TP.into(), position.tp))
+            } else if candle.high >= sl {
+                Some((REASON_SL.into(), sl))
+            } else if candle.low <= tp {
+                Some((REASON_TP.into(), tp))
             } else {
                 None
             }
@@ -238,7 +250,15 @@ fn exit_for(position: &Position, candle: &Candle) -> Option<(String, Decimal)> {
     }
 }
 
-fn risk_reward_for(side: Direction, sl: Decimal, tp: Decimal, fill: Decimal) -> Option<Decimal> {
+fn risk_reward_for(
+    side: Direction,
+    sl: Option<Decimal>,
+    tp: Option<Decimal>,
+    fill: Decimal,
+) -> Option<Decimal> {
+    let (Some(sl), Some(tp)) = (sl, tp) else {
+        return None;
+    };
     match side {
         Direction::Long if fill > sl && tp > fill => Some((tp - fill) / (fill - sl)),
         Direction::Short if sl > fill && fill > tp => Some((fill - tp) / (sl - fill)),
@@ -246,10 +266,6 @@ fn risk_reward_for(side: Direction, sl: Decimal, tp: Decimal, fill: Decimal) -> 
     }
 }
 
-/// Returns the unrealized PnL of an open position marked at `close`.
-///
-/// The caller must ensure `fill` and `close` are positive; this helper divides by
-/// `fill` and assumes a nonzero denominator.
 pub fn unrealized_pnl(side: Direction, fill: Decimal, close: Decimal, e: Decimal) -> Decimal {
     let ret = (close - fill) / fill;
     let signed = match side {

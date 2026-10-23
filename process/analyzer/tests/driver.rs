@@ -1,40 +1,42 @@
-mod common;
-
 use analyzer::driver::{CandleDriver, DriverEvent};
 use analyzer::strategy::config::Config;
+use analyzer::strategy::types::Candle;
+use rust_decimal::Decimal;
+
+fn candle(i: usize, close: i64) -> Candle {
+    Candle {
+        open_time_ms: i as i64 * 86_400_000,
+        open: Decimal::from(close),
+        high: Decimal::from(close + 1),
+        low: Decimal::from(close - 1),
+        close: Decimal::from(close),
+        volume: Decimal::ONE,
+    }
+}
 
 #[test]
-fn driver_warms_up_and_emits_only_new_divergences() {
-    let f = common::load_fixture("synthetic_1day");
-    let candles = f.candles();
-    let cfg = Config::default();
-    let mut driver = CandleDriver::new("SYNTH-USDT", cfg.clone());
-    let mut warmed = false;
-    let mut signals = 0usize;
+fn driver_warms_silently_and_emits_a_crossing() {
+    let cfg = Config {
+        window: 30,
+        ..Config::default()
+    };
+    let mut driver = CandleDriver::new("TEST-USDT", cfg.clone());
 
-    for (i, candle) in candles.iter().enumerate() {
-        let events = driver.push_closed(candle.clone()).unwrap();
-        for event in events {
-            match event {
-                DriverEvent::Warmed { .. } => {
-                    assert_eq!(i + 1, cfg.window, "warms exactly when the window fills");
-                    warmed = true;
-                }
-                DriverEvent::Signal { signal, .. } => {
-                    assert!(warmed);
-                    assert_eq!(signal.ticker, "SYNTH-USDT");
-                    signals += 1;
-                }
-                DriverEvent::Suppressed { .. } => {}
-            }
+    for i in 0..cfg.window {
+        let events = driver.push_closed(candle(i, 100)).unwrap();
+        if i + 1 == cfg.window {
+            assert_eq!(events, vec![DriverEvent::Warmed]);
+        } else {
+            assert!(events.is_empty());
         }
-        assert_eq!(driver.window().len(), (i + 1).min(cfg.window));
     }
 
-    assert!(warmed, "driver must warm");
+    let events = driver.push_closed(candle(cfg.window, 101)).unwrap();
+    assert!(matches!(events.as_slice(), [DriverEvent::Signal { .. }]));
+
+    let next = driver.push_closed(candle(cfg.window + 1, 102)).unwrap();
     assert!(
-        signals > 0,
-        "synthetic fixture must produce at least one new signal"
+        next.is_empty(),
+        "no signal while RSI stays above the threshold"
     );
-    assert!(driver.push_closed(candles.last().unwrap().clone()).is_err());
 }

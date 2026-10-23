@@ -5,10 +5,9 @@ use std::str::FromStr;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Config {
     pub rsi_period: usize,
-    pub rsi_order: usize,
-    pub price_diff_threshold: Decimal,
-    pub sma_enabled: bool,
-    pub sma_period: usize,
+    pub rsi_long_threshold: Decimal,
+    pub rsi_short_threshold: Decimal,
+    pub atr_enabled: bool,
     pub atr_period: usize,
     pub atr_sl_multiplier: Decimal,
     pub atr_tp_multiplier: Decimal,
@@ -21,11 +20,10 @@ pub struct Config {
 impl Default for Config {
     fn default() -> Self {
         Config {
-            rsi_period: 14,
-            rsi_order: 5,
-            price_diff_threshold: Decimal::new(5, 2),
-            sma_enabled: false,
-            sma_period: 20,
+            rsi_period: 21,
+            rsi_long_threshold: Decimal::from(60),
+            rsi_short_threshold: Decimal::from(50),
+            atr_enabled: false,
             atr_period: 14,
             atr_sl_multiplier: Decimal::new(20, 1),
             atr_tp_multiplier: Decimal::new(30, 1),
@@ -39,12 +37,8 @@ impl Default for Config {
 
 impl Config {
     pub fn min_window(&self) -> usize {
-        let sma = if self.sma_enabled { self.sma_period } else { 0 };
-        self.rsi_period
-            .max(self.atr_period)
-            .max(sma)
-            .saturating_add(self.rsi_order)
-            .saturating_add(2)
+        let atr = if self.atr_enabled { self.atr_period } else { 0 };
+        self.rsi_period.max(atr).saturating_add(2)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -52,17 +46,17 @@ impl Config {
         if self.rsi_period == 0 {
             return fail("rsi_period must be >= 1");
         }
-        if self.rsi_order == 0 {
-            return fail("rsi_order must be >= 1");
+        if self.rsi_short_threshold < Decimal::ZERO {
+            return fail("rsi_short_threshold must be >= 0");
         }
-        if self.sma_period == 0 {
-            return fail("sma_period must be >= 1");
+        if self.rsi_long_threshold > Decimal::ONE_HUNDRED {
+            return fail("rsi_long_threshold must be <= 100");
+        }
+        if self.rsi_short_threshold >= self.rsi_long_threshold {
+            return fail("rsi_short_threshold must be < rsi_long_threshold");
         }
         if self.atr_period == 0 {
             return fail("atr_period must be >= 1");
-        }
-        if self.price_diff_threshold < Decimal::ZERO {
-            return fail("price_diff_threshold must be >= 0");
         }
         if self.atr_sl_multiplier <= Decimal::ZERO {
             return fail("atr_sl_multiplier must be > 0");
@@ -120,33 +114,15 @@ mod tests {
             ),
             (
                 Config {
-                    rsi_order: 0,
-                    ..Config::default()
-                },
-                "rsi_order",
-            ),
-            (
-                Config {
-                    sma_period: 0,
-                    ..Config::default()
-                },
-                "sma_period",
-            ),
-            (
-                Config {
                     atr_period: 0,
                     ..Config::default()
                 },
                 "atr_period",
             ),
         ];
-
         for (cfg, field) in cases {
             assert!(
-                matches!(
-                    cfg.validate(),
-                    Err(Error::ConfigInvalid(message)) if message.contains(field)
-                ),
+                matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains(field)),
                 "expected ConfigInvalid mentioning {field}, got {:?}",
                 cfg.validate()
             );
@@ -154,15 +130,43 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_threshold_and_atr_settings() {
+    fn rejects_inverted_or_out_of_range_thresholds() {
         let cases = [
             (
                 Config {
-                    price_diff_threshold: Decimal::new(-1, 0),
+                    rsi_short_threshold: Decimal::new(-1, 0),
                     ..Config::default()
                 },
-                "price_diff_threshold",
+                "rsi_short_threshold",
             ),
+            (
+                Config {
+                    rsi_long_threshold: Decimal::from(101),
+                    ..Config::default()
+                },
+                "rsi_long_threshold",
+            ),
+            (
+                Config {
+                    rsi_short_threshold: Decimal::from(60),
+                    rsi_long_threshold: Decimal::from(60),
+                    ..Config::default()
+                },
+                "rsi_short_threshold",
+            ),
+        ];
+        for (cfg, field) in cases {
+            assert!(
+                matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains(field)),
+                "expected ConfigInvalid mentioning {field}, got {:?}",
+                cfg.validate()
+            );
+        }
+    }
+
+    #[test]
+    fn rejects_invalid_atr_settings() {
+        let cases = [
             (
                 Config {
                     atr_sl_multiplier: Decimal::ZERO,
@@ -199,13 +203,9 @@ mod tests {
                 "atr_sl_max_pct",
             ),
         ];
-
         for (cfg, field) in cases {
             assert!(
-                matches!(
-                    cfg.validate(),
-                    Err(Error::ConfigInvalid(message)) if message.contains(field)
-                ),
+                matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains(field)),
                 "expected ConfigInvalid mentioning {field}, got {:?}",
                 cfg.validate()
             );
@@ -213,38 +213,44 @@ mod tests {
     }
 
     #[test]
-    fn accepts_window_at_indicator_minimum() {
-        let need = Config::default().min_window();
-        let cfg = Config {
-            window: need,
+    fn min_window_boundaries_are_exact() {
+        let off = Config {
+            atr_enabled: false,
+            atr_period: 50,
+            rsi_period: 21,
+            window: 23,
             ..Config::default()
         };
-        assert_eq!(cfg.validate(), Ok(()));
-    }
-
-    #[test]
-    fn rejects_window_below_indicator_minimum() {
-        let need = Config::default().min_window();
-        let cfg = Config {
-            window: need - 1,
-            ..Config::default()
-        };
+        assert_eq!(off.min_window(), 23);
+        assert!(off.validate().is_ok());
+        let below = Config { window: 22, ..off };
         assert!(matches!(
-            cfg.validate(),
-            Err(Error::WindowTooShort {
-                need: expected_need,
-                got: expected_got,
-            }) if expected_need == need && expected_got == need - 1
+            below.validate(),
+            Err(Error::WindowTooShort { need: 23, got: 22 })
+        ));
+
+        let on = Config {
+            atr_enabled: true,
+            atr_period: 50,
+            rsi_period: 21,
+            window: 52,
+            ..Config::default()
+        };
+        assert_eq!(on.min_window(), 52);
+        assert!(on.validate().is_ok());
+        let on_below = Config { window: 51, ..on };
+        assert!(matches!(
+            on_below.validate(),
+            Err(Error::WindowTooShort { need: 52, got: 51 })
         ));
     }
 
     #[test]
     fn rejects_window_below_hard_floor() {
         let cfg = Config {
+            window: 7,
             rsi_period: 1,
             atr_period: 1,
-            rsi_order: 1,
-            window: 7,
             ..Config::default()
         };
         assert!(matches!(

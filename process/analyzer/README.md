@@ -1,7 +1,20 @@
 # analyzer
 
-Rust RSI-divergence analyzer. **Status: closed — not profitable** (see
-[Research summary](#research-summary)).
+Rust RSI momentum analyzer. **Status: unvalidated — the previous RSI-divergence
+strategy is closed and unprofitable.**
+
+The strategy goes long when RSI crosses above `RSI_LONG_THRESHOLD` (default 60),
+and goes short / exits the long when RSI crosses below `RSI_SHORT_THRESHOLD`
+(default 50). The 60/50 band is hysteresis: RSI between the thresholds holds the
+current position. Defaults are RSI(21) on 4hour candles. ATR-based SL/TP are
+available with `ATR_ENABLED=true`; by default positions have no stop or target and
+exit only on the opposite RSI cross.
+
+Research basis: buying strength (RSI above 60) with a slower RSI on 4hour bars was
+the only robust RSI family in recent crypto tests; classic 30/70 mean reversion
+underperformed. A 2017-2025 hourly crypto study found all RSI variants, including
+momentum, underperformed buy-and-hold after costs, so this strategy is not a
+profitability claim.
 
 The crate has three layers:
 
@@ -45,7 +58,7 @@ how often activation is refreshed (default 30000).
 ```bash
 ANALYZER_ONCE=1 \
 GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
-LIVE_SYMBOLS=BTC-USDT KUCOIN_TIMEFRAME=15min \
+LIVE_SYMBOLS=BTC-USDT KUCOIN_TIMEFRAME=4hour \
 cargo run -p analyzer --features grpc --bin analyzer-serve
 ```
 
@@ -62,7 +75,7 @@ of calling KuCoin, while missing symbols are still fetched live.
 
 ```bash
 cargo run -p analyzer --features harness --bin analyzer-replay -- \
-  --symbol BTC-USDT --timeframe 15min --limit 500 \
+  --symbol BTC-USDT --timeframe 4hour --limit 500 \
   --out process/analyzer/out/replay.html
 
 # Offline / reproducible: fixed fixtures, cutoff, and report timestamp.
@@ -81,7 +94,7 @@ Run from `process/analyzer` so relative fixture paths resolve; from the workspac
   are used; if there are none, `BENCHMARK_TICKERS` is used.
 - `--data SYMBOL=path` loads a CSV for that symbol instead of calling KuCoin. Entries are
   trimmed and deduplicated by symbol.
-- `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `15min`.
+- `--timeframe` falls back to `KUCOIN_TIMEFRAME`, then `4hour`.
 - `--limit` (default 500) is the fetch request size. Offline `--data` replays every closed row.
 - `--init-fund` falls back to `BENCHMARK_INIT_FUND`, then `1000`; must be `> 0`.
 - `--as-of` is the reference time in ms (default now). For network runs it sets the fetch cutoff;
@@ -93,20 +106,47 @@ Run from `process/analyzer` so relative fixture paths resolve; from the workspac
 If at least one symbol succeeds the report is written and the process exits `0`; partial failures
 are recorded in the report. If all symbols fail the process exits non-zero and writes nothing.
 
-The remaining strategy settings (`RSI_*`, `SMA_*`, `ATR_*`, `PRICE_DIFF_THRESHOLD`,
-`ANALYZER_WINDOW_CANDLES`, `ANALYZER_MAX_DIVERGENCE_AGE_CANDLES`) come from the same `.env`; see
-`.env.example`. `KUCOIN_BASE_URL` overrides the exchange endpoint and `ANALYZER_CANDLE_SETTLE_MS`
+The strategy settings (`KUCOIN_TIMEFRAME`, `RSI_PERIOD`, `RSI_LONG_THRESHOLD`,
+`RSI_SHORT_THRESHOLD`, `ATR_ENABLED`, `ATR_*`, `ANALYZER_WINDOW_CANDLES`) come from the same
+`.env`; see `.env.example`:
+
+```dotenv
+KUCOIN_TIMEFRAME=4hour
+RSI_PERIOD=21
+RSI_LONG_THRESHOLD=60
+RSI_SHORT_THRESHOLD=50
+ATR_ENABLED=false
+ATR_PERIOD=14
+ATR_SL_MULTIPLIER=2.0
+ATR_TP_MULTIPLIER=3.0
+ATR_PCT_HIGH=5.0
+ATR_HIGH_ADJUST=1.5
+ATR_SL_MAX_PCT=0.0
+ANALYZER_WINDOW_CANDLES=100
+```
+
+`ATR_ENABLED=false` by default; set it to `true` to emit ATR-based SL/TP using the `ATR_*`
+values. `KUCOIN_BASE_URL` overrides the exchange endpoint and `ANALYZER_CANDLE_SETTLE_MS`
 controls the closed-candle boundary (default `5000`).
 
-## Research summary
+## Current strategy screening (2026-10-23)
 
-The strategy was evaluated on BTC/ETH/SOL with chronological validation/holdout splits and
-realistic costs. The pre-registered one-shot confirmation failed, so the strategy is closed.
-Full artifacts live under `experiments/`.
+[RSI momentum screening](experiments/rsi-momentum/README.md) — 4hour, BTC/ETH/SOL,
+12 months, 30 of 432 candidates sampled. **Insufficient evidence**: no candidate met the
+validation criteria; the baseline (RSI 21 / 60:50, ATR off) had net expectancy −13.77 and
+profit factor 0.09 over 34 validation trades. No holdout was scored because no candidate
+was frozen.
+
+## Research summary (historical RSI-divergence strategy — closed)
+
+The table below summarizes the closed RSI-divergence strategy. It does not
+evaluate the current RSI momentum defaults.
+
+Full artifacts from the previous strategy live under `experiments/`.
 
 | Experiment                                             | Scope                                                                     | Result                                                                                                                                 |
 | ------------------------------------------------------ | ------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | [Sweep](experiments/sweep/report.md)                   | 648-point grid sampled to 30 candidates, 1hour + 4hour, base/stress costs | **Insufficient evidence** — no candidate cleared validation on every timeframe.                                                        |
 | [Cost ladder](experiments/cost-ladder/report.md)       | 4hour, 0–30 bps/side                                                      | Holdout gross edge exists but sits below realistic costs; best break-even **6.86 bps/side**. No viable path without execution changes. |
-| [Execution modelling](experiments/execution/report.md) | market vs limit/retest entries                                            | Nominal rescue for `max_age=4` + `retest_2c_b2`, but holdout edge is within noise and the holdout had been reused.                     |
+| [Execution modelling](experiments/execution/report.md) | market vs limit/retest entries                                            | Nominal rescue for a retest-entry model, but the holdout edge is within noise and the holdout had been reused.                         |
 | [Fresh confirmation](experiments/confirm/report.md)    | Pre-registered one-shot, 4hour, 2022-11 → 2024-10                         | **Failed** — pooled net expectancy −2.15, PF 0.80, 0/3 symbols positive.                                                               |

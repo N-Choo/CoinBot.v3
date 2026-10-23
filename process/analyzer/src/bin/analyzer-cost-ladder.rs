@@ -261,7 +261,6 @@ fn evaluate_candidates(
             let result = evaluate_config(
                 dataset,
                 &candidate.to_config(),
-                candidate.max_age,
                 &splits,
                 WINDOW,
                 init_fund,

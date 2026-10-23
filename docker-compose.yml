@@ -207,7 +207,7 @@ services:
     environment:
       - RUST_LOG=debug
       - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-15min}
+      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-4hour}
       - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
     depends_on:
       - trade-engine

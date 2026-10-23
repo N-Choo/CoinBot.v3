@@ -72,8 +72,8 @@ impl TradeOrders {
         comment: &str,
         requested_qty: Decimal,
         funds: Decimal,
-        tp_price: Decimal,
-        sl_price: Decimal,
+        tp_price: Option<Decimal>,
+        sl_price: Option<Decimal>,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds, tp_price, sl_price)
@@ -128,10 +128,12 @@ impl TradeOrders {
 
     /// Reserve an exit for `entry` *before* it is sent to the exchange.
     ///
-    /// Inserts a `pending` close row linked via `parent_order_id`, so a crash or
-    /// retry cannot place a second exit for the same position (the partial
-    /// unique index rejects a second live exit). Returns `None` when a live
-    /// exit already exists. The caller marks it placed or failed.
+    /// Inserts a `pending` close row linked via `parent_order_id`, but only when
+    /// `entry` is still a filled open position and no live or settled close
+    /// exists for it. The `INSERT ... SELECT` check makes this atomic against a
+    /// periodic exit loop settling the position between `held_entries` and this
+    /// call. Returns `None` when the entry is no longer closable. The caller
+    /// marks the row placed or failed.
     pub async fn reserve_exit(
         pool: &PgPool,
         entry: &TradeOrder,
@@ -144,7 +146,16 @@ impl TradeOrders {
             r#"INSERT INTO trade_orders
                    (contract_id, user_uid, ticker, side, action, comment, status,
                     requested_qty, funds, parent_order_id)
-               VALUES ($1, $2, $3, $4, 'close', $5, 'pending', $6, $7, $8)
+               SELECT $1, $2, $3, $4, 'close', $5, 'pending', $6, $7, $8
+               WHERE EXISTS (
+                   SELECT 1 FROM trade_orders p
+                   WHERE p.id = $8 AND p.action = 'open' AND p.status = 'filled'
+               )
+                 AND NOT EXISTS (
+                   SELECT 1 FROM trade_orders c
+                   WHERE c.parent_order_id = $8
+                     AND c.status IN ('pending', 'open', 'filled')
+               )
                ON CONFLICT DO NOTHING
                RETURNING *"#,
         )
@@ -157,6 +168,37 @@ impl TradeOrders {
         .bind(funds)
         .bind(entry.id)
         .fetch_optional(pool)
+        .await
+    }
+
+    /// Whether `contract_id` has an entry or close still working at the exchange.
+    ///
+    /// True when an `open` order is `pending`/`open`, or a filled entry has a
+    /// live (`pending`/`open`) close. Signals must wait while this is true so a
+    /// target-side signal cannot open a second position or hedge a working exit.
+    pub async fn in_flight_for_contract(
+        pool: &PgPool,
+        contract_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar::<_, bool>(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM trade_orders o
+                   WHERE o.contract_id = $1
+                     AND (
+                         (o.action = 'open' AND o.status IN ('pending', 'open'))
+                         OR (
+                             o.action = 'open' AND o.status = 'filled'
+                             AND EXISTS (
+                                 SELECT 1 FROM trade_orders c
+                                 WHERE c.parent_order_id = o.id
+                                   AND c.status IN ('pending', 'open')
+                             )
+                         )
+                     )
+               )"#,
+        )
+        .bind(contract_id)
+        .fetch_one(pool)
         .await
     }
 

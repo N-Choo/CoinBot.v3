@@ -43,7 +43,6 @@ fn baseline_sweep_writes_all_artifacts() {
     let result = evaluate_config(
         &dataset,
         &baseline.to_config(),
-        baseline.max_age,
         &splits,
         100,
         1000,
