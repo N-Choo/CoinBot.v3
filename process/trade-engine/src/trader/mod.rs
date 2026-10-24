@@ -10,7 +10,6 @@ use crate::ledger;
 use kucoin::{client::rest::KuCoinClient, types::market::SymbolInfo};
 use log::{info, warn};
 use order::order_side;
-use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use share::db::trade::{TradeOrder, TradeOrders};
 use share::{ProcessError, db::contracts::Contract, models::signals::TradeSignal};
@@ -40,20 +39,6 @@ fn position_action(held_sides: &[&str], target_side: &str) -> PositionAction {
         PositionAction::AlreadyTarget
     } else {
         PositionAction::CloseOpposite
-    }
-}
-
-/// Map a wire level (`0.0` means "no level") to an optional price.
-///
-/// Returns `None` for values that are not a usable price (negative, NaN, or
-/// infinite); callers reject the signal in that case.
-fn optional_level(value: f64) -> Option<Option<Decimal>> {
-    if value == 0.0 {
-        Some(None)
-    } else if !value.is_finite() || value < 0.0 {
-        None
-    } else {
-        to_decimal(value).map(Some)
     }
 }
 
@@ -104,20 +89,6 @@ pub async fn execute(
         warn!(
             "[TRADE] {} skipped | unparseable quantity '{quantity}'",
             c.ticker
-        );
-        return Ok(());
-    };
-    let Some(tp_dec) = optional_level(signal.tp_price) else {
-        warn!(
-            "[TRADE] {} skipped | invalid tp_price {}",
-            c.ticker, signal.tp_price
-        );
-        return Ok(());
-    };
-    let Some(sl_dec) = optional_level(signal.sl_price) else {
-        warn!(
-            "[TRADE] {} skipped | invalid sl_price {}",
-            c.ticker, signal.sl_price
         );
         return Ok(());
     };
@@ -176,17 +147,8 @@ pub async fn execute(
         }
     }
 
-    let order = ledger::create_pending_open(
-        pool,
-        c,
-        side_str,
-        &comment,
-        quantity_dec,
-        trade_fund,
-        tp_dec,
-        sl_dec,
-    )
-    .await?;
+    let order =
+        ledger::create_pending_open(pool, c, side_str, &comment, quantity_dec, trade_fund).await?;
 
     // Signal entries always open a position.
     let request = margin_market_order(&ticker, side, quantity.clone(), &comment, OrderIntent::Open);
@@ -273,22 +235,5 @@ mod tests {
             position_action(&["buy", "sell"], "sell"),
             PositionAction::CloseOpposite
         );
-    }
-
-    #[test]
-    fn wire_zero_means_no_level() {
-        assert_eq!(optional_level(0.0), Some(None));
-    }
-
-    #[test]
-    fn valid_level_is_converted() {
-        assert_eq!(optional_level(110.0), Some(Some(Decimal::from(110))));
-    }
-
-    #[test]
-    fn invalid_levels_are_rejected() {
-        assert_eq!(optional_level(-1.0), None);
-        assert_eq!(optional_level(f64::NAN), None);
-        assert_eq!(optional_level(f64::INFINITY), None);
     }
 }

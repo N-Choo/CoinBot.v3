@@ -11,10 +11,9 @@ message Signal {
   uint64 seq = 6;             // global monotonic counter, assigned at emission
   int64 expires_at_ms = 7;    // emission time + TTL; the engine ignores a signal after this.
   int64 trigger_time_ms = 8;  // touching-tick time — the strategy event time
-  double sl_price = 9;        // stop loss
-  double tp_price = 10;       // take profit
-  string zone_id = 11;        // originating supply/demand zone id
-  string reason = 12;         // e.g. "supply_demand_4h rr=<gross_rr> mode=<target_mode>"
+  reserved 9, 10;
+  string zone_id = 11;        // currently always empty
+  string reason = 12;         // e.g. "rsi_long_cross" or "rsi_short_cross"
 }
 
 message Empty {}

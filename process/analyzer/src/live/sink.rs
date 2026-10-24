@@ -12,12 +12,10 @@ impl Sink {
     pub fn publish(&self, signal: Signal) {
         match self {
             Sink::Log => log::info!(
-                "SIGNAL symbol={} action={:?} entry={} sl={:?} tp={:?} reason={}",
+                "SIGNAL symbol={} action={:?} entry={} reason={}",
                 signal.ticker,
                 signal.action,
                 signal.entry_price,
-                signal.sl_price,
-                signal.tp_price,
                 signal.reason
             ),
             Sink::Channel(tx) => {

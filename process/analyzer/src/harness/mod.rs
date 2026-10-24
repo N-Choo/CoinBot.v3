@@ -1,6 +1,17 @@
+pub mod atr_experiment;
 pub mod dataset;
+pub mod donchian;
+pub mod donchian_report;
+pub mod experiment;
+pub mod experiment_report;
+pub mod percent_momentum;
 pub mod replay;
 pub mod report;
 pub mod sim;
 pub mod stats;
 pub mod sweep;
+pub mod ts_momentum_backtest;
+pub mod ts_momentum_report;
+pub mod ts_momentum_walkforward;
+pub mod walkforward;
+pub mod walkforward_report;

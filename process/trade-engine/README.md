@@ -7,20 +7,18 @@ Rust process that turns analyzer signals into KuCoin cross-margin orders and kee
 
 ## Components
 
-Three background tasks, spawned in `src/main.rs`:
+Two background tasks, spawned in `src/main.rs`:
 
-| Task            | Entry                 | Purpose                                                                  |
-| --------------- | --------------------- | ------------------------------------------------------------------------ |
-| gRPC server     | `grpc_handler::serve` | serves `EngineService`; the analyzer pulls symbols and publishes signals |
-| Reconciler      | `reconciler::run`     | every 30s, resolves pending orders and settles open orders and funds     |
-| Position exit   | `position_exit::run`  | every 12s, exits held positions at TP or SL (backs off on 429)           |
+| Task        | Entry                 | Purpose                                                                  |
+| ----------- | --------------------- | ------------------------------------------------------------------------ |
+| gRPC server | `grpc_handler::serve` | serves `EngineService`; the analyzer pulls symbols and publishes signals |
+| Reconciler  | `reconciler::run`     | every 30s, resolves pending orders and settles open orders and funds     |
 
 `signals::signal_handler` verifies and executes each published signal; the gRPC server calls it for every `Publish`.
 
 Terms:
 
 - **clientOid**: client order id sent with each order (stored in `trade_orders.comment`). Finds orders whose exchange id was never received.
-- **TP / SL**: take-profit and stop-loss prices, from the signal.
 - **Order status**: `pending` (no exchange id yet), `open` (accepted by KuCoin). `filled`, `cancelled`, `failed` are final.
 - **Fill VWAP** (`fill_price`): `deal_funds / deal_size`.
 
@@ -32,7 +30,7 @@ Modules (`src/`):
 - `trader/`: signal to order (`mod`, `order`, `sizing`)
 - `ledger/`: only writer of order rows and contract funds (`orders`, `funds`)
 - `reconciler/`: settlement (`pending`, `settle`, `pnl`, `exchange`)
-- `position_exit/`: TP/SL polling and exits (`mod`, `decision`, `price`, `exit`)
+- `position_exit/`: signal-driven market exits (`mod`, `exit`)
 - `app_state.rs`: DB pool and KuCoin client
 - `app_config.rs`: env config (secrets redacted in Debug)
 - `symbol.rs`: `margin_symbol()`
@@ -83,8 +81,7 @@ flowchart LR
     RC -->|"read pending / open orders"| PG
     RC -->|"order status lookups"| KC
     RC -->|"settlement writes"| LG
-    PX -->|"read held positions"| PG
-    PX -->|"get_last_price · place_order"| KC
+    PX -->|"place_order"| KC
     PX -->|"exit writes"| LG
     LG -->|"SQL (sqlx pool)"| PG
 ```
@@ -103,11 +100,10 @@ Exact calls behind the ledger edges:
 | RPC                | Direction         | Payload                                                                                                              |
 | ------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
 | `GetActiveSymbols` | analyzer → engine | returns the distinct tickers of active contracts                                                                     |
-| `Publish`          | analyzer → engine | `Signal { ticker, action, entry_price, signal_id, seq, expires_at_ms, trigger_time_ms, sl_price, tp_price, reason }` |
+| `Publish`          | analyzer → engine | `Signal { ticker, action, entry_price, signal_id, seq, expires_at_ms, trigger_time_ms, reason }` |
 
 - `action` is uppercased; anything other than `BUY` or `SELL` is logged and ignored.
 - `Publish` deduplicates on `signal_id` for the process lifetime and returns an `Ack`.
-- `sl_price`/`tp_price` of zero mean "no protective level".
 - `BUY`/`SELL` are target-side: the engine closes an opposite held entry before opening the target side.
 
 ## Signal → execution
@@ -127,7 +123,7 @@ sequenceDiagram
     TE-->>A: tickers
     A->>K: fetch klines per ticker
     K-->>A: klines
-    A->>A: RSI / ATR → target-side signals
+    A->>A: RSI → target-side signals
     A->>TE: Publish(Signal)
     Note over TE: dedup on signal_id
     TE->>DB: verify contract + wallet
@@ -248,32 +244,22 @@ Settlement rules:
 - **Idempotent:** `mark_filled` and `mark_cancelled` update only `open` rows. A repeat settle fails its transaction and is logged.
 - **Caveat:** a partly filled, then cancelled order settles as a full fill at the partial `deal_size`.
 
-## Position exit (TP/SL and reversals)
+## Position exit (reversals)
 
-The TP/SL loop below is separate from signal-driven reversals: `trader::execute` closes an
-opposite held entry through `position_exit::close_at_market` before opening the target side.
+Positions exit only on an opposite target-side signal: `trader::execute` closes an opposite
+held entry through `position_exit::close_at_market` before opening the target side.
 
 **Operator note.** A pre-existing hedged position (both target and opposite legs held) is
 recovered by the first target-side signal: the engine closes the opposite leg and does not
 open another target position. Duplicate-close prevention is atomic.
 
-Every 12 seconds, `position_exit::run` performs one sweep:
+An exit (`exit_position`):
 
-1. **Load held positions:** `action = 'open'` and `status = 'filled'`, with no live exit. Live = a close row that is `open` or `filled`, or `pending` under 5 minutes old. Failed or cancelled exits do not block a retry.
-2. **Fetch prices:** `GET /api/v1/market/orderbook/level1`, once per distinct held symbol. Any failure aborts the sweep.
-3. **Decide:** compare last price with stored `tp_price` / `sl_price`. Skip positions missing either.
-   - entry `buy`: exit when `last ≥ tp` (TP) or `last ≤ sl` (SL)
-   - entry `sell`: exit when `last ≤ tp` (TP) or `last ≥ sl` (SL)
-
-   TP is checked first. Other sides never exit.
-4. **Exit** (`exit_position`):
-   - **Reserve:** `ledger::reserve_exit` inserts a `pending` close row (`parent_order_id` set, new UUID clientOid). Moves no fund. No row returned → live exit exists, skip.
-   - **Place:** opposite-side market order via `place_order`.
-   - **Transport error:** row stays `pending`; reconciler resolves by clientOid.
-   - **Rejected:** `ledger::record_failed` stores code and message. Eligible again next sweep.
-   - **Accepted:** `ledger::record_placed` stores the exchange id.
-
-**Backoff.** On `429 Too Many Requests` from the price request, the sweep stops and places no exits. Waits: 30, 60, 120, 240, then 300 seconds. A successful sweep resets the wait to 12 seconds. Other errors neither reset nor extend it. A 429 on `place_order` is an ordinary exit failure.
+- **Reserve:** `ledger::reserve_exit` inserts a `pending` close row (`parent_order_id` set, new UUID clientOid). Moves no fund. No row returned → live exit exists, skip.
+- **Place:** opposite-side market order via `place_order`.
+- **Transport error:** row stays `pending`; reconciler resolves by clientOid.
+- **Rejected:** `ledger::record_failed` stores code and message. Eligible again on the next opposite target-side signal.
+- **Accepted:** `ledger::record_placed` stores the exchange id.
 
 **One live exit per position.** Migration `process/migrations/20261016_order_reconcile_and_deposit_sweep.sql` creates partial unique index `idx_trade_orders_active_close` (at most one `pending` or `open` close row per entry). `reserve_exit` uses `ON CONFLICT DO NOTHING`; a conflict returns no row and the position is skipped. Blocks duplicate exits across engine instances. The reservation also requires the parent entry to still be `filled` and no close in `pending`/`open`/`filled` to exist, so a position settling between `held_entries` and `reserve_exit` cannot be closed twice.
 

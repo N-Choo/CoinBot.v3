@@ -10,8 +10,6 @@ fn sample() -> Signal {
         confidence: Decimal::ONE,
         entry_price: Decimal::from(100),
         reason: "rsi_long_cross".into(),
-        sl_price: None,
-        tp_price: None,
         signal_candle_open_time_ms: 1_700_086_400_000,
     }
 }
@@ -34,34 +32,6 @@ fn config_version_changes_with_strategy_fields() {
         },
         Config {
             rsi_short_threshold: Decimal::from(49),
-            ..Config::default()
-        },
-        Config {
-            atr_enabled: true,
-            ..Config::default()
-        },
-        Config {
-            atr_period: 15,
-            ..Config::default()
-        },
-        Config {
-            atr_sl_multiplier: Decimal::new(21, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_tp_multiplier: Decimal::new(31, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_pct_high: Decimal::new(51, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_high_adjust: Decimal::new(16, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_sl_max_pct: Decimal::new(1, 1),
             ..Config::default()
         },
     ];

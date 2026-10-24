@@ -11,10 +11,6 @@ pub struct TradeSignal {
     pub confidence: f64,
     /// Suggested entry price.
     pub entry_price: f64,
-    /// Stop-loss price.
-    pub sl_price: f64,
-    /// Take-profit price.
-    pub tp_price: f64,
     /// Human-readable rationale.
     pub reason: String,
 }
@@ -23,13 +19,11 @@ impl TradeSignal {
     /// Log a one-line summary of the signal.
     pub fn log(&self) {
         log::info!(
-            "signal: {} {} conf={:.1} entry=${:.2} sl=${:.2} tp=${:.2} ({})",
+            "signal: {} {} conf={:.1} entry=${:.2} ({})",
             self.ticker,
             self.action,
             self.confidence,
             self.entry_price,
-            self.sl_price,
-            self.tp_price,
             self.reason
         );
     }

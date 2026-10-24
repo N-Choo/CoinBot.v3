@@ -8,7 +8,6 @@ use share::db::trade::TradeOrder;
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
-use super::decision::ExitReason;
 use crate::ledger;
 use crate::symbol::margin_symbol;
 
@@ -17,7 +16,6 @@ pub(crate) async fn exit_position(
     pool: &Pool<Postgres>,
     kcc: &KuCoinClient,
     entry: &TradeOrder,
-    reason: ExitReason,
     last: Decimal,
 ) -> Result<(), String> {
     let (exit_side, side_str) = match entry.side.as_str() {
@@ -81,11 +79,8 @@ pub(crate) async fn exit_position(
         .map_err(|e| format!("mark_placed failed: {e}"))?;
 
     info!(
-        "[EXIT] {} {} exit for order {} -> {}",
-        entry.ticker,
-        reason.label(),
-        entry.id,
-        data.order_id
+        "[EXIT] {} REVERSAL exit for order {} -> {}",
+        entry.ticker, entry.id, data.order_id
     );
     Ok(())
 }

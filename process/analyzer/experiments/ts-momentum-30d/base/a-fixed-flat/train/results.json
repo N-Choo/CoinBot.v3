@@ -1,0 +1,609 @@
+{
+  "symbol": "BTC-USDT",
+  "timeframe": "1day",
+  "generated_at": "2026-10-23T00:00:00Z",
+  "dataset": {
+    "symbol": "BTC-USDT",
+    "timeframe": "1day",
+    "requested_first_ms": 1635033600000,
+    "requested_last_ms": 1792713600000,
+    "first_open_time_ms": 1635033600000,
+    "last_open_time_ms": 1792540800000,
+    "candles": 1824,
+    "requested_candles": 1826,
+    "expected_candles": 1824,
+    "missing_candles": 0,
+    "duplicates_dropped": 0,
+    "pages": 2,
+    "fetched_at_ms": 1792804300168,
+    "settle_ms": 5000,
+    "content_sha256": "652cffe669ec32a0a4ab541f49d10eded5678070d6e5d6243338ad31230bd0fa"
+  },
+  "config": {
+    "momentum_lookback_days": 30,
+    "volatility_lookback_days": 30,
+    "target_annualized_volatility": "0.20",
+    "annualization_days": 365,
+    "max_exposure": "1",
+    "min_exposure": "0",
+    "negative_momentum_mode": "Flat"
+  },
+  "run": {
+    "scenario": {
+      "label": "base",
+      "fee_bps": "10",
+      "slip_bps": "5"
+    },
+    "variant": "Fixed",
+    "mode": "Flat",
+    "split": {
+      "name": "Train",
+      "start": 0,
+      "end": 1094
+    },
+    "split_start_time": "2021-10-24",
+    "split_end_time": "2024-10-21",
+    "candles": 1094,
+    "init_fund": "1000",
+    "borrow_bps_per_day": "0",
+    "max_drawdown": "0.20",
+    "drawdown_resume": "0.10",
+    "metrics": {
+      "days": 1094,
+      "net_cumulative_return": 0.5435822597898974,
+      "cagr": 0.15584793943489128,
+      "max_drawdown": 0.42981702755662204,
+      "sharpe": 0.5876316319637344,
+      "sortino": 0.9055558272454842,
+      "win_rate": 0.38636363636363635,
+      "trades": 44,
+      "avg_holding_days": 12.227272727272727,
+      "turnover": 98.63945909051587,
+      "total_trading_costs": "147.95918863577380486411419512",
+      "total_borrow_costs": "0",
+      "avg_exposure": 0.49177330895795246,
+      "avg_abs_exposure": 0.49177330895795246,
+      "exposure_days": 538,
+      "bull": {
+        "days": 516,
+        "cumulative_return": 2.1119735185634148,
+        "cagr": 1.2323177338319642,
+        "sharpe": 2.1275940587937234,
+        "sortino": 3.6959133775091284,
+        "max_drawdown": 0.16364256911021124,
+        "avg_exposure": 0.6763565891472868,
+        "avg_abs_exposure": 0.6763565891472868
+      },
+      "bear": {
+        "days": 379,
+        "cumulative_return": -0.3214251656959587,
+        "cagr": -0.311635582543178,
+        "sharpe": -1.2397271017252305,
+        "sortino": -1.6537149698572617,
+        "max_drawdown": 0.43094341786452744,
+        "avg_exposure": 0.36939313984168864,
+        "avg_abs_exposure": 0.36939313984168864
+      },
+      "unknown_regime": {
+        "days": 199,
+        "cumulative_return": -0.2690357506376646,
+        "cagr": -0.43718941000468203,
+        "sharpe": -1.9716532261107258,
+        "sortino": -2.300666674467973,
+        "max_drawdown": 0.30060221986832564,
+        "avg_exposure": 0.24623115577889448,
+        "avg_abs_exposure": 0.24623115577889448
+      }
+    },
+    "benchmark": {
+      "days": 1094,
+      "net_cumulative_return": 0.09588400414503662,
+      "cagr": 0.031019735689868932,
+      "max_drawdown": 0.7662699323798873,
+      "sharpe": 0.33083782052369104,
+      "sortino": 0.475658143040979,
+      "win_rate": 1.0,
+      "trades": 1,
+      "avg_holding_days": 1094.0,
+      "turnover": 2.0975302995944283,
+      "total_trading_costs": "3.1462954493916425488040041628",
+      "total_borrow_costs": "0",
+      "avg_exposure": 1.0,
+      "avg_abs_exposure": 1.0,
+      "exposure_days": 1094,
+      "bull": {
+        "days": 516,
+        "cumulative_return": 3.5704863219855154,
+        "cagr": 1.9297723623249143,
+        "sharpe": 2.421855439501906,
+        "sortino": 4.129174427160653,
+        "max_drawdown": 0.2015870691766751,
+        "avg_exposure": 1.0,
+        "avg_abs_exposure": 1.0
+      },
+      "bear": {
+        "days": 379,
+        "cumulative_return": -0.5254206141613335,
+        "cagr": -0.5121730398686398,
+        "sharpe": -0.9962369742950091,
+        "sortino": -1.312868903283172,
+        "max_drawdown": 0.581185121369996,
+        "avg_exposure": 1.0,
+        "avg_abs_exposure": 1.0
+      },
+      "unknown_regime": {
+        "days": 199,
+        "cumulative_return": -0.49476514449509057,
+        "cagr": -0.7141382416714855,
+        "sharpe": -1.6077705049027984,
+        "sortino": -2.117970488337352,
+        "max_drawdown": 0.5542982839452222,
+        "avg_exposure": 1.0,
+        "avg_abs_exposure": 1.0
+      }
+    },
+    "trades": [
+      {
+        "side": "Long",
+        "entry_index": 106,
+        "exit_index": 111,
+        "entry_time_ms": 1644192000000,
+        "exit_time_ms": 1644624000000,
+        "pnl": "-3.5786220780614603677809543",
+        "holding_days": 5,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 115,
+        "exit_index": 117,
+        "entry_time_ms": 1644969600000,
+        "exit_time_ms": 1645142400000,
+        "pnl": "-93.4143467422232647186734392",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 120,
+        "exit_index": 127,
+        "entry_time_ms": 1645401600000,
+        "exit_time_ms": 1646006400000,
+        "pnl": "-18.5009449863680039105428798",
+        "holding_days": 7,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 128,
+        "exit_index": 134,
+        "entry_time_ms": 1646092800000,
+        "exit_time_ms": 1646611200000,
+        "pnl": "-99.78567897580557630023575532",
+        "holding_days": 6,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 147,
+        "exit_index": 174,
+        "entry_time_ms": 1647734400000,
+        "exit_time_ms": 1650067200000,
+        "pnl": "-33.08914243314545759723899224",
+        "holding_days": 27,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 178,
+        "exit_index": 180,
+        "entry_time_ms": 1650412800000,
+        "exit_time_ms": 1650585600000,
+        "pnl": "-20.66701542206084849566522036",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 228,
+        "exit_index": 229,
+        "entry_time_ms": 1654732800000,
+        "exit_time_ms": 1654819200000,
+        "pnl": "-4.54609030468310649236167560",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 266,
+        "exit_index": 275,
+        "entry_time_ms": 1658016000000,
+        "exit_time_ms": 1658793600000,
+        "pnl": "1.80715022693562799067431083",
+        "holding_days": 9,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 276,
+        "exit_index": 299,
+        "entry_time_ms": 1658880000000,
+        "exit_time_ms": 1660867200000,
+        "pnl": "63.97545903943065867732099412",
+        "holding_days": 23,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 305,
+        "exit_index": 307,
+        "entry_time_ms": 1661385600000,
+        "exit_time_ms": 1661558400000,
+        "pnl": "-44.02748704113796328537049711",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 346,
+        "exit_index": 351,
+        "entry_time_ms": 1664928000000,
+        "exit_time_ms": 1665360000000,
+        "pnl": "-35.12138408289704417855501491",
+        "holding_days": 5,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 362,
+        "exit_index": 364,
+        "entry_time_ms": 1666310400000,
+        "exit_time_ms": 1666483200000,
+        "pnl": "3.85803986698662590866467411",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 365,
+        "exit_index": 376,
+        "entry_time_ms": 1666569600000,
+        "exit_time_ms": 1667520000000,
+        "pnl": "21.21368765900718081026708162",
+        "holding_days": 11,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 377,
+        "exit_index": 381,
+        "entry_time_ms": 1667606400000,
+        "exit_time_ms": 1667952000000,
+        "pnl": "-92.55183088742938237131743962",
+        "holding_days": 4,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 412,
+        "exit_index": 413,
+        "entry_time_ms": 1670630400000,
+        "exit_time_ms": 1670716800000,
+        "pnl": "-1.89016683706268054736165975",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 414,
+        "exit_index": 419,
+        "entry_time_ms": 1670803200000,
+        "exit_time_ms": 1671235200000,
+        "pnl": "-18.99750970535650556299843274",
+        "holding_days": 5,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 420,
+        "exit_index": 422,
+        "entry_time_ms": 1671321600000,
+        "exit_time_ms": 1671494400000,
+        "pnl": "-14.40452780244042433625138513",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 423,
+        "exit_index": 433,
+        "entry_time_ms": 1671580800000,
+        "exit_time_ms": 1672444800000,
+        "pnl": "-12.24223606539614511626059780",
+        "holding_days": 10,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 440,
+        "exit_index": 441,
+        "entry_time_ms": 1673049600000,
+        "exit_time_ms": 1673136000000,
+        "pnl": "-2.11986513887860222534638050",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 442,
+        "exit_index": 493,
+        "entry_time_ms": 1673222400000,
+        "exit_time_ms": 1677628800000,
+        "pnl": "206.84543463977171394423527050",
+        "holding_days": 51,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 494,
+        "exit_index": 496,
+        "entry_time_ms": 1677715200000,
+        "exit_time_ms": 1677888000000,
+        "pnl": "-45.67265451813325315902360756",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 505,
+        "exit_index": 546,
+        "entry_time_ms": 1678665600000,
+        "exit_time_ms": 1682208000000,
+        "pnl": "197.13612863201634543630336876",
+        "holding_days": 41,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 547,
+        "exit_index": 555,
+        "entry_time_ms": 1682294400000,
+        "exit_time_ms": 1682985600000,
+        "pnl": "13.6580324263308062298070710",
+        "holding_days": 8,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 556,
+        "exit_index": 562,
+        "entry_time_ms": 1683072000000,
+        "exit_time_ms": 1683590400000,
+        "pnl": "-36.5991326982350547456940590",
+        "holding_days": 6,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 605,
+        "exit_index": 636,
+        "entry_time_ms": 1687305600000,
+        "exit_time_ms": 1689984000000,
+        "pnl": "49.4828064344501677815619799",
+        "holding_days": 31,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 694,
+        "exit_index": 705,
+        "entry_time_ms": 1694995200000,
+        "exit_time_ms": 1695945600000,
+        "pnl": "15.2444901300382627568317836",
+        "holding_days": 11,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 707,
+        "exit_index": 806,
+        "entry_time_ms": 1696118400000,
+        "exit_time_ms": 1704672000000,
+        "pnl": "621.7863810106891366286501858",
+        "holding_days": 99,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 807,
+        "exit_index": 811,
+        "entry_time_ms": 1704758400000,
+        "exit_time_ms": 1705104000000,
+        "pnl": "-147.9048151414987402334499162",
+        "holding_days": 4,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 814,
+        "exit_index": 817,
+        "entry_time_ms": 1705363200000,
+        "exit_time_ms": 1705622400000,
+        "pnl": "-45.4063204161425416767148878",
+        "holding_days": 3,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 828,
+        "exit_index": 830,
+        "entry_time_ms": 1706572800000,
+        "exit_time_ms": 1706745600000,
+        "pnl": "-27.8695948839363935657177777",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 832,
+        "exit_index": 833,
+        "entry_time_ms": 1706918400000,
+        "exit_time_ms": 1707004800000,
+        "pnl": "-10.2497035786330369567628653",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 839,
+        "exit_index": 893,
+        "entry_time_ms": 1707523200000,
+        "exit_time_ms": 1712188800000,
+        "pnl": "547.8498984391135282421487267",
+        "holding_days": 54,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 894,
+        "exit_index": 900,
+        "entry_time_ms": 1712275200000,
+        "exit_time_ms": 1712793600000,
+        "pnl": "54.6460943368240749779089700",
+        "holding_days": 6,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 908,
+        "exit_index": 909,
+        "entry_time_ms": 1713484800000,
+        "exit_time_ms": 1713571200000,
+        "pnl": "4.7563065482554596163745775",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 911,
+        "exit_index": 913,
+        "entry_time_ms": 1713744000000,
+        "exit_time_ms": 1713916800000,
+        "pnl": "39.1472075260638123800323261",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 935,
+        "exit_index": 965,
+        "entry_time_ms": 1715817600000,
+        "exit_time_ms": 1718409600000,
+        "pnl": "-11.2422351902801262268872117",
+        "holding_days": 30,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 966,
+        "exit_index": 967,
+        "entry_time_ms": 1718496000000,
+        "exit_time_ms": 1718582400000,
+        "pnl": "7.7016751269424477289980669",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1000,
+        "exit_index": 1017,
+        "entry_time_ms": 1721433600000,
+        "exit_time_ms": 1722902400000,
+        "pnl": "-389.2525364671487311228835381",
+        "holding_days": 17,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1018,
+        "exit_index": 1019,
+        "entry_time_ms": 1722988800000,
+        "exit_time_ms": 1723075200000,
+        "pnl": "-30.7047916866923208337714801",
+        "holding_days": 1,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1020,
+        "exit_index": 1025,
+        "entry_time_ms": 1723161600000,
+        "exit_time_ms": 1723593600000,
+        "pnl": "-33.4066412075257782946287563",
+        "holding_days": 5,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1047,
+        "exit_index": 1049,
+        "entry_time_ms": 1725494400000,
+        "exit_time_ms": 1725667200000,
+        "pnl": "-113.5133130415936453991526442",
+        "holding_days": 2,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1056,
+        "exit_index": 1059,
+        "entry_time_ms": 1726272000000,
+        "exit_time_ms": 1726531200000,
+        "pnl": "-59.3099600608698713486272062",
+        "holding_days": 3,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1060,
+        "exit_index": 1065,
+        "entry_time_ms": 1726617600000,
+        "exit_time_ms": 1727049600000,
+        "pnl": "71.5996565465157098377179084",
+        "holding_days": 5,
+        "closed_at_end": false
+      },
+      {
+        "side": "Long",
+        "entry_index": 1067,
+        "exit_index": 1094,
+        "entry_time_ms": 1727222400000,
+        "exit_time_ms": 1729468800000,
+        "pnl": "68.9423585941617231796226254",
+        "holding_days": 27,
+        "closed_at_end": true
+      }
+    ],
+    "trading_costs": "147.95918863577380486411419512",
+    "borrow_costs": "0",
+    "traded_notional": "98639.45909051586990940946342",
+    "benchmark_trading_costs": "3.1462954493916425488040041628",
+    "benchmark_traded_notional": "2097.5302995944283658693361085"
+  },
+  "assumptions": [
+    "Signal at a closed candle close; execute at the next open.",
+    "Overnight gap applied at the old exposure, then costs on |target - old| x equity.",
+    "New exposure earns the intraday open-to-close return; maximum exposure is 1.0.",
+    "Borrow cost is charged daily on |short exposure| x equity (default zero).",
+    "Benchmark is full-equity BTC buy-and-hold with one entry and one exit at the same per-side cost."
+  ],
+  "limitations": [
+    "Spot shorting is not supported by the current trade engine. Short-mode results are a backtest-only simulation.",
+    "Signals require 31 closed daily candles (max of momentum and volatility lookback + 1); earlier days are flat.",
+    "The 200-day BTC regime label needs 200 closes and is reported as unknown before that.",
+    "Splits are chronological reporting partitions. No parameter tuning or model selection is performed on them.",
+    "Fees and slippage are modelled as a single per-side rate on traded notional; market impact is not modelled.",
+    "Open episodes at the end of a split are marked at the final close and counted as closed for win-rate reporting without an extra liquidation cost.",
+    "The drawdown variant evaluates the 20%/10% hysteresis on the uncapped variant-B reference equity path so the control can recover while the live portfolio is flat."
+  ]
+}

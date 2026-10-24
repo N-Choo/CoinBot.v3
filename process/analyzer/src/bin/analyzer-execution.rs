@@ -34,7 +34,10 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer/experiments/execution")]
+    #[arg(
+        long,
+        default_value = "process/analyzer/experiments/historical/rsi-divergence-execution"
+    )]
     out_dir: PathBuf,
 
     /// Reference time in milliseconds.
@@ -66,7 +69,6 @@ struct ExecutionRow {
     execution_fill_rate: Decimal,
     expired: usize,
     skipped_funds: usize,
-    invalid_levels: usize,
     same_side: usize,
     trades: usize,
     net_expectancy: Decimal,
@@ -96,7 +98,6 @@ impl ExecutionRow {
             execution_fill_rate: part.execution_fill_rate,
             expired: part.expired,
             skipped_funds: part.skipped_funds,
-            invalid_levels: part.invalid_levels,
             same_side: part.same_side,
             trades: part.metrics.trades,
             net_expectancy: part.metrics.net_expectancy,
@@ -593,14 +594,7 @@ fn format_entry_cost(model: &ExecModel) -> String {
     }
 }
 
-fn format_tp_cost(model: &ExecModel) -> String {
-    match &model.entry {
-        EntryMode::Market => taker_label(model),
-        EntryMode::Limit { .. } => maker_label(model),
-    }
-}
-
-fn format_sl_cost(model: &ExecModel) -> String {
+fn format_exit_cost(model: &ExecModel) -> String {
     taker_label(model)
 }
 
@@ -628,7 +622,7 @@ fn display_profit_factor(value: Option<Decimal>) -> String {
         .unwrap_or_else(|| "-".to_string())
 }
 
-const CSV_COLUMNS: [&str; 19] = [
+const CSV_COLUMNS: [&str; 18] = [
     "candidate",
     "model",
     "symbol_or_pooled",
@@ -639,7 +633,6 @@ const CSV_COLUMNS: [&str; 19] = [
     "execution_fill_rate",
     "expired",
     "skipped_funds",
-    "invalid_levels",
     "same_side",
     "trades",
     "net_expectancy",
@@ -668,7 +661,6 @@ fn write_csv(path: &Path, rows: &[ExecutionRow]) -> Result<(), String> {
             row.execution_fill_rate.to_string(),
             row.expired.to_string(),
             row.skipped_funds.to_string(),
-            row.invalid_levels.to_string(),
             row.same_side.to_string(),
             row.trades.to_string(),
             row.net_expectancy.to_string(),
@@ -913,22 +905,21 @@ fn write_markdown(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "| Model | Entry | Validity | Buffer (bps) | Offset (bps) | Entry cost | TP exit | SL/gap/EOD exit |"
+        "| Model | Entry | Validity | Buffer (bps) | Offset (bps) | Entry cost | Exit cost |"
     )
     .expect("writing to String cannot fail");
-    writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+    writeln!(out, "|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
     for model in models {
         writeln!(
             out,
-            "| {} | {} | {} | {} | {} | {} | {} | {} |",
+            "| {} | {} | {} | {} | {} | {} | {} |",
             model.label,
             format_entry(model),
             format_validity(model),
             format_buffer(model),
             format_offset(model),
             format_entry_cost(model),
-            format_tp_cost(model),
-            format_sl_cost(model)
+            format_exit_cost(model)
         )
         .expect("writing to String cannot fail");
     }
@@ -999,7 +990,7 @@ fn write_markdown(
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by executable orders (signals minus skipped funds and invalid levels); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
+        "A limit model is a candidate only if pooled validation net expectancy is positive, the validation execution fill rate is at least 50%, and it beats `market` on validation net expectancy. The execution fill rate divides by executable orders (signals minus skipped funds and same-side no-ops); the capital fill rate still divides by all signals. It rescues execution only if pooled holdout net expectancy is positive, holdout PF is above 1, and at least two of three symbols are positive on the holdout."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1108,19 +1099,18 @@ fn write_markdown(
     {
         writeln!(
             out,
-            "- `{label}` / `limit_2c_b2` validation: {} signals, {} filled, {} same-side no-ops, {} expired limit orders, {} invalid levels, {} skipped for funds.",
+            "- `{label}` / `limit_2c_b2` validation: {} signals, {} filled, {} same-side no-ops, {} expired limit orders, {} skipped for funds.",
             validation.signals,
             validation.filled,
             validation.same_side,
             validation.expired,
-            validation.invalid_levels,
             validation.skipped_funds
         )
         .expect("writing to String cannot fail");
     }
     writeln!(
         out,
-        "- The filled-vs-signals gap is therefore explained by same-side no-ops, expired limit orders, and invalid levels, not by capacity."
+        "- The filled-vs-signals gap is therefore explained by same-side no-ops and expired limit orders, not by capacity."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");

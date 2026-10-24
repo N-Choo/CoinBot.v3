@@ -4,10 +4,12 @@ use analyzer::driver::{CandleDriver, DriverEvent};
 use analyzer::exchange::timeframes::Timeframe;
 use analyzer::harness::dataset::{load_csv, Dataset};
 use analyzer::harness::replay::{build_replay, Replay, ReplayEvent};
+use analyzer::harness::sim::{simulate, SimSignal};
 use analyzer::identity::{config_version, signal_id};
 use analyzer::strategy::config::Config;
 use analyzer::strategy::indicators::rsi::rsi;
 use analyzer::strategy::types::Signal;
+use rust_decimal::Decimal;
 
 fn fixture(name: &str) -> std::path::PathBuf {
     std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -147,6 +149,54 @@ fn replay_rsi_matches_the_rolling_window() {
             .copied()
             .flatten();
         assert_eq!(replay.rsi[i], expected, "rsi at {i}");
+    }
+}
+
+#[test]
+fn signals_fill_on_the_next_candle_and_trades_carry_pnl() {
+    let cfg = Config::default();
+    let dataset = load_synthetic();
+    let replay = build_replay(&dataset, &cfg).unwrap();
+    let signals: Vec<SimSignal> = replay
+        .signals
+        .iter()
+        .map(|signal| SimSignal {
+            candle_index: signal.candle_index,
+            signal_id: signal.signal_id.clone(),
+            signal: signal.signal.clone(),
+        })
+        .collect();
+    let sim = simulate(&dataset.candles, &signals, 1000, cfg.window);
+
+    assert!(
+        !replay.signals.is_empty(),
+        "synthetic fixture must emit signals"
+    );
+    assert!(!sim.trades.is_empty(), "signals must produce closed trades");
+
+    for trade in &sim.trades {
+        let signal = replay
+            .signals
+            .iter()
+            .find(|signal| signal.signal_id == trade.signal_id)
+            .unwrap_or_else(|| {
+                panic!(
+                    "trade signal {} has no matching replay signal",
+                    trade.signal_id
+                )
+            });
+
+        // A signal is emitted while processing the rolling candle, then filled
+        // at the next candle's open.
+        assert_eq!(
+            trade.entry_index,
+            signal.candle_index + 1,
+            "signal on candle {} must fill on the next candle",
+            signal.candle_index
+        );
+        assert_eq!(trade.fill, dataset.candles[trade.entry_index].open);
+
+        assert_eq!(trade.pnl_pct, trade.pnl / trade.e * Decimal::from(100));
     }
 }
 

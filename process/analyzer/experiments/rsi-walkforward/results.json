@@ -1,0 +1,160 @@
+{
+  "strategy_version": "rsi-mom-v1",
+  "timeframe": "4hour",
+  "expected_symbols": 5,
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "candles": 2735,
+      "winner": {
+        "candidate": {
+          "label": "rsi14-long70-short50",
+          "origin": "grid",
+          "rsi_period": 14,
+          "rsi_long_threshold": "70",
+          "rsi_short_threshold": "50"
+        },
+        "window_months": 9,
+        "train": {
+          "trades": 21,
+          "net_expectancy": "5.7948105963356423868666073514",
+          "net_profit_factor": "1.649331029196140721081115177",
+          "max_drawdown": "138.8695955109067899025042548",
+          "max_drawdown_pct": "11.174171915945932694515340930",
+          "expectancy_stderr": "8.13136439525685",
+          "closed_net_pnl": "121.69102252304849012419875438",
+          "open_net_pnl": "-17.787582541857309730138459033",
+          "net_pnl": "103.90343998119118039406029535",
+          "win_rate": "47.619047619047619047619047620"
+        },
+        "train_stress": {
+          "trades": 21,
+          "net_expectancy": "4.3096696265690462881489645143",
+          "net_profit_factor": "1.441367955477212476740644357",
+          "max_drawdown": "153.9192294271067611072663644",
+          "max_drawdown_pct": "12.563703662872374702520922280",
+          "expectancy_stderr": "8.14092327564924",
+          "closed_net_pnl": "90.50306215794997205112825480",
+          "open_net_pnl": "-19.311977323497635206519095767",
+          "net_pnl": "71.191084834452336844609159033",
+          "win_rate": "42.857142857142857142857142860"
+        },
+        "oos": {
+          "trades": 13,
+          "net_expectancy": "4.9364207180565492243303490038",
+          "net_profit_factor": "1.465187321101133154371296793",
+          "max_drawdown": "58.7223868996000319155205448",
+          "max_drawdown_pct": "5.5783895330592983954997218900",
+          "expectancy_stderr": "11.35721430183088",
+          "closed_net_pnl": "64.173469334735139916294537049",
+          "open_net_pnl": "27.063860870362386707697186837",
+          "net_pnl": "91.23733020509752662399172389",
+          "win_rate": "30.769230769230769230769230770"
+        },
+        "oos_stress": {
+          "trades": 13,
+          "net_expectancy": "3.4316508674350640198169354493",
+          "net_profit_factor": "1.2944663898057548769316661846",
+          "max_drawdown": "66.2037051035098771707226851",
+          "max_drawdown_pct": "6.3155228396179076368082716200",
+          "expectancy_stderr": "11.35388619859037",
+          "closed_net_pnl": "44.611461276655832257620160841",
+          "open_net_pnl": "25.520950713822032596468798474",
+          "net_pnl": "70.132411990477864854088959315",
+          "win_rate": "30.769230769230769230769230770"
+        },
+        "successful": true
+      },
+      "successful_configs": 3,
+      "verdict": "Pass"
+    },
+    {
+      "symbol": "ETH-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "SOL-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "XRP-USDT",
+      "candles": 2735,
+      "winner": {
+        "candidate": {
+          "label": "rsi14-long70-short50",
+          "origin": "grid",
+          "rsi_period": 14,
+          "rsi_long_threshold": "70",
+          "rsi_short_threshold": "50"
+        },
+        "window_months": 10,
+        "train": {
+          "trades": 22,
+          "net_expectancy": "8.08967037070473836502490401",
+          "net_profit_factor": "1.8785113456792721425774396717",
+          "max_drawdown": "121.8259691130547065879356536",
+          "max_drawdown_pct": "9.372679592195930489620686400",
+          "expectancy_stderr": "8.72854035419605",
+          "closed_net_pnl": "177.97274815550424403054788821",
+          "open_net_pnl": "25.664577468249566481090150880",
+          "net_pnl": "203.63732562375381051163803909",
+          "win_rate": "45.454545454545454545454545450"
+        },
+        "train_stress": {
+          "trades": 22,
+          "net_expectancy": "6.6141414385674729432167165568",
+          "net_profit_factor": "1.6600020600834300521470216685",
+          "max_drawdown": "135.2859948291430693706060938",
+          "max_drawdown_pct": "10.562640573197312955228082980",
+          "expectancy_stderr": "8.73767728034085",
+          "closed_net_pnl": "145.51111164848440475076776425",
+          "open_net_pnl": "24.205263305695771523248548510",
+          "net_pnl": "169.71637495418017627401631276",
+          "win_rate": "45.454545454545454545454545450"
+        },
+        "oos": {
+          "trades": 16,
+          "net_expectancy": "2.5595209804067993243619133878",
+          "net_profit_factor": "1.1608762480612349529648200755",
+          "max_drawdown": "195.1704466782751691602773627",
+          "max_drawdown_pct": "16.001839084129733536065792070",
+          "expectancy_stderr": "13.56384199145173",
+          "closed_net_pnl": "40.952335686508789189790614205",
+          "open_net_pnl": "6.3527107820593047188944261545",
+          "net_pnl": "47.305046468568093908685040360",
+          "win_rate": "37.500"
+        },
+        "oos_stress": {
+          "trades": 16,
+          "net_expectancy": "1.0570017481606590831100832024",
+          "net_profit_factor": "1.0626969450185488952923448667",
+          "max_drawdown": "202.9204022873830286367912029",
+          "max_drawdown_pct": "16.803691789273288646352103590",
+          "expectancy_stderr": "13.55332622842758",
+          "closed_net_pnl": "16.912027970570545329761331239",
+          "open_net_pnl": "4.8644722060963381258623159590",
+          "net_pnl": "21.776500176666883455623647198",
+          "win_rate": "31.2500"
+        },
+        "successful": true
+      },
+      "successful_configs": 2,
+      "verdict": "Pass"
+    },
+    {
+      "symbol": "BNB-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    }
+  ],
+  "overall_verdict": "Fail",
+  "data_issues": []
+}

@@ -7,13 +7,6 @@ pub struct Config {
     pub rsi_period: usize,
     pub rsi_long_threshold: Decimal,
     pub rsi_short_threshold: Decimal,
-    pub atr_enabled: bool,
-    pub atr_period: usize,
-    pub atr_sl_multiplier: Decimal,
-    pub atr_tp_multiplier: Decimal,
-    pub atr_pct_high: Decimal,
-    pub atr_high_adjust: Decimal,
-    pub atr_sl_max_pct: Decimal,
     pub window: usize,
 }
 
@@ -23,13 +16,6 @@ impl Default for Config {
             rsi_period: 21,
             rsi_long_threshold: Decimal::from(60),
             rsi_short_threshold: Decimal::from(50),
-            atr_enabled: false,
-            atr_period: 14,
-            atr_sl_multiplier: Decimal::new(20, 1),
-            atr_tp_multiplier: Decimal::new(30, 1),
-            atr_pct_high: Decimal::new(50, 1),
-            atr_high_adjust: Decimal::new(15, 1),
-            atr_sl_max_pct: Decimal::ZERO,
             window: 100,
         }
     }
@@ -37,8 +23,7 @@ impl Default for Config {
 
 impl Config {
     pub fn min_window(&self) -> usize {
-        let atr = if self.atr_enabled { self.atr_period } else { 0 };
-        self.rsi_period.max(atr).saturating_add(2)
+        self.rsi_period.saturating_add(2)
     }
 
     pub fn validate(&self) -> Result<()> {
@@ -54,24 +39,6 @@ impl Config {
         }
         if self.rsi_short_threshold >= self.rsi_long_threshold {
             return fail("rsi_short_threshold must be < rsi_long_threshold");
-        }
-        if self.atr_period == 0 {
-            return fail("atr_period must be >= 1");
-        }
-        if self.atr_sl_multiplier <= Decimal::ZERO {
-            return fail("atr_sl_multiplier must be > 0");
-        }
-        if self.atr_tp_multiplier <= Decimal::ZERO {
-            return fail("atr_tp_multiplier must be > 0");
-        }
-        if self.atr_pct_high < Decimal::ZERO {
-            return fail("atr_pct_high must be >= 0");
-        }
-        if self.atr_high_adjust <= Decimal::ZERO {
-            return fail("atr_high_adjust must be > 0");
-        }
-        if self.atr_sl_max_pct < Decimal::ZERO || self.atr_sl_max_pct >= Decimal::ONE {
-            return fail("atr_sl_max_pct must be in [0, 1)");
         }
         if self.window < 8 {
             return Err(Error::WindowTooShort {
@@ -103,30 +70,16 @@ mod tests {
     }
 
     #[test]
-    fn rejects_zero_periods() {
-        let cases = [
-            (
-                Config {
-                    rsi_period: 0,
-                    ..Config::default()
-                },
-                "rsi_period",
-            ),
-            (
-                Config {
-                    atr_period: 0,
-                    ..Config::default()
-                },
-                "atr_period",
-            ),
-        ];
-        for (cfg, field) in cases {
-            assert!(
-                matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains(field)),
-                "expected ConfigInvalid mentioning {field}, got {:?}",
-                cfg.validate()
-            );
-        }
+    fn rejects_zero_period() {
+        let cfg = Config {
+            rsi_period: 0,
+            ..Config::default()
+        };
+        assert!(
+            matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains("rsi_period")),
+            "expected ConfigInvalid mentioning rsi_period, got {:?}",
+            cfg.validate()
+        );
     }
 
     #[test]
@@ -165,83 +118,18 @@ mod tests {
     }
 
     #[test]
-    fn rejects_invalid_atr_settings() {
-        let cases = [
-            (
-                Config {
-                    atr_sl_multiplier: Decimal::ZERO,
-                    ..Config::default()
-                },
-                "atr_sl_multiplier",
-            ),
-            (
-                Config {
-                    atr_tp_multiplier: Decimal::ZERO,
-                    ..Config::default()
-                },
-                "atr_tp_multiplier",
-            ),
-            (
-                Config {
-                    atr_pct_high: Decimal::new(-1, 0),
-                    ..Config::default()
-                },
-                "atr_pct_high",
-            ),
-            (
-                Config {
-                    atr_high_adjust: Decimal::ZERO,
-                    ..Config::default()
-                },
-                "atr_high_adjust",
-            ),
-            (
-                Config {
-                    atr_sl_max_pct: Decimal::ONE,
-                    ..Config::default()
-                },
-                "atr_sl_max_pct",
-            ),
-        ];
-        for (cfg, field) in cases {
-            assert!(
-                matches!(cfg.validate(), Err(Error::ConfigInvalid(message)) if message.contains(field)),
-                "expected ConfigInvalid mentioning {field}, got {:?}",
-                cfg.validate()
-            );
-        }
-    }
-
-    #[test]
     fn min_window_boundaries_are_exact() {
-        let off = Config {
-            atr_enabled: false,
-            atr_period: 50,
+        let cfg = Config {
             rsi_period: 21,
             window: 23,
             ..Config::default()
         };
-        assert_eq!(off.min_window(), 23);
-        assert!(off.validate().is_ok());
-        let below = Config { window: 22, ..off };
+        assert_eq!(cfg.min_window(), 23);
+        assert!(cfg.validate().is_ok());
+        let below = Config { window: 22, ..cfg };
         assert!(matches!(
             below.validate(),
             Err(Error::WindowTooShort { need: 23, got: 22 })
-        ));
-
-        let on = Config {
-            atr_enabled: true,
-            atr_period: 50,
-            rsi_period: 21,
-            window: 52,
-            ..Config::default()
-        };
-        assert_eq!(on.min_window(), 52);
-        assert!(on.validate().is_ok());
-        let on_below = Config { window: 51, ..on };
-        assert!(matches!(
-            on_below.validate(),
-            Err(Error::WindowTooShort { need: 52, got: 51 })
         ));
     }
 
@@ -250,7 +138,6 @@ mod tests {
         let cfg = Config {
             window: 7,
             rsi_period: 1,
-            atr_period: 1,
             ..Config::default()
         };
         assert!(matches!(

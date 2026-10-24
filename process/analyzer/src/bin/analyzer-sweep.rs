@@ -41,6 +41,10 @@ struct Cli {
     #[arg(long, default_value_t = 24)]
     months: u32,
 
+    /// Keep only the last N candles per symbol/timeframe; 0 means no limit.
+    #[arg(long, default_value_t = 0)]
+    max_candles: usize,
+
     /// Reference time in milliseconds; defaults to now.
     #[arg(long, default_value_t = identity::now_ms())]
     as_of: i64,
@@ -55,10 +59,14 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer/experiments/sweep")]
+    #[arg(
+        long,
+        default_value = "process/analyzer/experiments/historical/rsi-divergence-sweep"
+    )]
     out_dir: PathBuf,
 
-    /// Deterministic candidate-sampling seed.
+    /// Retained for artifact compatibility; the 24-point grid is exhaustive,
+    /// so the seed does not affect the candidates.
     #[arg(long, default_value_t = sampling::SEED_DEFAULT)]
     seed: u64,
 
@@ -159,6 +167,7 @@ fn load_symbol(
     as_of: i64,
     start_ms: i64,
     settle_ms: i64,
+    max_candles: Option<usize>,
     data_dir: &Path,
     base_url: &str,
     refresh: bool,
@@ -182,7 +191,13 @@ fn load_symbol(
         },
     )?;
     let data_provenance = cached.provenance;
-    let dataset = load_view_dataset(symbol, timeframe, as_of, settle_ms, &cached.candles)?;
+    let mut candles = cached.candles;
+    if let Some(limit) = max_candles {
+        if candles.len() > limit {
+            candles = candles.split_off(candles.len() - limit);
+        }
+    }
+    let dataset = load_view_dataset(symbol, timeframe, as_of, settle_ms, &candles)?;
     let summary = DatasetSummary {
         symbol: symbol.to_string(),
         timeframe: timeframe.as_kucoin().to_string(),
@@ -464,6 +479,11 @@ fn main() -> Result<(), String> {
                 cli.as_of,
                 start_ms,
                 settle_ms,
+                if cli.max_candles == 0 {
+                    None
+                } else {
+                    Some(cli.max_candles)
+                },
                 &cli.data_dir,
                 &base_url,
                 cli.refresh,

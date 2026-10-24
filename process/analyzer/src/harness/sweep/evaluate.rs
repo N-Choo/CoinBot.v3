@@ -1,9 +1,6 @@
 use crate::harness::dataset::Dataset;
 use crate::harness::replay::build_replay;
-use crate::harness::sim::{
-    simulate, unrealized_pnl, SimOutcome, SimSignal, REASON_GAP_SL, REASON_GAP_TP, REASON_SL,
-    REASON_TP,
-};
+use crate::harness::sim::{simulate, unrealized_pnl, SimOutcome, SimSignal};
 use crate::harness::sweep::costs::{net_open_pnl, net_trade_pnl, CostScenario};
 use crate::harness::sweep::partition::{slice_with_warmup, Slice, Splits};
 use crate::strategy::config::Config;
@@ -39,8 +36,6 @@ pub struct PartitionMetrics {
     pub time_in_market_pct: Decimal,
     /// Standard error of the mean closed net PnL (`std / sqrt(n)`).
     pub expectancy_stderr: Decimal,
-    pub tp_hits: usize,
-    pub sl_hits: usize,
     pub other_exits: usize,
 }
 
@@ -71,8 +66,8 @@ pub fn metrics_from_outcome(
     let mut equity = init_fund;
     let mut peak = init_fund;
     let mut max_dd = Decimal::ZERO;
+    let mut max_dd_pct = Decimal::ZERO;
     let mut pnls: Vec<Decimal> = Vec::with_capacity(outcome.trades.len());
-    let (mut tp, mut sl, mut other) = (0usize, 0usize, 0usize);
     let mut exposure_candles = 0usize;
 
     for trade in &outcome.trades {
@@ -96,11 +91,6 @@ pub fn metrics_from_outcome(
             r_sum += net / trade.e;
             r_n += 1;
         }
-        match trade.reason.as_str() {
-            REASON_TP | REASON_GAP_TP => tp += 1,
-            REASON_SL | REASON_GAP_SL => sl += 1,
-            _ => other += 1,
-        }
         exposure_candles += trade.exit_index.saturating_sub(trade.entry_index);
         equity += net;
         if equity > peak {
@@ -109,6 +99,12 @@ pub fn metrics_from_outcome(
         let drawdown = peak - equity;
         if drawdown > max_dd {
             max_dd = drawdown;
+            // Drawdown is measured from the running equity peak, matching the replay summary.
+            max_dd_pct = if peak.is_zero() {
+                Decimal::ZERO
+            } else {
+                drawdown / peak * Decimal::from(100)
+            };
         }
     }
 
@@ -139,6 +135,11 @@ pub fn metrics_from_outcome(
     let drawdown = peak - equity;
     if drawdown > max_dd {
         max_dd = drawdown;
+        max_dd_pct = if peak.is_zero() {
+            Decimal::ZERO
+        } else {
+            drawdown / peak * Decimal::from(100)
+        };
     }
 
     let n_trades = Decimal::from(outcome.trades.len());
@@ -184,11 +185,6 @@ pub fn metrics_from_outcome(
     } else {
         Decimal::from(wins) / n_trades * Decimal::from(100)
     };
-    let max_drawdown_pct = if init_fund.is_zero() {
-        Decimal::ZERO
-    } else {
-        max_dd / init_fund * Decimal::from(100)
-    };
     let time_in_market_pct = if replayed_candles == 0 {
         Decimal::ZERO
     } else {
@@ -210,13 +206,11 @@ pub fn metrics_from_outcome(
         net_profit_factor,
         win_rate,
         max_drawdown: max_dd,
-        max_drawdown_pct,
+        max_drawdown_pct: max_dd_pct,
         exposure_candles,
         time_in_market_pct,
         expectancy_stderr,
-        tp_hits: tp,
-        sl_hits: sl,
-        other_exits: other,
+        other_exits: outcome.trades.len(),
     }
 }
 
@@ -242,8 +236,6 @@ pub fn pool(metrics: &[PartitionMetrics]) -> PartitionMetrics {
         pooled.open_net_pnl += metric.open_net_pnl;
         pooled.net_pnl += metric.net_pnl;
         pooled.gross_pnl += metric.gross_pnl;
-        pooled.tp_hits += metric.tp_hits;
-        pooled.sl_hits += metric.sl_hits;
         pooled.other_exits += metric.other_exits;
         pooled.exposure_candles += metric.exposure_candles;
         pooled.max_drawdown = pooled.max_drawdown.max(metric.max_drawdown);

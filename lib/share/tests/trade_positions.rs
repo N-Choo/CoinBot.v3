@@ -87,8 +87,6 @@ impl Fixture {
             &Self::comment("c"),
             Decimal::from(1),
             Decimal::from(100),
-            Some(Decimal::from(110)),
-            Some(Decimal::from(90)),
         )
         .await
         .unwrap();

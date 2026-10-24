@@ -3,6 +3,7 @@
 use analyzer::exchange::timeframes::Timeframe;
 use analyzer::harness::dataset::load_csv;
 use analyzer::harness::sim::{ClosedTrade, Position, SimOutcome};
+use analyzer::harness::stats;
 use analyzer::harness::sweep::costs::CostScenario;
 use analyzer::harness::sweep::evaluate::{evaluate_config, metrics_from_outcome};
 use analyzer::harness::sweep::partition::chronological_splits;
@@ -25,8 +26,7 @@ fn trade(pnl: i64, entry: usize, exit: usize, exit_price: i64) -> ClosedTrade {
         e: d(500),
         pnl: d(pnl),
         pnl_pct: Decimal::ZERO,
-        risk_reward: Some(d(2)),
-        reason: if pnl >= 0 { "TP".into() } else { "SL".into() },
+        reason: "reversal".into(),
         entry_index: entry,
         exit_index: exit,
     }
@@ -57,6 +57,69 @@ fn max_drawdown_tracks_net_equity() {
     let m = metrics_from_outcome(&outcome, d(100), 2, 2, d(1000), &CostScenario::base());
     assert_eq!(m.max_drawdown, Decimal::new(1015, 1));
     assert_eq!(m.max_drawdown_pct, Decimal::new(1015, 2));
+}
+
+#[test]
+fn zero_cost_metrics_match_replay_summary() {
+    let outcome = SimOutcome {
+        trades: vec![trade(50, 1, 2, 110), trade(-20, 3, 4, 100)],
+        ..Default::default()
+    };
+    let init_fund = d(1000);
+    let last_close = d(100);
+    let last_index = 4;
+    let replayed_candles = 10;
+    let summary = stats::summarize(
+        init_fund,
+        &outcome,
+        last_close,
+        last_index,
+        replayed_candles,
+    );
+    let zero = CostScenario {
+        label: "zero".into(),
+        fee_bps: Decimal::ZERO,
+        slip_bps: Decimal::ZERO,
+    };
+    let m = metrics_from_outcome(
+        &outcome,
+        last_close,
+        last_index,
+        replayed_candles,
+        init_fund,
+        &zero,
+    );
+
+    assert_eq!(m.trades, summary.trades);
+    assert_eq!(m.wins, summary.wins);
+    assert_eq!(m.gross_pnl, summary.realized_pnl);
+    assert_eq!(m.net_profit_factor, summary.profit_factor);
+    assert_eq!(m.max_drawdown, summary.max_drawdown);
+    assert_eq!(m.max_drawdown_pct, summary.max_drawdown_pct);
+    assert_eq!(m.exposure_candles, summary.exposure_candles);
+    assert_eq!(m.time_in_market_pct, summary.time_in_market_pct);
+}
+
+#[test]
+fn max_drawdown_pct_uses_equity_peak() {
+    let outcome = SimOutcome {
+        trades: vec![trade(100, 1, 2, 100), trade(-200, 3, 4, 100)],
+        ..Default::default()
+    };
+    let zero = CostScenario {
+        label: "zero".into(),
+        fee_bps: Decimal::ZERO,
+        slip_bps: Decimal::ZERO,
+    };
+    let m = metrics_from_outcome(&outcome, d(100), 4, 10, d(1000), &zero);
+
+    assert_eq!(m.max_drawdown, d(200));
+    // The worst drop is from the 1100 peak, not the 1000 initial fund: 200 / 1100 * 100.
+    assert_eq!(
+        m.max_drawdown_pct,
+        Decimal::from(200) / Decimal::from(1100) * Decimal::from(100)
+    );
+    assert_ne!(m.max_drawdown_pct, d(20));
 }
 
 #[test]
@@ -95,8 +158,6 @@ fn open_position_metrics_include_estimated_exit_cost() {
             signal_entry: d(100),
             fill: d(100),
             e: d(500),
-            sl: Some(d(90)),
-            tp: Some(d(120)),
             entry_index: 0,
         }],
         ..Default::default()
@@ -168,8 +229,6 @@ fn evaluate_config_produces_all_partitions_for_both_scenarios() {
                 m.net_profit_factor,
                 m.win_rate,
                 m.expectancy_stderr,
-                m.tp_hits,
-                m.sl_hits,
                 m.other_exits,
             );
         }

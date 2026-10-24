@@ -5,53 +5,21 @@ use rust_decimal::Decimal;
 /// Per-side cost levels in tenths of a basis point.
 pub const LEVELS_TENTHS_BPS: [u32; 7] = [0, 25, 50, 75, 100, 150, 300];
 
-/// Baseline plus the four 4hour screening candidates frozen for the cost ladder.
+/// Baseline plus the three 4hour screening candidates frozen for the cost ladder.
 pub fn frozen_candidates() -> Vec<Candidate> {
     let mut out = vec![baseline()];
-    let mut push = |label: &str, long: i64, short: i64, atr: bool, sl: Decimal, tp: Decimal| {
+    let mut push = |label: &str, long: i64, short: i64| {
         out.push(Candidate {
             label: label.into(),
             origin: "screening-4hour".into(),
             rsi_period: 21,
             rsi_long_threshold: Decimal::from(long),
             rsi_short_threshold: Decimal::from(short),
-            atr_enabled: atr,
-            atr_sl_multiplier: sl,
-            atr_tp_multiplier: tp,
         });
     };
-    push(
-        "long65-short50",
-        65,
-        50,
-        false,
-        Decimal::new(20, 1),
-        Decimal::new(30, 1),
-    );
-    push(
-        "long60-short45",
-        60,
-        45,
-        false,
-        Decimal::new(20, 1),
-        Decimal::new(30, 1),
-    );
-    push(
-        "long70-short50",
-        70,
-        50,
-        false,
-        Decimal::new(20, 1),
-        Decimal::new(30, 1),
-    );
-    push(
-        "atr-on-tp4.0",
-        60,
-        50,
-        true,
-        Decimal::new(20, 1),
-        Decimal::new(40, 1),
-    );
+    push("long65-short50", 65, 50);
+    push("long60-short45", 60, 45);
+    push("long70-short50", 70, 50);
     out
 }
 

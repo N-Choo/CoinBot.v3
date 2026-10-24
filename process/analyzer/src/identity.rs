@@ -4,18 +4,11 @@ use sha2::{Digest, Sha256};
 
 pub fn config_version(cfg: &Config) -> String {
     format!(
-        "rsi-mom-v1|w={}|rsi={}:{}:{}|atr={}:{}:{}:{}:{}:{}:{}",
+        "rsi-mom-v1|w={}|rsi={}:{}:{}",
         cfg.window,
         cfg.rsi_period,
         cfg.rsi_long_threshold.normalize(),
         cfg.rsi_short_threshold.normalize(),
-        cfg.atr_enabled,
-        cfg.atr_period,
-        cfg.atr_sl_multiplier.normalize(),
-        cfg.atr_tp_multiplier.normalize(),
-        cfg.atr_pct_high.normalize(),
-        cfg.atr_high_adjust.normalize(),
-        cfg.atr_sl_max_pct.normalize(),
     )
 }
 

@@ -128,8 +128,6 @@ fn to_trade_signal(s: &ProtoSignal) -> TradeSignal {
         action: s.action.clone(),
         confidence: 1.0,
         entry_price: s.entry_price,
-        sl_price: s.sl_price,
-        tp_price: s.tp_price,
         reason: s.reason.clone(),
     }
 }
@@ -148,10 +146,8 @@ mod tests {
             seq: 42,
             expires_at_ms: 1_000,
             trigger_time_ms: 900,
-            sl_price: 1.20,
-            tp_price: 1.30,
             zone_id: "z1".into(),
-            reason: "rr=3".into(),
+            reason: "rsi_long_cross".into(),
         }
     }
 
@@ -162,9 +158,7 @@ mod tests {
         assert_eq!(t.action, "BUY");
         assert_eq!(t.confidence, 1.0);
         assert_eq!(t.entry_price, 1.23);
-        assert_eq!(t.sl_price, 1.20);
-        assert_eq!(t.tp_price, 1.30);
-        assert_eq!(t.reason, "rr=3");
+        assert_eq!(t.reason, "rsi_long_cross");
     }
 
     #[test]

@@ -1,7 +1,5 @@
 use crate::strategy::config::Config;
-use crate::strategy::decimal::{add, div, mul, sub};
 use crate::strategy::error::Result;
-use crate::strategy::indicators::atr::atr;
 use crate::strategy::indicators::rsi::rsi;
 use crate::strategy::types::{Candle, Direction, Signal};
 use rust_decimal::Decimal;
@@ -32,16 +30,6 @@ pub fn signals(candles: &[Candle], ticker: &str, cfg: &Config) -> Result<Option<
     let Some(action) = cross_action(prev, curr, cfg) else {
         return Ok(None);
     };
-    let (sl_price, tp_price) = if cfg.atr_enabled {
-        match levels(candles, cfg, action)? {
-            (Some(sl), Some(tp)) if sl > Decimal::ZERO && tp > Decimal::ZERO => {
-                (Some(sl), Some(tp))
-            }
-            _ => return Ok(None),
-        }
-    } else {
-        (None, None)
-    };
     Ok(Some(Signal {
         ticker: ticker.to_string(),
         action,
@@ -52,63 +40,39 @@ pub fn signals(candles: &[Candle], ticker: &str, cfg: &Config) -> Result<Option<
             Direction::Short => "rsi_short_cross",
         }
         .to_string(),
-        sl_price,
-        tp_price,
         signal_candle_open_time_ms: candles[last].open_time_ms,
     }))
 }
 
-fn levels(
-    candles: &[Candle],
-    cfg: &Config,
-    action: Direction,
-) -> Result<(Option<Decimal>, Option<Decimal>)> {
-    let last = candles.len() - 1;
-    let close = candles[last].close;
-    if candles.len() < cfg.atr_period {
-        return Ok((None, None));
-    }
-    let atr_series = atr(candles, cfg.atr_period)?;
-    let atr_value = match atr_series[last] {
-        Some(value) => value,
-        None => return Ok((None, None)),
-    };
-    if atr_value <= Decimal::ZERO || close <= Decimal::ZERO {
-        return Ok((None, None));
+#[derive(Debug, Clone, Default)]
+pub struct SignalGenerator {
+    last_accepted_side: Option<Direction>,
+}
+
+impl SignalGenerator {
+    pub fn next(
+        &mut self,
+        candles: &[Candle],
+        ticker: &str,
+        cfg: &Config,
+    ) -> Result<Option<Signal>> {
+        let Some(signal) = signals(candles, ticker, cfg)? else {
+            return Ok(None);
+        };
+        if !self.accept(signal.action) {
+            return Ok(None);
+        }
+        Ok(Some(signal))
     }
 
-    let atr_pct = mul(div(atr_value, close)?, Decimal::from(100))?;
-    let mut sl_mult = cfg.atr_sl_multiplier;
-    let mut tp_mult = cfg.atr_tp_multiplier;
-    if atr_pct > cfg.atr_pct_high {
-        sl_mult = mul(sl_mult, cfg.atr_high_adjust)?;
-        tp_mult = mul(tp_mult, cfg.atr_high_adjust)?;
-    }
-    let sl_distance = mul(atr_value, sl_mult)?;
-    let tp_distance = mul(atr_value, tp_mult)?;
-    let (mut sl, tp) = match action {
-        Direction::Long => (sub(close, sl_distance)?, add(close, tp_distance)?),
-        Direction::Short => (add(close, sl_distance)?, sub(close, tp_distance)?),
-    };
-
-    if cfg.atr_sl_max_pct > Decimal::ZERO {
-        match action {
-            Direction::Long => {
-                let max_sl = mul(close, sub(Decimal::ONE, cfg.atr_sl_max_pct)?)?;
-                if sl < max_sl {
-                    sl = max_sl;
-                }
-            }
-            Direction::Short => {
-                let max_sl = mul(close, add(Decimal::ONE, cfg.atr_sl_max_pct)?)?;
-                if sl > max_sl {
-                    sl = max_sl;
-                }
-            }
+    fn accept(&mut self, action: Direction) -> bool {
+        if self.last_accepted_side == Some(action) {
+            false
+        } else {
+            self.last_accepted_side = Some(action);
+            true
         }
     }
-
-    Ok((Some(sl), Some(tp)))
 }
 
 #[cfg(test)]
@@ -173,107 +137,81 @@ mod tests {
         assert_eq!(signal.action, Direction::Long);
         assert_eq!(signal.reason, "rsi_long_cross");
         assert_eq!(signal.entry_price, d(101));
-        assert_eq!(signal.sl_price, None);
-        assert_eq!(signal.tp_price, None);
         assert_eq!(signal.signal_candle_open_time_ms, 30 * 86_400_000);
     }
 
     #[test]
-    fn atr_levels_are_present_only_when_enabled() {
-        let mut candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 101, 99, 100)).collect();
-        candles.push(candle(30, 100, 102, 100, 101));
-
-        let cfg = Config {
-            atr_enabled: true,
-            ..Config::default()
-        };
-        let signal = signals(&candles, "TEST-USDT", &cfg).unwrap().unwrap();
-        assert_eq!(signal.sl_price, Some(Decimal::from(97)));
-        assert_eq!(signal.tp_price, Some(Decimal::from(107)));
-    }
-
-    #[test]
-    fn atr_disabled_emits_no_levels() {
-        let mut candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 101, 99, 100)).collect();
-        candles.push(candle(30, 100, 102, 100, 101));
-        let signal = signals(&candles, "TEST-USDT", &Config::default())
-            .unwrap()
-            .unwrap();
-        assert_eq!(signal.sl_price, None);
-        assert_eq!(signal.tp_price, None);
-    }
-
-    #[test]
-    fn short_cross_emits_short_signal_with_mirrored_atr_levels() {
+    fn short_cross_emits_short_signal() {
         let mut candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 100, 100, 100)).collect();
         candles.push(candle(30, 100, 102, 100, 101));
         for (offset, close) in (81..=100).rev().enumerate() {
             let i = 31 + offset;
             candles.push(candle(i, close, close + 1, close - 1, close));
         }
-        let cfg = Config {
-            atr_enabled: true,
-            ..Config::default()
-        };
         let signal = (31..candles.len())
             .find_map(|end| {
-                signals(&candles[..=end], "TEST-USDT", &cfg)
+                signals(&candles[..=end], "TEST-USDT", &Config::default())
                     .unwrap()
                     .filter(|s| s.action == Direction::Short)
             })
             .expect("falling sequence must produce a short cross");
         assert_eq!(signal.reason, "rsi_short_cross");
-        let (Some(sl), Some(tp)) = (signal.sl_price, signal.tp_price) else {
-            panic!("atr levels must be present for a short signal");
-        };
-        assert!(
-            sl > signal.entry_price,
-            "short sl {sl} must sit above entry {}",
-            signal.entry_price
+    }
+
+    #[test]
+    fn signal_generator_accepts_only_alternating_sides() {
+        let cfg = Config::default();
+        let mut generator = SignalGenerator::default();
+
+        let mut long_candles: Vec<Candle> =
+            (0..30).map(|i| candle(i, 100, 100, 100, 100)).collect();
+        long_candles.push(candle(30, 100, 102, 100, 101));
+        let long = signals(&long_candles, "TEST-USDT", &cfg)
+            .unwrap()
+            .expect("flat-to-up must produce a long cross");
+        assert_eq!(long.action, Direction::Long);
+
+        assert_eq!(
+            generator.next(&long_candles, "TEST-USDT", &cfg).unwrap(),
+            Some(long)
         );
-        assert!(
-            tp < signal.entry_price,
-            "short tp {tp} must sit below entry {}",
-            signal.entry_price
+        assert_eq!(
+            generator.next(&long_candles, "TEST-USDT", &cfg).unwrap(),
+            None,
+            "a repeated long must be rejected"
         );
+        assert_eq!(
+            generator.next(&long_candles, "TEST-USDT", &cfg).unwrap(),
+            None,
+            "a third long must be rejected"
+        );
+
+        let mut short_candles = long_candles.clone();
+        for (offset, close) in (81..=100).rev().enumerate() {
+            let i = 31 + offset;
+            short_candles.push(candle(i, close, close + 1, close - 1, close));
+        }
+        let short_end = (31..short_candles.len())
+            .find(|&end| {
+                signals(&short_candles[..=end], "TEST-USDT", &cfg)
+                    .unwrap()
+                    .is_some_and(|s| s.action == Direction::Short)
+            })
+            .expect("falling sequence must produce a short cross");
+
+        let short = generator
+            .next(&short_candles[..=short_end], "TEST-USDT", &cfg)
+            .unwrap()
+            .expect("an opposite-side signal must be accepted");
+        assert_eq!(short.action, Direction::Short);
     }
 
     #[test]
-    fn atr_high_volatility_adjusts_the_levels() {
-        let mut candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 101, 99, 100)).collect();
-        candles.push(candle(30, 100, 102, 100, 101));
-        let cfg = Config {
-            atr_enabled: true,
-            atr_pct_high: Decimal::from(1),
-            atr_high_adjust: Decimal::new(15, 1),
-            ..Config::default()
-        };
-        let signal = signals(&candles, "TEST-USDT", &cfg).unwrap().unwrap();
-        assert_eq!(signal.sl_price, Some(Decimal::from(95)));
-        assert_eq!(signal.tp_price, Some(Decimal::from(110)));
-    }
-
-    #[test]
-    fn atr_sl_cap_clamps_long_and_short() {
+    fn insufficient_history_returns_no_signal() {
         let candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 101, 99, 100)).collect();
-        let cfg = Config {
-            atr_enabled: true,
-            atr_sl_max_pct: Decimal::new(1, 2),
-            ..Config::default()
-        };
-        let (long_sl, _) = levels(&candles, &cfg, Direction::Long).unwrap();
-        assert_eq!(long_sl, Some(Decimal::from(99)));
-        let (short_sl, _) = levels(&candles, &cfg, Direction::Short).unwrap();
-        assert_eq!(short_sl, Some(Decimal::from(101)));
-    }
-
-    #[test]
-    fn atr_enabled_with_insufficient_history_returns_no_signal() {
-        let candles: Vec<Candle> = (0..30).map(|i| candle(i, 100, 101, 99, 100)).collect();
-        let cfg = Config {
-            atr_enabled: true,
-            ..Config::default()
-        };
-        assert_eq!(signals(&candles[..10], "TEST-USDT", &cfg).unwrap(), None);
+        assert_eq!(
+            signals(&candles[..10], "TEST-USDT", &Config::default()).unwrap(),
+            None
+        );
     }
 }

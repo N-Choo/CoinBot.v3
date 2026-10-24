@@ -1,0 +1,184 @@
+{
+  "symbol": "SOL-USDT",
+  "timeframe": "1day",
+  "generated_at": "2026-09-23T00:00:00Z",
+  "as_of_ms": 1790121600000,
+  "days": 1095,
+  "dataset": {
+    "first_open_time": "2023-09-24T00:00:00Z",
+    "last_open_time": "2026-09-21T00:00:00Z",
+    "candles": 1094,
+    "content_sha256": "302cf9212a8e163ae14fafab14a8173939c7224145134e6222b69fd856985a88"
+  },
+  "strategy": {
+    "rsi_period": 21,
+    "rsi_long_threshold": "60",
+    "rsi_short_threshold": "40",
+    "atr": false,
+    "stop_loss": false,
+    "take_profit": false,
+    "tuning": false,
+    "window": 100
+  },
+  "base_costs": {
+    "label": "base",
+    "fee_bps": "10",
+    "slip_bps": "5"
+  },
+  "stress_costs": {
+    "label": "stress",
+    "fee_bps": "20",
+    "slip_bps": "10"
+  },
+  "full_period": {
+    "base": {
+      "trades": 6,
+      "net_expectancy": "-93.33213965755951853801774948",
+      "net_profit_factor": "0.2196002622833795827249998045",
+      "max_drawdown_pct": "61.989015032505172391047062770",
+      "expectancy_stderr": "50.6967903446625",
+      "closed_net_pnl": "-559.99283794535711122810649689",
+      "open_net_pnl": "0",
+      "net_pnl": "-559.99283794535711122810649689",
+      "win_rate": "16.666666666666666666666666670"
+    },
+    "stress": {
+      "trades": 6,
+      "net_expectancy": "-94.92027011709392619429791369",
+      "net_profit_factor": "0.2148445372515470796418041803",
+      "max_drawdown_pct": "62.756230277624198955777280360",
+      "expectancy_stderr": "50.6751464827295",
+      "closed_net_pnl": "-569.52162070256355716578748216",
+      "open_net_pnl": "0",
+      "net_pnl": "-569.52162070256355716578748216",
+      "win_rate": "16.666666666666666666666666670"
+    }
+  },
+  "yearly": [
+    {
+      "label": "Year 1",
+      "start_index": 0,
+      "end_index": 364,
+      "start_time": "2023-09-24T00:00:00Z",
+      "end_time": "2024-09-21T00:00:00Z",
+      "base": {
+        "trades": 5,
+        "net_expectancy": "-82.69033640084963317174553762",
+        "net_profit_factor": "0.2759553407525428302919842196",
+        "max_drawdown_pct": "56.017778387619748152078231400",
+        "expectancy_stderr": "60.7072883766374",
+        "closed_net_pnl": "-413.45168200424816585872768809",
+        "open_net_pnl": "-77.419377267929645066602978450",
+        "net_pnl": "-490.87105927217781092533066654",
+        "win_rate": "20.00"
+      },
+      "stress": {
+        "trades": 5,
+        "net_expectancy": "-84.25264577627261713350957926",
+        "net_profit_factor": "0.2700383141601450584425430052",
+        "max_drawdown_pct": "56.767052931018380110406210320",
+        "expectancy_stderr": "60.6733746626459",
+        "closed_net_pnl": "-421.26322888136308566754789631",
+        "open_net_pnl": "-79.033085771076818773642323899",
+        "net_pnl": "-500.29631465243990444119022021",
+        "win_rate": "20.00"
+      }
+    },
+    {
+      "label": "Year 2",
+      "start_index": 364,
+      "end_index": 729,
+      "start_time": "2024-09-22T00:00:00Z",
+      "end_time": "2025-09-21T00:00:00Z",
+      "base": {
+        "trades": 6,
+        "net_expectancy": "-90.41703681085465643190711614",
+        "net_profit_factor": "0.122760695456098826701029134",
+        "max_drawdown_pct": "56.032820042227791081707244580",
+        "expectancy_stderr": "44.2068873224929",
+        "closed_net_pnl": "-542.50222086512793859144269681",
+        "open_net_pnl": "0",
+        "net_pnl": "-542.50222086512793859144269681",
+        "win_rate": "33.333333333333333333333333330"
+      },
+      "stress": {
+        "trades": 6,
+        "net_expectancy": "-91.9467026339698192974964428",
+        "net_profit_factor": "0.1167321421320640178223668376",
+        "max_drawdown_pct": "56.850036145163869224395220160",
+        "expectancy_stderr": "44.2346608409683",
+        "closed_net_pnl": "-551.68021580381891578497865681",
+        "open_net_pnl": "0",
+        "net_pnl": "-551.68021580381891578497865681",
+        "win_rate": "33.333333333333333333333333330"
+      }
+    },
+    {
+      "label": "Year 3",
+      "start_index": 729,
+      "end_index": 1094,
+      "start_time": "2025-09-22T00:00:00Z",
+      "end_time": "2026-09-21T00:00:00Z",
+      "base": {
+        "trades": 3,
+        "net_expectancy": "19.013303787873185378680303418",
+        "net_profit_factor": "1.3174689489422087547138950425",
+        "max_drawdown_pct": "14.528121157046512914922405870",
+        "expectancy_stderr": "109.1065263166479",
+        "closed_net_pnl": "57.039911363619556136040910254",
+        "open_net_pnl": "194.28316744730679156908665105",
+        "net_pnl": "251.32307881092634770512756130",
+        "win_rate": "33.333333333333333333333333330"
+      },
+      "stress": {
+        "trades": 3,
+        "net_expectancy": "17.645346741081587578681866036",
+        "net_profit_factor": "1.2898516617557943691652982845",
+        "max_drawdown_pct": "14.781182221493271588332305460",
+        "expectancy_stderr": "109.2134051176538",
+        "closed_net_pnl": "52.936040223244762736045598109",
+        "open_net_pnl": "192.48905152224824355971896955",
+        "net_pnl": "245.42509174549300629576456766",
+        "win_rate": "33.333333333333333333333333330"
+      }
+    }
+  ],
+  "sides": {
+    "base": {
+      "long": {
+        "trades": 3,
+        "net_pnl": "-103.32265186247213005475700166",
+        "open_mark": "0",
+        "net_expectancy": "-34.440883954157376684919000553",
+        "profit_factor": "0.6039784743223865034213448431",
+        "win_rate": "33.333333333333333333333333330"
+      },
+      "short": {
+        "trades": 3,
+        "net_pnl": "-456.67018608288498117334949523",
+        "open_mark": "0",
+        "net_expectancy": "-152.22339536096166039111649841",
+        "profit_factor": "0",
+        "win_rate": "0"
+      }
+    },
+    "stress": {
+      "long": {
+        "trades": 3,
+        "net_pnl": "-107.67419519968424002462967516",
+        "open_mark": "0",
+        "net_expectancy": "-35.891398399894746674876558387",
+        "profit_factor": "0.5913912545736567718251364864",
+        "win_rate": "33.333333333333333333333333330"
+      },
+      "short": {
+        "trades": 3,
+        "net_pnl": "-461.84742550287931714115780700",
+        "open_mark": "0",
+        "net_expectancy": "-153.94914183429310571371926900",
+        "profit_factor": "0",
+        "win_rate": "0"
+      }
+    }
+  }
+}

@@ -36,13 +36,6 @@ pub fn strategy_from_env() -> Result<Config, ConfigEnvError> {
     cfg.rsi_period = parse("RSI_PERIOD", cfg.rsi_period)?;
     cfg.rsi_long_threshold = parse_decimal("RSI_LONG_THRESHOLD", cfg.rsi_long_threshold)?;
     cfg.rsi_short_threshold = parse_decimal("RSI_SHORT_THRESHOLD", cfg.rsi_short_threshold)?;
-    cfg.atr_enabled = parse_bool("ATR_ENABLED", cfg.atr_enabled)?;
-    cfg.atr_period = parse("ATR_PERIOD", cfg.atr_period)?;
-    cfg.atr_sl_multiplier = parse_decimal("ATR_SL_MULTIPLIER", cfg.atr_sl_multiplier)?;
-    cfg.atr_tp_multiplier = parse_decimal("ATR_TP_MULTIPLIER", cfg.atr_tp_multiplier)?;
-    cfg.atr_pct_high = parse_decimal("ATR_PCT_HIGH", cfg.atr_pct_high)?;
-    cfg.atr_high_adjust = parse_decimal("ATR_HIGH_ADJUST", cfg.atr_high_adjust)?;
-    cfg.atr_sl_max_pct = parse_decimal("ATR_SL_MAX_PCT", cfg.atr_sl_max_pct)?;
     cfg.window = parse("ANALYZER_WINDOW_CANDLES", cfg.window)?;
     cfg.validate()
         .map_err(|error| ConfigEnvError::Strategy(error.to_string()))?;
@@ -73,13 +66,6 @@ fn parse<T: FromStr>(key: &'static str, default: T) -> Result<T, ConfigEnvError>
 fn parse_decimal(key: &'static str, default: Decimal) -> Result<Decimal, ConfigEnvError> {
     match env_string(key) {
         Some(value) => parse_decimal_str(key, &value),
-        None => Ok(default),
-    }
-}
-
-fn parse_bool(key: &'static str, default: bool) -> Result<bool, ConfigEnvError> {
-    match env_string(key) {
-        Some(value) => parse_bool_str(key, &value),
         None => Ok(default),
     }
 }
@@ -123,15 +109,12 @@ mod tests {
     }
 
     #[test]
-    fn decimal_and_bool_env_are_trimmed() {
+    fn decimal_env_is_trimmed() {
         std::env::set_var("ANALYZER_TEST_DEC", " 1.5 ");
-        std::env::set_var("ANALYZER_TEST_BOOL", " ON ");
         assert_eq!(
             parse_decimal("ANALYZER_TEST_DEC", Decimal::ZERO).unwrap(),
             Decimal::new(15, 1)
         );
-        assert!(parse_bool("ANALYZER_TEST_BOOL", false).unwrap());
         std::env::remove_var("ANALYZER_TEST_DEC");
-        std::env::remove_var("ANALYZER_TEST_BOOL");
     }
 }

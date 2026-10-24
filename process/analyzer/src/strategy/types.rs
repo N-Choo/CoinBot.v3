@@ -23,7 +23,5 @@ pub struct Signal {
     pub confidence: Decimal,
     pub entry_price: Decimal,
     pub reason: String,
-    pub sl_price: Option<Decimal>,
-    pub tp_price: Option<Decimal>,
     pub signal_candle_open_time_ms: i64,
 }

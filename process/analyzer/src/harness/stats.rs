@@ -1,6 +1,4 @@
-use crate::harness::sim::{
-    unrealized_pnl, ClosedTrade, SimOutcome, REASON_GAP_SL, REASON_GAP_TP, REASON_SL, REASON_TP,
-};
+use crate::harness::sim::{unrealized_pnl, ClosedTrade, SimOutcome};
 use rust_decimal::Decimal;
 
 #[derive(Debug, Clone, Default)]
@@ -29,11 +27,6 @@ pub struct SimSummary {
     pub open_count: usize,
     pub skipped_funds: usize,
     pub unfilled_at_end: usize,
-    pub invalid_levels: usize,
-    pub tp_hits: usize,
-    pub sl_hits: usize,
-    pub other_exits: usize,
-    pub avg_risk_reward: Option<Decimal>,
 }
 
 pub fn summarize(
@@ -70,23 +63,6 @@ pub fn summarize(
         Decimal::ZERO
     } else {
         gross_loss / Decimal::from(losses.len())
-    };
-
-    let tp_hits = trades
-        .iter()
-        .filter(|t| t.reason == REASON_TP || t.reason == REASON_GAP_TP)
-        .count();
-    let sl_hits = trades
-        .iter()
-        .filter(|t| t.reason == REASON_SL || t.reason == REASON_GAP_SL)
-        .count();
-    let other_exits = trades.len() - tp_hits - sl_hits;
-
-    let eligible: Vec<Decimal> = trades.iter().filter_map(|t| t.risk_reward).collect();
-    let avg_risk_reward = if eligible.is_empty() {
-        None
-    } else {
-        Some(eligible.iter().copied().sum::<Decimal>() / Decimal::from(eligible.len()))
     };
 
     // max_dd_pct is measured from the peak at the largest absolute drop; ties keep the first peak.
@@ -152,10 +128,5 @@ pub fn summarize(
         open_count: outcome.open_positions.len(),
         skipped_funds: outcome.skipped_funds,
         unfilled_at_end: outcome.unfilled_at_end,
-        invalid_levels: outcome.invalid_levels,
-        tp_hits,
-        sl_hits,
-        other_exits,
-        avg_risk_reward,
     }
 }

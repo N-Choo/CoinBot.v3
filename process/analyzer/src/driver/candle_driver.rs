@@ -1,6 +1,6 @@
 use crate::strategy::config::Config;
 use crate::strategy::error::Result;
-use crate::strategy::generator::signals;
+use crate::strategy::generator::SignalGenerator;
 use crate::strategy::types::{Candle, Signal};
 use crate::strategy::window::Window;
 
@@ -14,6 +14,7 @@ pub struct CandleDriver {
     symbol: String,
     window: Window,
     config: Config,
+    generator: SignalGenerator,
     warmed: bool,
 }
 
@@ -24,6 +25,7 @@ impl CandleDriver {
             symbol: symbol.into(),
             window: Window::new(capacity),
             config,
+            generator: SignalGenerator::default(),
             warmed: false,
         }
     }
@@ -52,7 +54,10 @@ impl CandleDriver {
         }
 
         Ok(
-            match signals(self.window.as_slice(), &self.symbol, &self.config)? {
+            match self
+                .generator
+                .next(self.window.as_slice(), &self.symbol, &self.config)?
+            {
                 Some(signal) => vec![DriverEvent::Signal { signal }],
                 None => Vec::new(),
             },

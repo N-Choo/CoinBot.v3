@@ -1,0 +1,112 @@
+{
+  "strategy_version": "donchian-v1",
+  "timeframe": "4hour",
+  "generated_at": "2026-10-23T00:00:00Z",
+  "expected_symbols": 5,
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "candles": 10949,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "ETH-USDT",
+      "candles": 10949,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "SOL-USDT",
+      "candles": 10949,
+      "winner": {
+        "config": {
+          "entry": 20,
+          "exit": 55,
+          "ema_period": 200,
+          "atr_period": 14,
+          "atr_multiplier": "4"
+        },
+        "window_months": 30,
+        "train": {
+          "trades": 53,
+          "net_expectancy": "14.281531914598071222153159002",
+          "net_profit_factor": "1.9073089465872891562611008791",
+          "max_drawdown": "228.3716683335672362501181274",
+          "max_drawdown_pct": "21.313936272615050902633267560",
+          "expectancy_stderr": "11.47022103957822",
+          "closed_net_pnl": "756.92119147369777477411742710",
+          "open_net_pnl": "0",
+          "net_pnl": "756.92119147369777477411742710",
+          "win_rate": "28.301886792452830188679245280"
+        },
+        "train_stress": {
+          "trades": 53,
+          "net_expectancy": "12.757824054936682031534000525",
+          "net_profit_factor": "1.7594670146064144124972657669",
+          "max_drawdown": "249.0601435438823580784855012",
+          "max_drawdown_pct": "23.444363077260327029718749800",
+          "expectancy_stderr": "11.45298986125136",
+          "closed_net_pnl": "676.16467491164414767130202782",
+          "open_net_pnl": "0",
+          "net_pnl": "676.16467491164414767130202782",
+          "win_rate": "26.415094339622641509433962260"
+        },
+        "oos": {
+          "trades": 10,
+          "net_expectancy": "8.916606526104822716450071311",
+          "net_profit_factor": "1.8409708626739453263762140568",
+          "max_drawdown": "50.5553931064257489644918063",
+          "max_drawdown_pct": "4.4863773453763701221467356400",
+          "expectancy_stderr": "13.10728190190191",
+          "closed_net_pnl": "89.16606526104822716450071311",
+          "open_net_pnl": "25.657570295827622677405828912",
+          "net_pnl": "114.82363555687584984190654202",
+          "win_rate": "30.00"
+        },
+        "oos_stress": {
+          "trades": 10,
+          "net_expectancy": "7.4009581437421214304463906842",
+          "net_profit_factor": "1.6359084161192883364092824641",
+          "max_drawdown": "54.9862062364611634627925197",
+          "max_drawdown_pct": "4.9065698971329717641859046600",
+          "expectancy_stderr": "13.08759144336125",
+          "closed_net_pnl": "74.009581437421214304463906842",
+          "open_net_pnl": "24.116772744056224145591999425",
+          "net_pnl": "98.12635418147743845005590627",
+          "win_rate": "30.00"
+        },
+        "benchmark_base": {
+          "net_pnl": "46.711269232771862226966233630",
+          "return_pct": "9.342253846554372445393246730"
+        },
+        "benchmark_stress": {
+          "net_pnl": "45.138843690609460831532633880",
+          "return_pct": "9.027768738121892166306526780"
+        },
+        "parameter_stable": true,
+        "success": true
+      },
+      "successful_configs": 1,
+      "verdict": "Pass"
+    },
+    {
+      "symbol": "BNB-USDT",
+      "candles": 10949,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "XRP-USDT",
+      "candles": 10949,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    }
+  ],
+  "overall_verdict": "Fail",
+  "data_issues": []
+}

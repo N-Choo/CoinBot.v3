@@ -44,10 +44,6 @@ pub struct TradeOrder {
     pub pnl: Option<Decimal>,
     /// Failure reason, when the order failed.
     pub reason: Option<String>,
-    /// Take-profit price from the originating signal.
-    pub tp_price: Option<Decimal>,
-    /// Stop-loss price from the originating signal.
-    pub sl_price: Option<Decimal>,
     /// Entry order this close order exits, when `action = 'close'`.
     pub parent_order_id: Option<Uuid>,
     /// Creation timestamp.
@@ -72,12 +68,10 @@ impl TradeOrders {
         comment: &str,
         requested_qty: Decimal,
         funds: Decimal,
-        tp_price: Option<Decimal>,
-        sl_price: Option<Decimal>,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
-            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds, tp_price, sl_price)
-               VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            r#"INSERT INTO trade_orders (contract_id, user_uid, ticker, side, action, comment, requested_qty, funds)
+               VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
                RETURNING *"#,
         )
         .bind(contract_id)
@@ -88,8 +82,6 @@ impl TradeOrders {
         .bind(comment)
         .bind(requested_qty)
         .bind(funds)
-        .bind(tp_price)
-        .bind(sl_price)
         .fetch_one(&mut **tx)
         .await
     }
@@ -130,10 +122,10 @@ impl TradeOrders {
     ///
     /// Inserts a `pending` close row linked via `parent_order_id`, but only when
     /// `entry` is still a filled open position and no live or settled close
-    /// exists for it. The `INSERT ... SELECT` check makes this atomic against a
-    /// periodic exit loop settling the position between `held_entries` and this
-    /// call. Returns `None` when the entry is no longer closable. The caller
-    /// marks the row placed or failed.
+    /// exists for it. The `INSERT ... SELECT` check makes this atomic against
+    /// concurrent signal handlers or engine instances settling the position
+    /// between `held_entries` and this call. Returns `None` when the entry is
+    /// no longer closable. The caller marks the row placed or failed.
     pub async fn reserve_exit(
         pool: &PgPool,
         entry: &TradeOrder,

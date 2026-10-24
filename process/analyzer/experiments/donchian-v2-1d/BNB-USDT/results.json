@@ -1,0 +1,1810 @@
+{
+  "symbol": "BNB-USDT",
+  "timeframe": "1day",
+  "strategy_version": "donchian-v1",
+  "first_open_time": "2021-10-24T00:00:00Z",
+  "last_open_time": "2026-10-21T00:00:00Z",
+  "candles": 1824,
+  "content_sha256": "45327b6e32e1104aa722cf36913f0058affe21c24b4ddb5d6704cf58aeb8d56b",
+  "init_fund": 1000,
+  "ema_period": 200,
+  "atr_period": 14,
+  "base_costs": {
+    "label": "base",
+    "fee_bps": "10",
+    "slip_bps": "5"
+  },
+  "stress_costs": {
+    "label": "stress",
+    "fee_bps": "20",
+    "slip_bps": "10"
+  },
+  "windows": [
+    {
+      "months": 12,
+      "train": {
+        "start_index": 0,
+        "end_index": 364,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2022-10-22T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 364,
+        "end_index": 547,
+        "start_time": "2022-10-23T00:00:00Z",
+        "end_time": "2023-04-23T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 12,
+          "train": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "train_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos": {
+            "trades": 4,
+            "net_expectancy": "5.621633596283460325942074173",
+            "net_profit_factor": "1.510206610227944309692594009",
+            "max_drawdown": "44.0733889650852682608497466",
+            "max_drawdown_pct": "4.1322937417941200771842561100",
+            "expectancy_stderr": "18.79240847154285",
+            "closed_net_pnl": "22.486534385133841303768296692",
+            "open_net_pnl": "0",
+            "net_pnl": "22.486534385133841303768296692",
+            "win_rate": "50.00"
+          },
+          "oos_stress": {
+            "trades": 4,
+            "net_expectancy": "4.1109350981418226789827220338",
+            "net_profit_factor": "1.3497798457590075376180137292",
+            "max_drawdown": "47.0116863276815347582045042",
+            "max_drawdown_pct": "4.4206541380552253866245240900",
+            "expectancy_stderr": "18.76417751239682",
+            "closed_net_pnl": "16.443740392567290715930888135",
+            "open_net_pnl": "0",
+            "net_pnl": "16.443740392567290715930888135",
+            "win_rate": "50.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "109.52546711433716540266309713",
+            "return_pct": "21.905093422867433080532619430"
+          },
+          "benchmark_stress": {
+            "net_pnl": "107.85867873109079009159249659",
+            "return_pct": "21.571735746218158018318499320"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "3"
+          },
+          "window_months": 12,
+          "train": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "train_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos": {
+            "trades": 4,
+            "net_expectancy": "-15.11481306865544570818805074",
+            "net_profit_factor": "0.3454976967630590473799639419",
+            "max_drawdown": "92.3743919243848809077328540",
+            "max_drawdown_pct": "8.951743062490311798127777340",
+            "expectancy_stderr": "17.28678096826451",
+            "closed_net_pnl": "-60.459252274621782832752202958",
+            "open_net_pnl": "0",
+            "net_pnl": "-60.459252274621782832752202958",
+            "win_rate": "25.00"
+          },
+          "oos_stress": {
+            "trades": 4,
+            "net_expectancy": "-16.594360169704035424199786267",
+            "net_profit_factor": "0.3138742391331799652258219918",
+            "max_drawdown": "96.7423823220948685678614476",
+            "max_drawdown_pct": "9.389137616406587697054527880",
+            "expectancy_stderr": "17.2608118431244",
+            "closed_net_pnl": "-66.377440678816141696799145067",
+            "open_net_pnl": "0",
+            "net_pnl": "-66.377440678816141696799145067",
+            "win_rate": "25.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "109.52546711433716540266309713",
+            "return_pct": "21.905093422867433080532619430"
+          },
+          "benchmark_stress": {
+            "net_pnl": "107.85867873109079009159249659",
+            "return_pct": "21.571735746218158018318499320"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 12,
+          "train": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "train_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos": {
+            "trades": 3,
+            "net_expectancy": "-14.473558534489960799432302576",
+            "net_profit_factor": "0.1499907991926575883207773975",
+            "max_drawdown": "77.0336394117757624797363610",
+            "max_drawdown_pct": "7.6447901763707265254094733200",
+            "expectancy_stderr": "16.42302550474301",
+            "closed_net_pnl": "-43.420675603469882398296907727",
+            "open_net_pnl": "-25.951044585474191748033670682",
+            "net_pnl": "-69.371720188944074146330578409",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos_stress": {
+            "trades": 3,
+            "net_expectancy": "-15.954068962329985895877822402",
+            "net_profit_factor": "0.1138328906597440962952502233",
+            "max_drawdown": "81.4246755068006361465169273",
+            "max_drawdown_pct": "8.092712295462684030452366170",
+            "expectancy_stderr": "16.39835395916753",
+            "closed_net_pnl": "-47.862206886989957687633467205",
+            "open_net_pnl": "-27.414312921099418300239929565",
+            "net_pnl": "-75.276519808089375987873396770",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "benchmark_base": {
+            "net_pnl": "109.52546711433716540266309713",
+            "return_pct": "21.905093422867433080532619430"
+          },
+          "benchmark_stress": {
+            "net_pnl": "107.85867873109079009159249659",
+            "return_pct": "21.571735746218158018318499320"
+          },
+          "parameter_stable": false,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 18,
+      "train": {
+        "start_index": 0,
+        "end_index": 547,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2023-04-23T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 547,
+        "end_index": 729,
+        "start_time": "2023-04-24T00:00:00Z",
+        "end_time": "2023-10-22T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 18,
+          "train": {
+            "trades": 4,
+            "net_expectancy": "-3.9387047924558250016742952792",
+            "net_profit_factor": "0.6494519377424701297951296299",
+            "max_drawdown": "44.9433925504030712816359551",
+            "max_drawdown_pct": "4.3668763638501477225627630200",
+            "expectancy_stderr": "12.28493827201259",
+            "closed_net_pnl": "-15.754819169823300006697181117",
+            "open_net_pnl": "0",
+            "net_pnl": "-15.754819169823300006697181117",
+            "win_rate": "25.00"
+          },
+          "train_stress": {
+            "trades": 4,
+            "net_expectancy": "-5.4350412399383650742806934338",
+            "net_profit_factor": "0.5597609488548073245910310435",
+            "max_drawdown": "49.3826363272427261570265871",
+            "max_drawdown_pct": "4.8054296803759960504005791400",
+            "expectancy_stderr": "12.26648318196951",
+            "closed_net_pnl": "-21.740164959753460297122773735",
+            "open_net_pnl": "0",
+            "net_pnl": "-21.740164959753460297122773735",
+            "win_rate": "25.00"
+          },
+          "oos": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-172.11579260988977749815489226",
+            "return_pct": "-34.423158521977955499630978450"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-173.35948445874823051142756893",
+            "return_pct": "-34.671896891749646102285513790"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 18,
+          "train": {
+            "trades": 3,
+            "net_expectancy": "-9.492786006269953358040157523",
+            "net_profit_factor": "0.5061579083933832171040028111",
+            "max_drawdown": "57.6669313993896313490592466",
+            "max_drawdown_pct": "5.6031453215585977653552030400",
+            "expectancy_stderr": "19.36984978931768",
+            "closed_net_pnl": "-28.478358018809860074120472569",
+            "open_net_pnl": "0",
+            "net_pnl": "-28.478358018809860074120472569",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "train_stress": {
+            "trades": 3,
+            "net_expectancy": "-10.980778816475857283891874863",
+            "net_profit_factor": "0.4562607749953244281010733592",
+            "max_drawdown": "60.5848078169168377115794380",
+            "max_drawdown_pct": "5.8955141992424966505804137900",
+            "expectancy_stderr": "19.34075136700023",
+            "closed_net_pnl": "-32.942336449427571851675624589",
+            "open_net_pnl": "0",
+            "net_pnl": "-32.942336449427571851675624589",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-172.11579260988977749815489226",
+            "return_pct": "-34.423158521977955499630978450"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-173.35948445874823051142756893",
+            "return_pct": "-34.671896891749646102285513790"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "3"
+          },
+          "window_months": 18,
+          "train": {
+            "trades": 4,
+            "net_expectancy": "-24.256895096876596378347934878",
+            "net_profit_factor": "0.0519885950014670032099173159",
+            "max_drawdown": "102.3485370280503441261260255",
+            "max_drawdown_pct": "10.180682731420013883057385040",
+            "expectancy_stderr": "11.08921488323436",
+            "closed_net_pnl": "-97.02758038750638551339173951",
+            "open_net_pnl": "0",
+            "net_pnl": "-97.02758038750638551339173951",
+            "win_rate": "25.00"
+          },
+          "train_stress": {
+            "trades": 4,
+            "net_expectancy": "-25.722708474297412708275304028",
+            "net_profit_factor": "0.0357137273002018511580870517",
+            "max_drawdown": "106.7015437325650406547297420",
+            "max_drawdown_pct": "10.629647869573343865134535930",
+            "expectancy_stderr": "11.0725560726937",
+            "closed_net_pnl": "-102.89083389718965083310121611",
+            "open_net_pnl": "0",
+            "net_pnl": "-102.89083389718965083310121611",
+            "win_rate": "25.00"
+          },
+          "oos": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 0,
+            "net_expectancy": "0",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "0",
+            "open_net_pnl": "0",
+            "net_pnl": "0",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-172.11579260988977749815489226",
+            "return_pct": "-34.423158521977955499630978450"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-173.35948445874823051142756893",
+            "return_pct": "-34.671896891749646102285513790"
+          },
+          "parameter_stable": false,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 24,
+      "train": {
+        "start_index": 0,
+        "end_index": 729,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2023-10-22T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 729,
+        "end_index": 912,
+        "start_time": "2023-10-23T00:00:00Z",
+        "end_time": "2024-04-22T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 24,
+          "train": {
+            "trades": 4,
+            "net_expectancy": "-3.9387047924558250016742952792",
+            "net_profit_factor": "0.6494519377424701297951296299",
+            "max_drawdown": "44.9433925504030712816359551",
+            "max_drawdown_pct": "4.3668763638501477225627630200",
+            "expectancy_stderr": "12.28493827201259",
+            "closed_net_pnl": "-15.754819169823300006697181117",
+            "open_net_pnl": "0",
+            "net_pnl": "-15.754819169823300006697181117",
+            "win_rate": "25.00"
+          },
+          "train_stress": {
+            "trades": 4,
+            "net_expectancy": "-5.4350412399383650742806934338",
+            "net_profit_factor": "0.5597609488548073245910310435",
+            "max_drawdown": "49.3826363272427261570265871",
+            "max_drawdown_pct": "4.8054296803759960504005791400",
+            "expectancy_stderr": "12.26648318196951",
+            "closed_net_pnl": "-21.740164959753460297122773735",
+            "open_net_pnl": "0",
+            "net_pnl": "-21.740164959753460297122773735",
+            "win_rate": "25.00"
+          },
+          "oos": {
+            "trades": 5,
+            "net_expectancy": "65.89665873345877515263907192",
+            "net_profit_factor": "9.404042657867513163995839367",
+            "max_drawdown": "39.2053333235815265336704291",
+            "max_drawdown_pct": "3.9205333323581526533670429100",
+            "expectancy_stderr": "36.77286649856318",
+            "closed_net_pnl": "329.48329366729387576319535960",
+            "open_net_pnl": "0",
+            "net_pnl": "329.48329366729387576319535960",
+            "win_rate": "60.00"
+          },
+          "oos_stress": {
+            "trades": 5,
+            "net_expectancy": "64.29541187507100533518393060",
+            "net_profit_factor": "8.626805733325364903083353382",
+            "max_drawdown": "42.1509437392196113711261070",
+            "max_drawdown_pct": "4.215094373921961137112610700",
+            "expectancy_stderr": "36.71762433557084",
+            "closed_net_pnl": "321.47705937535502667591965300",
+            "open_net_pnl": "0",
+            "net_pnl": "321.47705937535502667591965300",
+            "win_rate": "60.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "885.4750826484227925983745810",
+            "return_pct": "177.09501652968455851967491620"
+          },
+          "benchmark_stress": {
+            "net_pnl": "882.6426213324762385784471280",
+            "return_pct": "176.52852426649524771568942560"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 24,
+          "train": {
+            "trades": 3,
+            "net_expectancy": "-9.492786006269953358040157523",
+            "net_profit_factor": "0.5061579083933832171040028111",
+            "max_drawdown": "57.6669313993896313490592466",
+            "max_drawdown_pct": "5.6031453215585977653552030400",
+            "expectancy_stderr": "19.36984978931768",
+            "closed_net_pnl": "-28.478358018809860074120472569",
+            "open_net_pnl": "0",
+            "net_pnl": "-28.478358018809860074120472569",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "train_stress": {
+            "trades": 3,
+            "net_expectancy": "-10.980778816475857283891874863",
+            "net_profit_factor": "0.4562607749953244281010733592",
+            "max_drawdown": "60.5848078169168377115794380",
+            "max_drawdown_pct": "5.8955141992424966505804137900",
+            "expectancy_stderr": "19.34075136700023",
+            "closed_net_pnl": "-32.942336449427571851675624589",
+            "open_net_pnl": "0",
+            "net_pnl": "-32.942336449427571851675624589",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos": {
+            "trades": 4,
+            "net_expectancy": "67.93827888463089114582152497",
+            "net_profit_factor": "15.492079516719670818369032819",
+            "max_drawdown": "18.7518371828555742912042665",
+            "max_drawdown_pct": "1.8751837182855574291204266500",
+            "expectancy_stderr": "37.44605317901836",
+            "closed_net_pnl": "271.75311553852356458328609988",
+            "open_net_pnl": "0",
+            "net_pnl": "271.75311553852356458328609988",
+            "win_rate": "75.00"
+          },
+          "oos_stress": {
+            "trades": 4,
+            "net_expectancy": "66.33396499547020377805113710",
+            "net_profit_factor": "14.11860487624974052209799074",
+            "max_drawdown": "20.2259205521352103839065135",
+            "max_drawdown_pct": "2.0225920552135210383906513500",
+            "expectancy_stderr": "37.38979971905989",
+            "closed_net_pnl": "265.33585998188081511220454840",
+            "open_net_pnl": "0",
+            "net_pnl": "265.33585998188081511220454840",
+            "win_rate": "75.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "885.4750826484227925983745810",
+            "return_pct": "177.09501652968455851967491620"
+          },
+          "benchmark_stress": {
+            "net_pnl": "882.6426213324762385784471280",
+            "return_pct": "176.52852426649524771568942560"
+          },
+          "parameter_stable": false,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "3"
+          },
+          "window_months": 24,
+          "train": {
+            "trades": 3,
+            "net_expectancy": "-29.696224134102174282001134857",
+            "net_profit_factor": "0.0563603172101109716797409619",
+            "max_drawdown": "94.4096290428504814587376905",
+            "max_drawdown_pct": "9.390993833286514899419493200",
+            "expectancy_stderr": "17.52877517818777",
+            "closed_net_pnl": "-89.08867240230652284600340457",
+            "open_net_pnl": "0",
+            "net_pnl": "-89.08867240230652284600340457",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "train_stress": {
+            "trades": 3,
+            "net_expectancy": "-31.15386626109150501668015168",
+            "net_profit_factor": "0.0391756902811368756246765603",
+            "max_drawdown": "97.2723086186499048716689809",
+            "max_drawdown_pct": "9.690303925388734887470927130",
+            "expectancy_stderr": "17.50244251642785",
+            "closed_net_pnl": "-93.46159878327451505004045504",
+            "open_net_pnl": "0",
+            "net_pnl": "-93.46159878327451505004045504",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos": {
+            "trades": 4,
+            "net_expectancy": "42.019053020877472917877816835",
+            "net_profit_factor": "9.963186403792934757636826871",
+            "max_drawdown": "18.7518371828555742912042665",
+            "max_drawdown_pct": "1.8751837182855574291204266500",
+            "expectancy_stderr": "25.50590244849612",
+            "closed_net_pnl": "168.07621208350989167151126734",
+            "open_net_pnl": "0",
+            "net_pnl": "168.07621208350989167151126734",
+            "win_rate": "75.00"
+          },
+          "oos_stress": {
+            "trades": 4,
+            "net_expectancy": "40.453676376379409613544500138",
+            "net_profit_factor": "9.000362954477994347641971417",
+            "max_drawdown": "20.2259205521352103839065135",
+            "max_drawdown_pct": "2.0225920552135210383906513500",
+            "expectancy_stderr": "25.46758612033112",
+            "closed_net_pnl": "161.81470550551763845417800055",
+            "open_net_pnl": "0",
+            "net_pnl": "161.81470550551763845417800055",
+            "win_rate": "75.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "885.4750826484227925983745810",
+            "return_pct": "177.09501652968455851967491620"
+          },
+          "benchmark_stress": {
+            "net_pnl": "882.6426213324762385784471280",
+            "return_pct": "176.52852426649524771568942560"
+          },
+          "parameter_stable": false,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 30,
+      "train": {
+        "start_index": 0,
+        "end_index": 912,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2024-04-22T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 912,
+        "end_index": 1094,
+        "start_time": "2024-04-23T00:00:00Z",
+        "end_time": "2024-10-21T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 30,
+          "train": {
+            "trades": 7,
+            "net_expectancy": "36.282947217234302749687699596",
+            "net_profit_factor": "4.8650044014586811323666257868",
+            "max_drawdown": "65.7128955467129502777913655",
+            "max_drawdown_pct": "6.3849227679302290321407416200",
+            "expectancy_stderr": "25.96166932060736",
+            "closed_net_pnl": "253.98063052064011924781389717",
+            "open_net_pnl": "0",
+            "net_pnl": "253.98063052064011924781389717",
+            "win_rate": "57.142857142857142857142857140"
+          },
+          "train_stress": {
+            "trades": 7,
+            "net_expectancy": "34.726187657068202144655619927",
+            "net_profit_factor": "4.4666295061860706514255107144",
+            "max_drawdown": "70.1209382674740224606489649",
+            "max_drawdown_pct": "6.8234760844560773599785577500",
+            "expectancy_stderr": "25.92266831511822",
+            "closed_net_pnl": "243.08331359947741501258933949",
+            "open_net_pnl": "0",
+            "net_pnl": "243.08331359947741501258933949",
+            "win_rate": "57.142857142857142857142857140"
+          },
+          "oos": {
+            "trades": 2,
+            "net_expectancy": "-18.498767879164767121700948625",
+            "net_profit_factor": "0",
+            "max_drawdown": "36.9975357583295342434018973",
+            "max_drawdown_pct": "3.6997535758329534243401897300",
+            "expectancy_stderr": "6.77994584242021",
+            "closed_net_pnl": "-36.997535758329534243401897250",
+            "open_net_pnl": "0",
+            "net_pnl": "-36.997535758329534243401897250",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 2,
+            "net_expectancy": "-19.973231422661264717411963724",
+            "net_profit_factor": "0",
+            "max_drawdown": "39.9464628453225294348239274",
+            "max_drawdown_pct": "3.9946462845322529434823927400",
+            "expectancy_stderr": "6.76976064586174",
+            "closed_net_pnl": "-39.946462845322529434823927449",
+            "open_net_pnl": "0",
+            "net_pnl": "-39.946462845322529434823927449",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-6.5270620836523024472026890984",
+            "return_pct": "-1.3054124167304604894405378200"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-8.019510162645313510126270437",
+            "return_pct": "-1.6039020325290627020252540900"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 30,
+          "train": {
+            "trades": 9,
+            "net_expectancy": "34.789054556135898255772630903",
+            "net_profit_factor": "4.6932924947434176022147440372",
+            "max_drawdown": "84.7757093300499718682053085",
+            "max_drawdown_pct": "8.237140551569365432261497460",
+            "expectancy_stderr": "23.58272686061899",
+            "closed_net_pnl": "313.10149100522308430195367813",
+            "open_net_pnl": "0",
+            "net_pnl": "313.10149100522308430195367813",
+            "win_rate": "44.444444444444444444444444440"
+          },
+          "train_stress": {
+            "trades": 9,
+            "net_expectancy": "33.234539201269394652984790197",
+            "net_profit_factor": "4.2455737936690339226404581228",
+            "max_drawdown": "92.1596216345115893366056011",
+            "max_drawdown_pct": "8.968062745779112645324524350",
+            "expectancy_stderr": "23.54729962948136",
+            "closed_net_pnl": "299.11085281142455187686311177",
+            "open_net_pnl": "0",
+            "net_pnl": "299.11085281142455187686311177",
+            "win_rate": "44.444444444444444444444444440"
+          },
+          "oos": {
+            "trades": 5,
+            "net_expectancy": "-19.609991307943373770936736856",
+            "net_profit_factor": "0.0615478807085181875768973468",
+            "max_drawdown": "104.4805105387190247049426563",
+            "max_drawdown_pct": "10.448051053871902470494265630",
+            "expectancy_stderr": "7.49988744026972",
+            "closed_net_pnl": "-98.04995653971686885468368428",
+            "open_net_pnl": "0",
+            "net_pnl": "-98.04995653971686885468368428",
+            "win_rate": "20.00"
+          },
+          "oos_stress": {
+            "trades": 5,
+            "net_expectancy": "-21.082785512287975613043491884",
+            "net_profit_factor": "0.044580130716634592640954602",
+            "max_drawdown": "110.3325678588912044374840545",
+            "max_drawdown_pct": "11.033256785889120443748405450",
+            "expectancy_stderr": "7.48862070901243",
+            "closed_net_pnl": "-105.41392756143987806521745942",
+            "open_net_pnl": "0",
+            "net_pnl": "-105.41392756143987806521745942",
+            "win_rate": "20.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "-6.5270620836523024472026890984",
+            "return_pct": "-1.3054124167304604894405378200"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-8.019510162645313510126270437",
+            "return_pct": "-1.6039020325290627020252540900"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 30,
+          "train": {
+            "trades": 6,
+            "net_expectancy": "22.453570282487316704417440657",
+            "net_profit_factor": "1.9767647772173375783579556013",
+            "max_drawdown": "137.9261669106515714560297305",
+            "max_drawdown_pct": "13.792616691065157145602973050",
+            "expectancy_stderr": "38.11012370756419",
+            "closed_net_pnl": "134.72142169492390022650464394",
+            "open_net_pnl": "0",
+            "net_pnl": "134.72142169492390022650464394",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "train_stress": {
+            "trades": 6,
+            "net_expectancy": "20.917585950565703309268090468",
+            "net_profit_factor": "1.8732156075048442603059614061",
+            "max_drawdown": "143.7279803804903522700667414",
+            "max_drawdown_pct": "14.372798038049035227006674140",
+            "expectancy_stderr": "38.0528726454096",
+            "closed_net_pnl": "125.50551570339421985560854281",
+            "open_net_pnl": "0",
+            "net_pnl": "125.50551570339421985560854281",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "-51.890193587132388351050061096",
+            "net_profit_factor": "0",
+            "max_drawdown": "58.3739429257129823056766898",
+            "max_drawdown_pct": "5.8373942925712982305676689800",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-51.890193587132388351050061096",
+            "open_net_pnl": "-6.4837493385805939546266287374",
+            "net_pnl": "-58.373942925712982305676689833",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "-53.314494748493731783672419542",
+            "net_profit_factor": "0",
+            "max_drawdown": "61.2907572327850208900948019",
+            "max_drawdown_pct": "6.1290757232785020890094801900",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-53.314494748493731783672419542",
+            "open_net_pnl": "-7.976262484291289106422382425",
+            "net_pnl": "-61.290757232785020890094801967",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-6.5270620836523024472026890984",
+            "return_pct": "-1.3054124167304604894405378200"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-8.019510162645313510126270437",
+            "return_pct": "-1.6039020325290627020252540900"
+          },
+          "parameter_stable": true,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 36,
+      "train": {
+        "start_index": 0,
+        "end_index": 1094,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2024-10-21T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 1094,
+        "end_index": 1276,
+        "start_time": "2024-10-22T00:00:00Z",
+        "end_time": "2025-04-21T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 36,
+          "train": {
+            "trades": 9,
+            "net_expectancy": "24.109232752546981783470518018",
+            "net_profit_factor": "3.1125711579471223987526832966",
+            "max_drawdown": "65.7128955467129502777913655",
+            "max_drawdown_pct": "6.3849227679302290321407416200",
+            "expectancy_stderr": "21.43094904362666",
+            "closed_net_pnl": "216.98309477292283605123466216",
+            "open_net_pnl": "0",
+            "net_pnl": "216.98309477292283605123466216",
+            "win_rate": "44.444444444444444444444444440"
+          },
+          "train_stress": {
+            "trades": 9,
+            "net_expectancy": "22.57076119608346603717587027",
+            "net_profit_factor": "2.8455677951016006723582667356",
+            "max_drawdown": "70.1209382674740224606489649",
+            "max_drawdown_pct": "6.8234760844560773599785577500",
+            "expectancy_stderr": "21.39875432798776",
+            "closed_net_pnl": "203.13685076475119433458283243",
+            "open_net_pnl": "0",
+            "net_pnl": "203.13685076475119433458283243",
+            "win_rate": "44.444444444444444444444444440"
+          },
+          "oos": {
+            "trades": 2,
+            "net_expectancy": "-12.083576572778369770623050958",
+            "net_profit_factor": "0",
+            "max_drawdown": "24.1671531455567395412461019",
+            "max_drawdown_pct": "2.4167153145556739541246101900",
+            "expectancy_stderr": "4.68113337505248",
+            "closed_net_pnl": "-24.167153145556739541246101916",
+            "open_net_pnl": "0",
+            "net_pnl": "-24.167153145556739541246101916",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 2,
+            "net_expectancy": "-13.567677359098682685339190591",
+            "net_profit_factor": "0",
+            "max_drawdown": "27.1353547181973653706783811",
+            "max_drawdown_pct": "2.7135354718197365370678381100",
+            "expectancy_stderr": "4.67410112661725",
+            "closed_net_pnl": "-27.135354718197365370678381182",
+            "open_net_pnl": "0",
+            "net_pnl": "-27.135354718197365370678381182",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-2.6839597984578720504757149086",
+            "return_pct": "-0.5367919596915744100951429800"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-4.1821811908487715917118555472",
+            "return_pct": "-0.8364362381697543183423711100"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 36,
+          "train": {
+            "trades": 14,
+            "net_expectancy": "15.360823893731521681648815475",
+            "net_profit_factor": "2.1362983721986045282744863138",
+            "max_drawdown": "104.4805104919864899444103826",
+            "max_drawdown_pct": "7.956773425944643981876176700",
+            "expectancy_stderr": "16.68705189511028",
+            "closed_net_pnl": "215.05153451224130354308341665",
+            "open_net_pnl": "0",
+            "net_pnl": "215.05153451224130354308341665",
+            "win_rate": "35.714285714285714285714285710"
+          },
+          "train_stress": {
+            "trades": 14,
+            "net_expectancy": "13.835494664046396711671376093",
+            "net_profit_factor": "1.9565649214711847375961546133",
+            "max_drawdown": "110.3325678122288737852550341",
+            "max_drawdown_pct": "8.492929419645488366737033390",
+            "expectancy_stderr": "16.66198371499745",
+            "closed_net_pnl": "193.69692529664955396339926530",
+            "open_net_pnl": "0",
+            "net_pnl": "193.69692529664955396339926530",
+            "win_rate": "35.714285714285714285714285710"
+          },
+          "oos": {
+            "trades": 2,
+            "net_expectancy": "-12.083576572778369770623050958",
+            "net_profit_factor": "0",
+            "max_drawdown": "24.1671531455567395412461019",
+            "max_drawdown_pct": "2.4167153145556739541246101900",
+            "expectancy_stderr": "4.68113337505248",
+            "closed_net_pnl": "-24.167153145556739541246101916",
+            "open_net_pnl": "0",
+            "net_pnl": "-24.167153145556739541246101916",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 2,
+            "net_expectancy": "-13.567677359098682685339190591",
+            "net_profit_factor": "0",
+            "max_drawdown": "27.1353547181973653706783811",
+            "max_drawdown_pct": "2.7135354718197365370678381100",
+            "expectancy_stderr": "4.67410112661725",
+            "closed_net_pnl": "-27.135354718197365370678381182",
+            "open_net_pnl": "0",
+            "net_pnl": "-27.135354718197365370678381182",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-2.6839597984578720504757149086",
+            "return_pct": "-0.5367919596915744100951429800"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-4.1821811908487715917118555472",
+            "return_pct": "-0.8364362381697543183423711100"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 36,
+          "train": {
+            "trades": 7,
+            "net_expectancy": "11.833032589254457609972887431",
+            "net_profit_factor": "1.4363755996320565629408958936",
+            "max_drawdown": "137.9261669106515714560297305",
+            "max_drawdown_pct": "13.792616691065157145602973050",
+            "expectancy_stderr": "33.91476372842215",
+            "closed_net_pnl": "82.83122812478120326981021202",
+            "open_net_pnl": "-6.4837493385805939546266287374",
+            "net_pnl": "76.347478786200609315183583283",
+            "win_rate": "28.571428571428571428571428570"
+          },
+          "train_stress": {
+            "trades": 7,
+            "net_expectancy": "10.313002995980665234995461961",
+            "net_profit_factor": "1.3663728895550240958077288441",
+            "max_drawdown": "143.7279803804903522700667414",
+            "max_drawdown_pct": "14.372798038049035227006674140",
+            "expectancy_stderr": "33.86381515997684",
+            "closed_net_pnl": "72.191020971864656644968233724",
+            "open_net_pnl": "-7.976262484291289106422382425",
+            "net_pnl": "64.214758487573367538545851299",
+            "win_rate": "28.571428571428571428571428570"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "7.7078036729335380143859384396",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "7.7078036729335380143859384396",
+            "open_net_pnl": "0",
+            "net_pnl": "7.7078036729335380143859384396",
+            "win_rate": "100"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "6.1939712187428516778595699793",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "6.1939712187428516778595699793",
+            "open_net_pnl": "0",
+            "net_pnl": "6.1939712187428516778595699793",
+            "win_rate": "100"
+          },
+          "benchmark_base": {
+            "net_pnl": "-2.6839597984578720504757149086",
+            "return_pct": "-0.5367919596915744100951429800"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-4.1821811908487715917118555472",
+            "return_pct": "-0.8364362381697543183423711100"
+          },
+          "parameter_stable": false,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 42,
+      "train": {
+        "start_index": 0,
+        "end_index": 1276,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2025-04-21T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 1276,
+        "end_index": 1459,
+        "start_time": "2025-04-22T00:00:00Z",
+        "end_time": "2025-10-21T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 42,
+          "train": {
+            "trades": 11,
+            "net_expectancy": "17.528721948312355251436939588",
+            "net_profit_factor": "2.5197005994773057455250180103",
+            "max_drawdown": "65.7128955467129502777913655",
+            "max_drawdown_pct": "6.3849227679302290321407416200",
+            "expectancy_stderr": "17.90274029724705",
+            "closed_net_pnl": "192.81594143143590776580633547",
+            "open_net_pnl": "0",
+            "net_pnl": "192.81594143143590776580633547",
+            "win_rate": "36.363636363636363636363636360"
+          },
+          "train_stress": {
+            "trades": 11,
+            "net_expectancy": "16.000135986447088818910995263",
+            "net_profit_factor": "2.2827839684965986467773002069",
+            "max_drawdown": "70.1209382674740224606489649",
+            "max_drawdown_pct": "6.8234760844560773599785577500",
+            "expectancy_stderr": "17.875845845123",
+            "closed_net_pnl": "176.00149585091797700802094789",
+            "open_net_pnl": "0",
+            "net_pnl": "176.00149585091797700802094789",
+            "win_rate": "36.363636363636363636363636360"
+          },
+          "oos": {
+            "trades": 6,
+            "net_expectancy": "11.08786817685266951224835021",
+            "net_profit_factor": "1.9326632855364218621549381823",
+            "max_drawdown": "59.3403279347338094108821916",
+            "max_drawdown_pct": "5.8936843272260948246768752600",
+            "expectancy_stderr": "17.12009544535487",
+            "closed_net_pnl": "66.527209061116017073490101263",
+            "open_net_pnl": "0",
+            "net_pnl": "66.527209061116017073490101263",
+            "win_rate": "50.00"
+          },
+          "oos_stress": {
+            "trades": 6,
+            "net_expectancy": "9.568958009336115677227446329",
+            "net_profit_factor": "1.7581377858360100467085750349",
+            "max_drawdown": "62.2556904866595973787176215",
+            "max_drawdown_pct": "6.2018083072986746667109793400",
+            "expectancy_stderr": "17.09437672410497",
+            "closed_net_pnl": "57.413748056016694063364677976",
+            "open_net_pnl": "0",
+            "net_pnl": "57.413748056016694063364677976",
+            "win_rate": "50.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "383.11414495937627681735065004",
+            "return_pct": "76.622828991875255363470130010"
+          },
+          "benchmark_stress": {
+            "net_pnl": "381.03635706008828040750986289",
+            "return_pct": "76.207271412017656081501972580"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 42,
+          "train": {
+            "trades": 16,
+            "net_expectancy": "11.930273823172148453603443122",
+            "net_profit_factor": "1.8943930476841455974000657586",
+            "max_drawdown": "122.2171098344687090442985881",
+            "max_drawdown_pct": "9.307514359831198281905550010",
+            "expectancy_stderr": "14.72543421190952",
+            "closed_net_pnl": "190.88438117075437525765508996",
+            "open_net_pnl": "0",
+            "net_pnl": "190.88438117075437525765508996",
+            "win_rate": "31.2500"
+          },
+          "train_stress": {
+            "trades": 16,
+            "net_expectancy": "10.410098148926021039802336297",
+            "net_profit_factor": "1.7253553612073309655452968344",
+            "max_drawdown": "132.5492824286082152400257310",
+            "max_drawdown_pct": "10.203077138625730015091986470",
+            "expectancy_stderr": "14.70331287859168",
+            "closed_net_pnl": "166.56157038281633663683738075",
+            "open_net_pnl": "0",
+            "net_pnl": "166.56157038281633663683738075",
+            "win_rate": "31.2500"
+          },
+          "oos": {
+            "trades": 7,
+            "net_expectancy": "15.574786766978104365602251789",
+            "net_profit_factor": "2.8372582552755282715905859138",
+            "max_drawdown": "59.3403279347338094108821916",
+            "max_drawdown_pct": "5.655001720587141402710063200",
+            "expectancy_stderr": "13.93742292262959",
+            "closed_net_pnl": "109.02350736884673055921576252",
+            "open_net_pnl": "0",
+            "net_pnl": "109.02350736884673055921576252",
+            "win_rate": "71.428571428571428571428571430"
+          },
+          "oos_stress": {
+            "trades": 7,
+            "net_expectancy": "14.049136110843435205313415156",
+            "net_profit_factor": "2.5796781307401544074642029682",
+            "max_drawdown": "62.2556904866595973787176215",
+            "max_drawdown_pct": "5.95884252786167821842599900",
+            "expectancy_stderr": "13.91648538193461",
+            "closed_net_pnl": "98.34395277590404643719390609",
+            "open_net_pnl": "0",
+            "net_pnl": "98.34395277590404643719390609",
+            "win_rate": "71.428571428571428571428571430"
+          },
+          "benchmark_base": {
+            "net_pnl": "383.11414495937627681735065004",
+            "return_pct": "76.622828991875255363470130010"
+          },
+          "benchmark_stress": {
+            "net_pnl": "381.03635706008828040750986289",
+            "return_pct": "76.207271412017656081501972580"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "3"
+          },
+          "window_months": 42,
+          "train": {
+            "trades": 10,
+            "net_expectancy": "5.2105595773872285303875486809",
+            "net_profit_factor": "1.2907716153728327973867811586",
+            "max_drawdown": "101.6663477864433793141524607",
+            "max_drawdown_pct": "10.112824875965908993353073130",
+            "expectancy_stderr": "16.12462942928832",
+            "closed_net_pnl": "52.105595773872285303875486809",
+            "open_net_pnl": "0",
+            "net_pnl": "52.105595773872285303875486809",
+            "win_rate": "50.00"
+          },
+          "train_stress": {
+            "trades": 10,
+            "net_expectancy": "3.7004786165799367499212679359",
+            "net_profit_factor": "1.1984812196158435203103578564",
+            "max_drawdown": "106.0203793120521273672608946",
+            "max_drawdown_pct": "10.561790014119238975430224010",
+            "expectancy_stderr": "16.10040615022579",
+            "closed_net_pnl": "37.004786165799367499212679359",
+            "open_net_pnl": "0",
+            "net_pnl": "37.004786165799367499212679359",
+            "win_rate": "50.00"
+          },
+          "oos": {
+            "trades": 4,
+            "net_expectancy": "23.670033652520125721620927882",
+            "net_profit_factor": "5.8447330472980718264425392849",
+            "max_drawdown": "19.5429002353151358102804871",
+            "max_drawdown_pct": "1.9542900235315135810280487100",
+            "expectancy_stderr": "15.04296868654433",
+            "closed_net_pnl": "94.68013461008050288648371153",
+            "open_net_pnl": "0",
+            "net_pnl": "94.68013461008050288648371153",
+            "win_rate": "75.00"
+          },
+          "oos_stress": {
+            "trades": 4,
+            "net_expectancy": "22.132221884389149068058152328",
+            "net_profit_factor": "5.2124928692644533118437957598",
+            "max_drawdown": "21.0157952274503659517773116",
+            "max_drawdown_pct": "2.1015795227450365951777311600",
+            "expectancy_stderr": "15.02037033598868",
+            "closed_net_pnl": "88.52888753755659627223260931",
+            "open_net_pnl": "0",
+            "net_pnl": "88.52888753755659627223260931",
+            "win_rate": "75.00"
+          },
+          "benchmark_base": {
+            "net_pnl": "383.11414495937627681735065004",
+            "return_pct": "76.622828991875255363470130010"
+          },
+          "benchmark_stress": {
+            "net_pnl": "381.03635706008828040750986289",
+            "return_pct": "76.207271412017656081501972580"
+          },
+          "parameter_stable": false,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 48,
+      "train": {
+        "start_index": 0,
+        "end_index": 1459,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2025-10-21T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 1459,
+        "end_index": 1641,
+        "start_time": "2025-10-22T00:00:00Z",
+        "end_time": "2026-04-21T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 48,
+          "train": {
+            "trades": 11,
+            "net_expectancy": "25.277697686374360599831483255",
+            "net_profit_factor": "2.0448027394981271745904844481",
+            "max_drawdown": "137.9261669106515714560297305",
+            "max_drawdown_pct": "13.792616691065157145602973050",
+            "expectancy_stderr": "32.34118574463626",
+            "closed_net_pnl": "278.05467455011796659814631580",
+            "open_net_pnl": "0",
+            "net_pnl": "278.05467455011796659814631580",
+            "win_rate": "36.363636363636363636363636360"
+          },
+          "train_stress": {
+            "trades": 11,
+            "net_expectancy": "23.737470799514509281954921185",
+            "net_profit_factor": "1.9452118942787437912452229087",
+            "max_drawdown": "143.7279803804903522700667414",
+            "max_drawdown_pct": "14.372798038049035227006674140",
+            "expectancy_stderr": "32.29260108903591",
+            "closed_net_pnl": "261.11217879465960210150413304",
+            "open_net_pnl": "0",
+            "net_pnl": "261.11217879465960210150413304",
+            "win_rate": "36.363636363636363636363636360"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "-46.543454481074014569960236611",
+            "net_profit_factor": "0",
+            "max_drawdown": "46.5434544810740145699602366",
+            "max_drawdown_pct": "4.6543454481074014569960236600",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-46.543454481074014569960236611",
+            "open_net_pnl": "0",
+            "net_pnl": "-46.543454481074014569960236611",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "-47.975787799329787207060947322",
+            "net_profit_factor": "0",
+            "max_drawdown": "47.9757877993297872070609473",
+            "max_drawdown_pct": "4.7975787799329787207060947300",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-47.975787799329787207060947322",
+            "open_net_pnl": "0",
+            "net_pnl": "-47.975787799329787207060947322",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-202.43997898887384715517298467",
+            "return_pct": "-40.487995797774769431034596930"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-203.63811622624659550696791759",
+            "return_pct": "-40.727623245249319101393583520"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 48,
+          "train": {
+            "trades": 17,
+            "net_expectancy": "15.25547939033603670976537381",
+            "net_profit_factor": "2.3084397166297348697311285354",
+            "max_drawdown": "113.6589664115549578773568036",
+            "max_drawdown_pct": "9.063853431640718450524669980",
+            "expectancy_stderr": "12.74897343808521",
+            "closed_net_pnl": "259.34314963571262406601135477",
+            "open_net_pnl": "0",
+            "net_pnl": "259.34314963571262406601135477",
+            "win_rate": "41.176470588235294117647058820"
+          },
+          "train_stress": {
+            "trades": 17,
+            "net_expectancy": "13.730308414787209413756712758",
+            "net_profit_factor": "2.0961924541397181105728224633",
+            "max_drawdown": "125.5062488856487661529541644",
+            "max_drawdown_pct": "10.096366632276024161832846780",
+            "expectancy_stderr": "12.72982124964542",
+            "closed_net_pnl": "233.41524305138256003386411688",
+            "open_net_pnl": "0",
+            "net_pnl": "233.41524305138256003386411688",
+            "win_rate": "41.176470588235294117647058820"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "-19.812533000937671760014442487",
+            "net_profit_factor": "0",
+            "max_drawdown": "19.8125330009376717600144425",
+            "max_drawdown_pct": "1.9812533000937671760014442500",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-19.812533000937671760014442487",
+            "open_net_pnl": "0",
+            "net_pnl": "-19.812533000937671760014442487",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "-21.285022936339367796429042723",
+            "net_profit_factor": "0",
+            "max_drawdown": "21.2850229363393677964290427",
+            "max_drawdown_pct": "2.1285022936339367796429042700",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-21.285022936339367796429042723",
+            "open_net_pnl": "0",
+            "net_pnl": "-21.285022936339367796429042723",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-202.43997898887384715517298467",
+            "return_pct": "-40.487995797774769431034596930"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-203.63811622624659550696791759",
+            "return_pct": "-40.727623245249319101393583520"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 48,
+          "train": {
+            "trades": 16,
+            "net_expectancy": "19.388449574942524943479908604",
+            "net_profit_factor": "1.9266424615488748778432609019",
+            "max_drawdown": "170.3564610202321731524407043",
+            "max_drawdown_pct": "17.035646102023217315244070430",
+            "expectancy_stderr": "26.8189625197203",
+            "closed_net_pnl": "310.21519319908039909567853767",
+            "open_net_pnl": "0",
+            "net_pnl": "310.21519319908039909567853767",
+            "win_rate": "31.2500"
+          },
+          "train_stress": {
+            "trades": 16,
+            "net_expectancy": "17.857069830964143584025507139",
+            "net_profit_factor": "1.8111226189969647300072352579",
+            "max_drawdown": "179.1140627312683792017860613",
+            "max_drawdown_pct": "17.911406273126837920178606130",
+            "expectancy_stderr": "26.77867364262507",
+            "closed_net_pnl": "285.71311729542629734440811423",
+            "open_net_pnl": "0",
+            "net_pnl": "285.71311729542629734440811423",
+            "win_rate": "25.00"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "-29.816848280477235241834313968",
+            "net_profit_factor": "0",
+            "max_drawdown": "29.8168482804772352418343140",
+            "max_drawdown_pct": "2.981684828047723524183431400",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-29.816848280477235241834313968",
+            "open_net_pnl": "0",
+            "net_pnl": "-29.816848280477235241834313968",
+            "win_rate": "0"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "-31.274309199434955970063906887",
+            "net_profit_factor": "0",
+            "max_drawdown": "31.2743091994349559700639069",
+            "max_drawdown_pct": "3.1274309199434955970063906900",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "-31.274309199434955970063906887",
+            "open_net_pnl": "0",
+            "net_pnl": "-31.274309199434955970063906887",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "-202.43997898887384715517298467",
+            "return_pct": "-40.487995797774769431034596930"
+          },
+          "benchmark_stress": {
+            "net_pnl": "-203.63811622624659550696791759",
+            "return_pct": "-40.727623245249319101393583520"
+          },
+          "parameter_stable": true,
+          "success": false
+        }
+      ]
+    },
+    {
+      "months": 54,
+      "train": {
+        "start_index": 0,
+        "end_index": 1641,
+        "start_time": "2021-10-24T00:00:00Z",
+        "end_time": "2026-04-21T00:00:00Z"
+      },
+      "oos": {
+        "start_index": 1641,
+        "end_index": 1824,
+        "start_time": "2026-04-22T00:00:00Z",
+        "end_time": "2026-10-21T00:00:00Z"
+      },
+      "top": [
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "2"
+          },
+          "window_months": 54,
+          "train": {
+            "trades": 18,
+            "net_expectancy": "13.307256479768803528020016776",
+            "net_profit_factor": "2.0986610842580826988318896585",
+            "max_drawdown": "113.6589664115549578773568036",
+            "max_drawdown_pct": "9.063853431640718450524669980",
+            "expectancy_stderr": "12.17671157206497",
+            "closed_net_pnl": "239.53061663583846350436030197",
+            "open_net_pnl": "0",
+            "net_pnl": "239.53061663583846350436030197",
+            "win_rate": "38.888888888888888888888888890"
+          },
+          "train_stress": {
+            "trades": 18,
+            "net_expectancy": "11.785012228672505876250332224",
+            "net_profit_factor": "1.9056966209432499064628786926",
+            "max_drawdown": "125.5062488856487661529541644",
+            "max_drawdown_pct": "10.096366632276024161832846780",
+            "expectancy_stderr": "12.1584190659477",
+            "closed_net_pnl": "212.13022011610510577250598004",
+            "open_net_pnl": "0",
+            "net_pnl": "212.13022011610510577250598004",
+            "win_rate": "38.888888888888888888888888890"
+          },
+          "oos": {
+            "trades": 3,
+            "net_expectancy": "-20.10245595081245409707666939",
+            "net_profit_factor": "0.0087202454205174067834981961",
+            "max_drawdown": "60.8378891769264002391463643",
+            "max_drawdown_pct": "6.0805630493300703316134753300",
+            "expectancy_stderr": "10.3180217633186",
+            "closed_net_pnl": "-60.307367852437362291230008171",
+            "open_net_pnl": "0",
+            "net_pnl": "-60.307367852437362291230008171",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos_stress": {
+            "trades": 3,
+            "net_expectancy": "-21.574510348482740846054521164",
+            "net_profit_factor": "0",
+            "max_drawdown": "64.7235310454482225381635635",
+            "max_drawdown_pct": "6.4723531045448222538163563500",
+            "expectancy_stderr": "10.30252148024902",
+            "closed_net_pnl": "-64.723531045448222538163563491",
+            "open_net_pnl": "0",
+            "net_pnl": "-64.723531045448222538163563491",
+            "win_rate": "0"
+          },
+          "benchmark_base": {
+            "net_pnl": "88.84992203947889129849777595",
+            "return_pct": "17.769984407895778259699555190"
+          },
+          "benchmark_stress": {
+            "net_pnl": "87.21419356370601364506988746",
+            "return_pct": "17.442838712741202729013977490"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 20,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 54,
+          "train": {
+            "trades": 17,
+            "net_expectancy": "17.287702855456469890920777402",
+            "net_profit_factor": "1.8370634266864124376146215669",
+            "max_drawdown": "170.3564610202321731524407043",
+            "max_drawdown_pct": "17.035646102023217315244070430",
+            "expectancy_stderr": "25.27946688841589",
+            "closed_net_pnl": "293.89094854275998814565321584",
+            "open_net_pnl": "0",
+            "net_pnl": "293.89094854275998814565321584",
+            "win_rate": "29.411764705882352941176470590"
+          },
+          "train_stress": {
+            "trades": 17,
+            "net_expectancy": "15.759478965338107642712083195",
+            "net_profit_factor": "1.7239941076550328049282809572",
+            "max_drawdown": "179.1140627312683792017860613",
+            "max_drawdown_pct": "17.911406273126837920178606130",
+            "expectancy_stderr": "25.2414907238364",
+            "closed_net_pnl": "267.91114241074782992610541431",
+            "open_net_pnl": "0",
+            "net_pnl": "267.91114241074782992610541431",
+            "win_rate": "23.529411764705882352941176470"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "25.286676915185097712996265865",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "25.286676915185097712996265865",
+            "open_net_pnl": "0",
+            "net_pnl": "25.286676915185097712996265865",
+            "win_rate": "100"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "23.746436539248415042420908430",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "23.746436539248415042420908430",
+            "open_net_pnl": "0",
+            "net_pnl": "23.746436539248415042420908430",
+            "win_rate": "100"
+          },
+          "benchmark_base": {
+            "net_pnl": "88.84992203947889129849777595",
+            "return_pct": "17.769984407895778259699555190"
+          },
+          "benchmark_stress": {
+            "net_pnl": "87.21419356370601364506988746",
+            "return_pct": "17.442838712741202729013977490"
+          },
+          "parameter_stable": true,
+          "success": false
+        },
+        {
+          "config": {
+            "entry": 55,
+            "exit": 55,
+            "ema_period": 200,
+            "atr_period": 14,
+            "atr_multiplier": "4"
+          },
+          "window_months": 54,
+          "train": {
+            "trades": 12,
+            "net_expectancy": "20.377049443795031663496009167",
+            "net_profit_factor": "1.8160031200323785816065894473",
+            "max_drawdown": "137.9261669106515714560297305",
+            "max_drawdown_pct": "13.792616691065157145602973050",
+            "expectancy_stderr": "29.92729967780336",
+            "closed_net_pnl": "244.52459332554037996195211000",
+            "open_net_pnl": "0",
+            "net_pnl": "244.52459332554037996195211000",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "train_stress": {
+            "trades": 12,
+            "net_expectancy": "18.844184572322129763150246508",
+            "net_profit_factor": "1.7265713199233119779457722789",
+            "max_drawdown": "143.7279803804903522700667414",
+            "max_drawdown_pct": "14.372798038049035227006674140",
+            "expectancy_stderr": "29.88234129070601",
+            "closed_net_pnl": "226.13021486786555715780295810",
+            "open_net_pnl": "0",
+            "net_pnl": "226.13021486786555715780295810",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos": {
+            "trades": 1,
+            "net_expectancy": "25.286676915185097712996265865",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "25.286676915185097712996265865",
+            "open_net_pnl": "0",
+            "net_pnl": "25.286676915185097712996265865",
+            "win_rate": "100"
+          },
+          "oos_stress": {
+            "trades": 1,
+            "net_expectancy": "23.746436539248415042420908430",
+            "net_profit_factor": null,
+            "max_drawdown": "0",
+            "max_drawdown_pct": "0",
+            "expectancy_stderr": "0",
+            "closed_net_pnl": "23.746436539248415042420908430",
+            "open_net_pnl": "0",
+            "net_pnl": "23.746436539248415042420908430",
+            "win_rate": "100"
+          },
+          "benchmark_base": {
+            "net_pnl": "88.84992203947889129849777595",
+            "return_pct": "17.769984407895778259699555190"
+          },
+          "benchmark_stress": {
+            "net_pnl": "87.21419356370601364506988746",
+            "return_pct": "17.442838712741202729013977490"
+          },
+          "parameter_stable": true,
+          "success": false
+        }
+      ]
+    }
+  ],
+  "successful_runs": [],
+  "winner": null,
+  "decision": {
+    "verdict": "Fail",
+    "reasons": [
+      "No top-3 config met the OOS stress gates (net expectancy > 0, PF > 1, net PnL above the buy-and-hold benchmark), the minimum of 10 OOS trades, and the parameter-stability rule.",
+      "M1-M12: best top-3 stress run entry20-exit55-ema200-atr14x2 had 4 OOS trades (minimum 10), net expectancy 4.1109350981418226789827220338, PF 1.3497798457590075376180137292, net PnL 16.443740392567290715930888135 vs benchmark 107.85867873109079009159249659; parameter stability fail.",
+      "M1-M18: best top-3 stress run entry20-exit55-ema200-atr14x3 had 0 OOS trades (minimum 10), net expectancy 0, PF infinite, net PnL 0 vs benchmark -173.35948445874823051142756893; parameter stability fail.",
+      "M1-M24: best top-3 stress run entry55-exit55-ema200-atr14x2 had 4 OOS trades (minimum 10), net expectancy 66.33396499547020377805113710, PF 14.11860487624974052209799074, net PnL 265.33585998188081511220454840 vs benchmark 882.6426213324762385784471280; parameter stability fail.",
+      "M1-M30: best top-3 stress run entry55-exit55-ema200-atr14x2 had 2 OOS trades (minimum 10), net expectancy -19.973231422661264717411963724, PF 0, net PnL -39.946462845322529434823927449 vs benchmark -8.019510162645313510126270437; parameter stability pass.",
+      "M1-M36: best top-3 stress run entry55-exit55-ema200-atr14x4 had 1 OOS trades (minimum 10), net expectancy 6.1939712187428516778595699793, PF infinite, net PnL 6.1939712187428516778595699793 vs benchmark -4.1821811908487715917118555472; parameter stability fail.",
+      "M1-M42: best top-3 stress run entry55-exit55-ema200-atr14x3 had 4 OOS trades (minimum 10), net expectancy 22.132221884389149068058152328, PF 5.2124928692644533118437957598, net PnL 88.52888753755659627223260931 vs benchmark 381.03635706008828040750986289; parameter stability fail.",
+      "M1-M48: best top-3 stress run entry55-exit55-ema200-atr14x2 had 1 OOS trades (minimum 10), net expectancy -21.285022936339367796429042723, PF 0, net PnL -21.285022936339367796429042723 vs benchmark -203.63811622624659550696791759; parameter stability pass.",
+      "M1-M54: best top-3 stress run entry55-exit55-ema200-atr14x4 had 1 OOS trades (minimum 10), net expectancy 23.746436539248415042420908430, PF infinite, net PnL 23.746436539248415042420908430 vs benchmark 87.21419356370601364506988746; parameter stability pass."
+    ]
+  },
+  "overall_verdict": "Fail",
+  "expected_symbols": 5
+}

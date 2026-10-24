@@ -8,9 +8,9 @@ fn d(value: i64, scale: u32) -> Decimal {
 }
 
 #[test]
-fn frozen_candidates_are_baseline_first_and_include_the_four_winners() {
+fn frozen_candidates_are_baseline_first_and_include_the_three_winners() {
     let candidates = frozen_candidates();
-    assert_eq!(candidates.len(), 5);
+    assert_eq!(candidates.len(), 4);
     assert_eq!(candidates[0].label, "baseline");
     let labels: Vec<&str> = candidates.iter().map(|c| c.label.as_str()).collect();
     assert_eq!(
@@ -19,28 +19,19 @@ fn frozen_candidates_are_baseline_first_and_include_the_four_winners() {
             "baseline",
             "long65-short50",
             "long60-short45",
-            "long70-short50",
-            "atr-on-tp4.0"
+            "long70-short50"
         ]
     );
     assert_eq!(candidates[0].origin, "baseline");
-    let expected = [
-        (60, 50, false),
-        (65, 50, false),
-        (60, 45, false),
-        (70, 50, false),
-        (60, 50, true),
-    ];
-    for (candidate, (long, short, atr)) in candidates.iter().zip(expected) {
+    let expected = [(60, 50), (65, 50), (60, 45), (70, 50)];
+    for (candidate, (long, short)) in candidates.iter().zip(expected) {
         assert_eq!(candidate.rsi_period, 21);
         assert_eq!(candidate.rsi_long_threshold, Decimal::from(long));
         assert_eq!(candidate.rsi_short_threshold, Decimal::from(short));
-        assert_eq!(candidate.atr_enabled, atr);
     }
     for candidate in &candidates[1..] {
         assert_eq!(candidate.origin, "screening-4hour");
     }
-    assert_eq!(candidates[4].atr_tp_multiplier, Decimal::new(40, 1));
 }
 
 #[test]

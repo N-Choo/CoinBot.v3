@@ -455,10 +455,9 @@ fn writes_leaderboard_csv_with_expected_columns() {
     let text = std::fs::read_to_string(&path).expect("csv readable");
     let header = text.lines().next().expect("header");
     assert!(header.starts_with("timeframe,symbol_or_pooled,label,origin"));
-    assert_eq!(header.split(',').count(), 30);
+    assert_eq!(header.split(',').count(), 25);
     assert!(header.contains("rsi_long_threshold"));
     assert!(header.contains("rsi_short_threshold"));
-    assert!(header.contains("atr_enabled"));
     assert!(header.contains("stress_validation_net_pnl"));
     assert!(header.contains("stress_validation_expectancy"));
     assert!(text.contains("validation"));
@@ -503,7 +502,7 @@ fn writes_markdown_with_required_sections() {
     assert!(text.contains("validation"));
     assert!(text.contains("holdout"));
     assert!(text.contains("no candidate"));
-    assert!(text.contains("ATR enabled"));
+    assert!(text.contains("RSI period"));
 
     std::fs::remove_dir_all(path.parent().expect("parent")).ok();
 }

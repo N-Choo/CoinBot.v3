@@ -32,7 +32,10 @@ struct Cli {
     data_dir: PathBuf,
 
     /// Artifact output directory.
-    #[arg(long, default_value = "process/analyzer/experiments/cost-ladder")]
+    #[arg(
+        long,
+        default_value = "process/analyzer/experiments/historical/rsi-divergence-cost-ladder"
+    )]
     out_dir: PathBuf,
 
     /// Reference time in milliseconds.
@@ -998,7 +1001,7 @@ fn write_interpretation(out: &mut String, reports: &[CandidateReport]) {
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "The four winners were selected on validation, so the validation result is in-sample. Only the holdout is out-of-sample evidence."
+        "The three winners were selected on validation, so the validation result is in-sample. Only the holdout is out-of-sample evidence."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1116,7 +1119,7 @@ fn main() -> Result<(), String> {
             best_holdout_break_even_display: format_best_break_even(&holdout.best),
             decision: holdout.decision.clone(),
         },
-        selection_note: "Four winners were selected on validation, so validation is in-sample; only the holdout is out-of-sample.".to_string(),
+        selection_note: "Three winners were selected on validation, so validation is in-sample; only the holdout is out-of-sample.".to_string(),
     };
 
     let csv_path = cli.out_dir.join("cost_ladder.csv");

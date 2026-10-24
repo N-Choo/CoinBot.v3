@@ -1,8 +1,6 @@
 use crate::harness::dataset::Dataset;
 use crate::harness::replay::{build_replay, ReplaySignal};
-use crate::harness::sim::{
-    ClosedTrade, SimOutcome, REASON_GAP_SL, REASON_GAP_TP, REASON_REVERSAL, REASON_SL, REASON_TP,
-};
+use crate::harness::sim::{ClosedTrade, SimOutcome, REASON_REVERSAL};
 use crate::harness::sweep::costs::CostScenario;
 use crate::harness::sweep::evaluate::{metrics_from_outcome, pool, PartitionMetrics};
 use crate::harness::sweep::partition::{slice_with_warmup, Splits};
@@ -80,15 +78,9 @@ impl ExecModel {
         }
     }
 
-    /// Per-side exit cost as a fraction of the exit notional.
-    pub fn exit_rate(&self, reason: &str) -> Decimal {
-        match &self.entry {
-            EntryMode::Market => (self.taker_bps + self.slip_bps) / Decimal::from(10_000),
-            EntryMode::Limit { .. } if reason == REASON_TP => {
-                self.maker_bps / Decimal::from(10_000)
-            }
-            EntryMode::Limit { .. } => (self.taker_bps + self.slip_bps) / Decimal::from(10_000),
-        }
+    /// Per-side exit cost as a fraction of the exit notional. Exits are always taker.
+    pub fn exit_rate(&self) -> Decimal {
+        (self.taker_bps + self.slip_bps) / Decimal::from(10_000)
     }
 }
 
@@ -107,7 +99,6 @@ pub struct ExecTrade {
     pub reason: String,
     pub entry_index: usize,
     pub exit_index: usize,
-    pub risk_reward: Option<Decimal>,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -118,7 +109,6 @@ pub struct ExecOutcome {
     pub filled: usize,
     pub expired: usize,
     pub skipped_funds: usize,
-    pub invalid_levels: usize,
     pub same_side: usize,
 }
 
@@ -144,7 +134,6 @@ impl ExecOutcome {
                     } else {
                         t.net_pnl / t.e * Decimal::from(100)
                     },
-                    risk_reward: t.risk_reward,
                     reason: t.reason.clone(),
                     signal_id: t.signal_id.clone(),
                     entry_index: t.entry_index,
@@ -155,7 +144,6 @@ impl ExecOutcome {
             available_fund: self.available_fund,
             skipped_funds: self.skipped_funds,
             unfilled_at_end: self.expired,
-            invalid_levels: self.invalid_levels,
             ..Default::default()
         }
     }
@@ -166,19 +154,7 @@ struct Pending {
     signal_id: String,
     side: Direction,
     signal_entry: Decimal,
-    sl: Decimal,
-    tp: Decimal,
     signal_index: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum SameCandleExit {
-    /// Market entries may exit on their entry candle exactly like `sim.rs`.
-    All,
-    /// Limit entries may only exit through the stop on their entry candle.
-    StopOnly,
-    /// Limit entries may not exit on their entry candle.
-    None,
 }
 
 #[derive(Debug, Clone)]
@@ -188,18 +164,17 @@ struct OpenPosition {
     signal_entry: Decimal,
     fill: Decimal,
     e: Decimal,
-    sl: Decimal,
-    tp: Decimal,
     entry_index: usize,
     entry_cost: Decimal,
-    same_candle_exit: SameCandleExit,
 }
 
 /// Simulates the execution models over `candles`.
 ///
 /// Signals are queued at their own candle and can only be filled from the next candle onward.
 /// Limit orders remain pending until they fill, are skipped for insufficient funds, or exhaust
-/// their validity window. `window` warm-up candles are skipped, matching the sweep harness.
+/// their validity window. Positions are reversal-only: an opposite fill closes the open position,
+/// and anything still open at the end is closed at the final close. `window` warm-up candles are
+/// skipped, matching the sweep harness.
 pub fn simulate_execution(
     candles: &[Candle],
     signals: &[ReplaySignal],
@@ -217,7 +192,6 @@ pub fn simulate_execution(
     let mut filled = 0usize;
     let mut expired = 0usize;
     let mut skipped_funds = 0usize;
-    let mut invalid_levels = 0usize;
     let mut same_side = 0usize;
     let mut cursor = 0usize;
 
@@ -231,7 +205,7 @@ pub fn simulate_execution(
             cursor += 1;
         }
 
-        // 1-2. Work pending entries and open any position that fills.
+        // 1. Work pending entries and open any position that fills.
         let mut still_pending = Vec::with_capacity(pending.len());
         for order in pending.drain(..) {
             match &model.entry {
@@ -243,14 +217,7 @@ pub fn simulate_execution(
                             let side = order.side;
                             let price = candle.open;
                             available -= budget;
-                            positions.push(open_position(
-                                order,
-                                price,
-                                index,
-                                budget,
-                                model,
-                                SameCandleExit::All,
-                            ));
+                            positions.push(open_position(order, price, index, budget, model));
                             filled += 1;
                             reconcile_positions(
                                 &mut positions,
@@ -284,7 +251,6 @@ pub fn simulate_execution(
                         let fill = limit_fill(
                             order.side,
                             order.signal_entry,
-                            order.sl,
                             *offset_bps,
                             *buffer_bps,
                             candle,
@@ -295,21 +261,9 @@ pub fn simulate_execution(
                                     same_side += 1;
                                 } else if available >= budget {
                                     let side = order.side;
-                                    let same_candle_exit =
-                                        if stop_after_fill(order.side, order.sl, price, candle) {
-                                            SameCandleExit::StopOnly
-                                        } else {
-                                            SameCandleExit::None
-                                        };
                                     available -= budget;
-                                    positions.push(open_position(
-                                        order,
-                                        price,
-                                        index,
-                                        budget,
-                                        model,
-                                        same_candle_exit,
-                                    ));
+                                    positions
+                                        .push(open_position(order, price, index, budget, model));
                                     filled += 1;
                                     reconcile_positions(
                                         &mut positions,
@@ -327,7 +281,6 @@ pub fn simulate_execution(
                                 }
                             }
                             LimitFill::NoFill => still_pending.push(order),
-                            LimitFill::BeyondStop => invalid_levels += 1,
                         }
                     }
                 }
@@ -335,52 +288,13 @@ pub fn simulate_execution(
         }
         pending = still_pending;
 
-        // 3. Exits. Limit entries suppress targets on their entry candle because the target may
-        // have been touched before the limit filled; a stop that the candle traded through after
-        // the limit fill is still allowed.
-        let mut still_open = Vec::with_capacity(positions.len());
-        for position in positions.drain(..) {
-            let exit = if position.entry_index == index {
-                match position.same_candle_exit {
-                    SameCandleExit::All => exit_for(&position, candle),
-                    SameCandleExit::StopOnly => stop_exit_for(&position, candle),
-                    SameCandleExit::None => None,
-                }
-            } else {
-                exit_for(&position, candle)
-            };
-            match exit {
-                Some((reason, exit)) => close_position(
-                    position,
-                    exit,
-                    index,
-                    &reason,
-                    model,
-                    &mut available,
-                    &mut trades,
-                ),
-                None => still_open.push(position),
-            }
-        }
-        positions = still_open;
-
-        // 4. Queue this candle's signals. A signal on the final candle can never fill.
+        // 2. Queue this candle's signals. A signal on the final candle can never fill.
         while cursor < signals.len() && signals[cursor].candle_index == index {
             let replay_signal = &signals[cursor];
             cursor += 1;
             signals_total += 1;
             let signal = &replay_signal.signal;
-            let geometry_ok = match (signal.sl_price, signal.tp_price) {
-                (None, None) => true,
-                (Some(sl), Some(tp)) => match signal.action {
-                    Direction::Long => sl < signal.entry_price && tp > signal.entry_price,
-                    Direction::Short => sl > signal.entry_price && tp < signal.entry_price,
-                },
-                _ => false,
-            };
-            if !geometry_ok {
-                invalid_levels += 1;
-            } else if positions
+            if positions
                 .iter()
                 .any(|position| position.side == signal.action)
             {
@@ -392,8 +306,6 @@ pub fn simulate_execution(
                     signal_id: replay_signal.signal_id.clone(),
                     side: signal.action,
                     signal_entry: signal.entry_price,
-                    sl: signal.sl_price.unwrap_or(Decimal::ZERO),
-                    tp: signal.tp_price.unwrap_or(Decimal::ZERO),
                     signal_index: index,
                 });
             }
@@ -426,7 +338,6 @@ pub fn simulate_execution(
         filled,
         expired,
         skipped_funds,
-        invalid_levels,
         same_side,
     }
 }
@@ -437,7 +348,6 @@ fn open_position(
     entry_index: usize,
     e: Decimal,
     model: &ExecModel,
-    same_candle_exit: SameCandleExit,
 ) -> OpenPosition {
     OpenPosition {
         signal_id: order.signal_id,
@@ -445,27 +355,19 @@ fn open_position(
         signal_entry: order.signal_entry,
         fill,
         e,
-        sl: order.sl,
-        tp: order.tp,
         entry_index,
         entry_cost: model.entry_rate() * e,
-        same_candle_exit,
     }
 }
 
 enum LimitFill {
-    Filled {
-        price: Decimal,
-    },
+    Filled { price: Decimal },
     NoFill,
-    /// The limit sits at or beyond the stop, so the entry would be beyond its stop.
-    BeyondStop,
 }
 
 fn limit_fill(
     side: Direction,
     entry: Decimal,
-    sl: Decimal,
     offset_bps: Decimal,
     buffer_bps: Decimal,
     candle: &Candle,
@@ -475,9 +377,6 @@ fn limit_fill(
     match side {
         Direction::Long => {
             let limit = entry * (Decimal::ONE - offset);
-            if sl > Decimal::ZERO && limit <= sl {
-                return LimitFill::BeyondStop;
-            }
             let threshold = limit * (Decimal::ONE - buffer);
             let price = if candle.open <= threshold {
                 candle.open
@@ -486,19 +385,10 @@ fn limit_fill(
             } else {
                 return LimitFill::NoFill;
             };
-            // An open through the limit can gap beyond the stop; reject the actual fill rather
-            // than booking a phantom profitable `gap_sl` on the next candle.
-            if sl > Decimal::ZERO && price <= sl {
-                LimitFill::BeyondStop
-            } else {
-                LimitFill::Filled { price }
-            }
+            LimitFill::Filled { price }
         }
         Direction::Short => {
             let limit = entry * (Decimal::ONE + offset);
-            if sl > Decimal::ZERO && limit >= sl {
-                return LimitFill::BeyondStop;
-            }
             let threshold = limit * (Decimal::ONE + buffer);
             let price = if candle.open >= threshold {
                 candle.open
@@ -507,107 +397,8 @@ fn limit_fill(
             } else {
                 return LimitFill::NoFill;
             };
-            // An open through the limit can gap beyond the stop; reject the actual fill rather
-            // than booking a phantom profitable `gap_sl` on the next candle.
-            if sl > Decimal::ZERO && price >= sl {
-                LimitFill::BeyondStop
-            } else {
-                LimitFill::Filled { price }
-            }
+            LimitFill::Filled { price }
         }
-    }
-}
-
-/// True when the entry candle traded through the stop after the fill.
-///
-/// Limit fills at or beyond the stop are rejected upstream as `LimitFill::BeyondStop`, so any
-/// fill reaching this point sits on the correct side of `sl`. The guard is retained as a
-/// defensive check against an invalid fill being passed in.
-fn stop_after_fill(side: Direction, sl: Decimal, fill: Decimal, candle: &Candle) -> bool {
-    if sl <= Decimal::ZERO {
-        return false;
-    }
-    match side {
-        Direction::Long => fill > sl && candle.low <= sl,
-        Direction::Short => fill < sl && candle.high >= sl,
-    }
-}
-
-fn exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal)> {
-    if position.sl <= Decimal::ZERO || position.tp <= Decimal::ZERO {
-        return None;
-    }
-    let open = candle.open;
-    match position.side {
-        Direction::Long => {
-            if open <= position.sl {
-                Some((REASON_GAP_SL.into(), open))
-            } else if open >= position.tp {
-                Some((REASON_GAP_TP.into(), open))
-            } else if candle.low <= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else if candle.high >= position.tp {
-                Some((REASON_TP.into(), position.tp))
-            } else {
-                None
-            }
-        }
-        Direction::Short => {
-            if open >= position.sl {
-                Some((REASON_GAP_SL.into(), open))
-            } else if open <= position.tp {
-                Some((REASON_GAP_TP.into(), open))
-            } else if candle.high >= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else if candle.low <= position.tp {
-                Some((REASON_TP.into(), position.tp))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-/// Stop-only exit evaluation for a limit fill on its entry candle.
-///
-/// The caller only enables this when the candle traded through the stop after the limit filled,
-/// so the stop is necessarily after the entry. The target is still suppressed because it may
-/// have been touched before the limit was reached.
-fn stop_exit_for(position: &OpenPosition, candle: &Candle) -> Option<(String, Decimal)> {
-    if position.sl <= Decimal::ZERO {
-        return None;
-    }
-    let open = candle.open;
-    match position.side {
-        Direction::Long => {
-            if open <= position.sl {
-                Some((REASON_GAP_SL.into(), open))
-            } else if candle.low <= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else {
-                None
-            }
-        }
-        Direction::Short => {
-            if open >= position.sl {
-                Some((REASON_GAP_SL.into(), open))
-            } else if candle.high >= position.sl {
-                Some((REASON_SL.into(), position.sl))
-            } else {
-                None
-            }
-        }
-    }
-}
-
-fn risk_reward_for(side: Direction, sl: Decimal, tp: Decimal, fill: Decimal) -> Option<Decimal> {
-    if sl <= Decimal::ZERO || tp <= Decimal::ZERO {
-        return None;
-    }
-    match side {
-        Direction::Long if fill > sl && tp > fill => Some((tp - fill) / (fill - sl)),
-        Direction::Short if sl > fill && fill > tp => Some((fill - tp) / (sl - fill)),
-        _ => None,
     }
 }
 
@@ -661,7 +452,7 @@ fn close_position(
         gross_pnl = -position.e;
     }
     let exit_notional = proceeds;
-    let exit_cost = model.exit_rate(reason) * exit_notional;
+    let exit_cost = model.exit_rate() * exit_notional;
     let net_pnl = gross_pnl - position.entry_cost - exit_cost;
     *available += position.e + gross_pnl;
 
@@ -679,7 +470,6 @@ fn close_position(
         reason: reason.to_string(),
         entry_index: position.entry_index,
         exit_index,
-        risk_reward: risk_reward_for(position.side, position.sl, position.tp, position.fill),
     });
 }
 
@@ -690,25 +480,22 @@ pub struct ExecPartition {
     pub filled: usize,
     pub expired: usize,
     pub skipped_funds: usize,
-    pub invalid_levels: usize,
     pub same_side: usize,
     /// `filled / signals_total`, including signals dropped for insufficient funds.
     pub capital_fill_rate: Decimal,
-    /// `filled / (signals_total - skipped_funds - invalid_levels - same_side)`.
+    /// `filled / (signals_total - skipped_funds - same_side)`.
     /// This measures limit-fill quality among orders that were actually executable.
     pub execution_fill_rate: Decimal,
 }
 
 /// Computes the capital-constrained and execution-only fill rates.
 ///
-/// The execution rate excludes signals rejected for insufficient capital, invalid levels, or
-/// because the target side was already held, so those cases are not mistaken for limit-fill
-/// failures.
+/// The execution rate excludes signals rejected for insufficient capital or because the target
+/// side was already held, so those cases are not mistaken for limit-fill failures.
 fn fill_rates(
     filled: usize,
     signals: usize,
     skipped_funds: usize,
-    invalid_levels: usize,
     same_side: usize,
 ) -> (Decimal, Decimal) {
     let capital_fill_rate = if signals == 0 {
@@ -718,7 +505,6 @@ fn fill_rates(
     };
     let executable = signals
         .saturating_sub(skipped_funds)
-        .saturating_sub(invalid_levels)
         .saturating_sub(same_side);
     let execution_fill_rate = if executable == 0 {
         Decimal::ZERO
@@ -737,7 +523,6 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         filled: 0,
         expired: 0,
         skipped_funds: 0,
-        invalid_levels: 0,
         same_side: 0,
         capital_fill_rate: Decimal::ZERO,
         execution_fill_rate: Decimal::ZERO,
@@ -747,14 +532,12 @@ pub fn pool_exec(parts: &[ExecPartition]) -> ExecPartition {
         pooled.filled += part.filled;
         pooled.expired += part.expired;
         pooled.skipped_funds += part.skipped_funds;
-        pooled.invalid_levels += part.invalid_levels;
         pooled.same_side += part.same_side;
     }
     let (capital_fill_rate, execution_fill_rate) = fill_rates(
         pooled.filled,
         pooled.signals,
         pooled.skipped_funds,
-        pooled.invalid_levels,
         pooled.same_side,
     );
     pooled.capital_fill_rate = capital_fill_rate;
@@ -828,7 +611,6 @@ pub fn evaluate_execution_config(
                 outcome.filled,
                 outcome.signals_total,
                 outcome.skipped_funds,
-                outcome.invalid_levels,
                 outcome.same_side,
             );
             result.entry(model.label.clone()).or_default().insert(
@@ -839,7 +621,6 @@ pub fn evaluate_execution_config(
                     filled: outcome.filled,
                     expired: outcome.expired,
                     skipped_funds: outcome.skipped_funds,
-                    invalid_levels: outcome.invalid_levels,
                     same_side: outcome.same_side,
                     capital_fill_rate,
                     execution_fill_rate,

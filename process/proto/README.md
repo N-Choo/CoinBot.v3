@@ -228,7 +228,7 @@ analyzer     ──PUB "signals:result" ──▶ trade-engine
 | Channel | Direction | Payload |
 |---|---|---|
 | `tickers:analyze` | engine → analyzer | `["BTC/USDT", …]` |
-| `signals:result`  | analyzer → engine | `[{ ticker, action, confidence, entry_price, sl_price, tp_price, reason }]` |
+| `signals:result`  | analyzer → engine | `[{ ticker, action, confidence, entry_price, reason }]` |
 
 If no consumer is listening the message is lost — acceptable for the periodic ticker
 refresh and signal fan-out.

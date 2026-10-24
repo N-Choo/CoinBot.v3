@@ -20,7 +20,6 @@ pub struct Fill<'a> {
 /// Record a new `pending` open order and reserve its fund in one transaction, so a
 /// committed `pending` row always has its fund reserved (the reconciler relies on
 /// this to release only what was actually reserved).
-#[allow(clippy::too_many_arguments)]
 pub async fn create_pending_open(
     pool: &PgPool,
     c: &Contract,
@@ -28,13 +27,10 @@ pub async fn create_pending_open(
     comment: &str,
     quantity: Decimal,
     fund: Decimal,
-    tp_price: Option<Decimal>,
-    sl_price: Option<Decimal>,
 ) -> Result<TradeOrder> {
     let mut tx = pool.begin().await?;
     let order = TradeOrders::create(
-        &mut tx, c.id, c.user_uid, &c.ticker, side, "open", comment, quantity, fund, tp_price,
-        sl_price,
+        &mut tx, c.id, c.user_uid, &c.ticker, side, "open", comment, quantity, fund,
     )
     .await?;
     // Dropping `tx` on error rolls back both the row and the reservation.
@@ -229,8 +225,6 @@ mod tests {
             &comment("close"),
             Decimal::from(1),
             Decimal::ZERO,
-            Some(Decimal::from(120)),
-            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -343,8 +337,6 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Some(Decimal::from(110)),
-            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -402,8 +394,6 @@ mod tests {
             &comment("entry"),
             Decimal::from(2),
             Decimal::from(100),
-            Some(Decimal::from(110)),
-            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -433,8 +423,6 @@ mod tests {
             &marker,
             Decimal::from(1),
             Decimal::from(100),
-            Some(Decimal::from(110)),
-            Some(Decimal::from(90)),
         )
         .await;
         assert!(err.is_err(), "over-reserving must error");
@@ -466,8 +454,6 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Some(Decimal::from(110)),
-            Some(Decimal::from(90)),
         )
         .await
         .unwrap();

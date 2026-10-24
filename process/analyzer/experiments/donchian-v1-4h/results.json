@@ -1,0 +1,177 @@
+{
+  "strategy_version": "donchian-v1",
+  "timeframe": "4hour",
+  "generated_at": "2026-10-23T00:00:00Z",
+  "expected_symbols": 5,
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "ETH-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "SOL-USDT",
+      "candles": 2735,
+      "winner": {
+        "config": {
+          "entry": 55,
+          "exit": 55,
+          "ema_period": 200,
+          "atr_period": 14,
+          "atr_multiplier": "3"
+        },
+        "window_months": 8,
+        "train": {
+          "trades": 8,
+          "net_expectancy": "-0.130185221393633753367639172",
+          "net_profit_factor": "0.9841692585819977863312874467",
+          "max_drawdown": "56.1883364357897135556258146",
+          "max_drawdown_pct": "5.3251674103362759597999044200",
+          "expectancy_stderr": "7.99724759387643",
+          "closed_net_pnl": "-1.041481771149070026941113376",
+          "open_net_pnl": "0",
+          "net_pnl": "-1.041481771149070026941113376",
+          "win_rate": "37.500"
+        },
+        "train_stress": {
+          "trades": 8,
+          "net_expectancy": "-1.6322430302748651498322846815",
+          "net_profit_factor": "0.8216152240860434772292014105",
+          "max_drawdown": "65.1174475978791631596984849",
+          "max_drawdown_pct": "6.1895213521838468330455954100",
+          "expectancy_stderr": "7.98523370164727",
+          "closed_net_pnl": "-13.057944242198921198658277452",
+          "open_net_pnl": "0",
+          "net_pnl": "-13.057944242198921198658277452",
+          "win_rate": "37.500"
+        },
+        "oos": {
+          "trades": 5,
+          "net_expectancy": "20.984168549068078464844656474",
+          "net_profit_factor": "5.0655775407247100496774078941",
+          "max_drawdown": "23.3023686564669848592169218",
+          "max_drawdown_pct": "2.3302368656466984859216921800",
+          "expectancy_stderr": "18.46153618622813",
+          "closed_net_pnl": "104.92084274534039232422328237",
+          "open_net_pnl": "0",
+          "net_pnl": "104.92084274534039232422328237",
+          "win_rate": "60.00"
+        },
+        "oos_stress": {
+          "trades": 5,
+          "net_expectancy": "19.45039163086717499193802955",
+          "net_profit_factor": "4.3799896526610931020038831557",
+          "max_drawdown": "24.7696159744592728138600611",
+          "max_drawdown_pct": "2.4769615974459272813860061100",
+          "expectancy_stderr": "18.43380228109108",
+          "closed_net_pnl": "97.25195815433587495969014775",
+          "open_net_pnl": "0",
+          "net_pnl": "97.25195815433587495969014775",
+          "win_rate": "60.00"
+        },
+        "benchmark_base": {
+          "net_pnl": "11.494477252843394575678040248",
+          "return_pct": "2.2988954505686789151356080500"
+        },
+        "benchmark_stress": {
+          "net_pnl": "9.974956255468066491688538935",
+          "return_pct": "1.9949912510936132983377077900"
+        },
+        "success": true
+      },
+      "successful_configs": 2,
+      "verdict": "Pass"
+    },
+    {
+      "symbol": "BNB-USDT",
+      "candles": 2735,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "XRP-USDT",
+      "candles": 2735,
+      "winner": {
+        "config": {
+          "entry": 55,
+          "exit": 55,
+          "ema_period": 200,
+          "atr_period": 14,
+          "atr_multiplier": "2"
+        },
+        "window_months": 10,
+        "train": {
+          "trades": 10,
+          "net_expectancy": "5.0581564009500326366755011898",
+          "net_profit_factor": "1.6293904583108376217735302588",
+          "max_drawdown": "44.8158661958768925923539391",
+          "max_drawdown_pct": "4.0912882356748197404775542600",
+          "expectancy_stderr": "9.51136040684151",
+          "closed_net_pnl": "50.581564009500326366755011898",
+          "open_net_pnl": "0",
+          "net_pnl": "50.581564009500326366755011898",
+          "win_rate": "40.00"
+        },
+        "train_stress": {
+          "trades": 10,
+          "net_expectancy": "3.5483043883296770543469951789",
+          "net_profit_factor": "1.3975301755041519519418144568",
+          "max_drawdown": "49.2553015496136824382342286",
+          "max_drawdown_pct": "4.5407541603921342924127072900",
+          "expectancy_stderr": "9.49707193352126",
+          "closed_net_pnl": "35.483043883296770543469951789",
+          "open_net_pnl": "0",
+          "net_pnl": "35.483043883296770543469951789",
+          "win_rate": "40.00"
+        },
+        "oos": {
+          "trades": 8,
+          "net_expectancy": "5.7905786381074419445677590359",
+          "net_profit_factor": "2.1706997246858117775852178677",
+          "max_drawdown": "24.1019475892777417634179168",
+          "max_drawdown_pct": "2.4101947589277741763417916800",
+          "expectancy_stderr": "7.06386925430968",
+          "closed_net_pnl": "46.324629104859535556542072287",
+          "open_net_pnl": "0",
+          "net_pnl": "46.324629104859535556542072287",
+          "win_rate": "50.00"
+        },
+        "oos_stress": {
+          "trades": 8,
+          "net_expectancy": "4.2796263417056781359379627028",
+          "net_profit_factor": "1.7521377051338570960235409494",
+          "max_drawdown": "28.5725004972557922264673641",
+          "max_drawdown_pct": "2.8572500497255792226467364100",
+          "expectancy_stderr": "7.05325753284602",
+          "closed_net_pnl": "34.237010733645425087503701622",
+          "open_net_pnl": "0",
+          "net_pnl": "34.237010733645425087503701622",
+          "win_rate": "50.00"
+        },
+        "benchmark_base": {
+          "net_pnl": "-16.927388286817102137767220903",
+          "return_pct": "-3.3854776573634204275534441800"
+        },
+        "benchmark_stress": {
+          "net_pnl": "-18.404212440617577197149643706",
+          "return_pct": "-3.6808424881235154394299287400"
+        },
+        "success": true
+      },
+      "successful_configs": 2,
+      "verdict": "Pass"
+    }
+  ],
+  "overall_verdict": "Fail",
+  "data_issues": []
+}

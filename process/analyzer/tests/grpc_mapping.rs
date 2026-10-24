@@ -14,8 +14,6 @@ fn sample() -> Signal {
         confidence: Decimal::from_str("0.8").unwrap(),
         entry_price: Decimal::from_str("100").unwrap(),
         reason: "rsi_momentum".into(),
-        sl_price: Some(Decimal::from_str("95").unwrap()),
-        tp_price: Some(Decimal::from_str("110").unwrap()),
         signal_candle_open_time_ms: 1_700_001_800_000,
     }
 }
@@ -36,8 +34,6 @@ fn maps_signal_to_proto() {
     assert_eq!(proto.ticker, "BTC/USDT");
     assert_eq!(proto.action, "BUY");
     assert_eq!(proto.entry_price, 100.0);
-    assert_eq!(proto.sl_price, 95.0);
-    assert_eq!(proto.tp_price, 110.0);
     assert_eq!(
         proto.trigger_time_ms,
         signal.signal_candle_open_time_ms + 900_000
@@ -65,24 +61,6 @@ fn short_maps_to_sell() {
     .unwrap();
 
     assert_eq!(proto.action, "SELL");
-}
-
-#[test]
-fn absent_levels_map_to_zero() {
-    let mut signal = sample();
-    signal.sl_price = None;
-    signal.tp_price = None;
-    let proto = to_proto_signal(
-        &signal,
-        1,
-        0,
-        0,
-        &config_version(&Config::default()),
-        Timeframe::M15,
-    )
-    .unwrap();
-    assert_eq!(proto.sl_price, 0.0);
-    assert_eq!(proto.tp_price, 0.0);
 }
 
 #[test]
@@ -157,34 +135,6 @@ fn config_version_covers_every_strategy_field() {
         },
         Config {
             rsi_short_threshold: Decimal::from(49),
-            ..Config::default()
-        },
-        Config {
-            atr_enabled: true,
-            ..Config::default()
-        },
-        Config {
-            atr_period: 15,
-            ..Config::default()
-        },
-        Config {
-            atr_sl_multiplier: Decimal::new(21, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_tp_multiplier: Decimal::new(31, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_pct_high: Decimal::new(51, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_high_adjust: Decimal::new(16, 1),
-            ..Config::default()
-        },
-        Config {
-            atr_sl_max_pct: Decimal::new(1, 1),
             ..Config::default()
         },
     ];

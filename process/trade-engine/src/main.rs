@@ -40,13 +40,6 @@ async fn main() -> Result<(), ProcessError> {
         }
     });
 
-    // Exit open positions once TP/SL is reached.
-    let order_db = db.clone();
-    let order_kc = kcc.clone();
-    tokio::spawn(async move {
-        position_exit::run(order_db, order_kc).await;
-    });
-
     // Wait for Ctrl+C before shutting down
     signal::ctrl_c().await.expect("failed to listen for ctrl+c");
     log::info!("shutting down...");

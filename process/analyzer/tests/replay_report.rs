@@ -141,8 +141,6 @@ fn payload_has_two_symbols_and_report_fields() {
             assert!(signal["candle_index"].is_u64());
             assert!(signal["confidence"].is_string());
             assert!(signal["reason"].is_string());
-            assert!(signal["sl"].is_null() || signal["sl"].is_string());
-            assert!(signal["tp"].is_null() || signal["tp"].is_string());
             assert!(signal["signal_candle_open_time_ms"].is_i64());
         }
         for trade in symbol["trades"].as_array().unwrap() {
@@ -182,7 +180,6 @@ fn payload_has_two_symbols_and_report_fields() {
         payload["config"]["rsi_short_threshold"],
         cfg.rsi_short_threshold.to_string()
     );
-    assert_eq!(payload["config"]["atr_enabled"], cfg.atr_enabled);
     assert!(payload["failures"].as_array().unwrap().is_empty());
 }
 
@@ -321,20 +318,55 @@ fn payload_includes_signal_ids_account_and_exit_counts() {
             assert!(matches!(open["side"].as_str(), Some("Long" | "Short")));
             assert!(open["fill"].is_string());
             assert!(open["e"].is_string());
-            assert!(open["sl"].is_null() || open["sl"].is_string());
-            assert!(open["tp"].is_null() || open["tp"].is_string());
             assert!(open["unrealized"].is_string());
         }
     }
-    assert!(symbol["summary"]["tp_hits"].is_number());
-    assert!(symbol["summary"]["sl_hits"].is_number());
-    assert!(symbol["summary"]["other_exits"].is_number());
-    let avg = &symbol["summary"]["avg_risk_reward"];
-    assert!(avg.is_string() || avg.is_null());
 }
 
 #[test]
-fn ledger_header_includes_sl_tp_rr() {
+fn signal_events_include_fill_exit_and_pnl() {
+    let cfg = Config::default();
+    let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
+    let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
+    let symbol = &payload["symbols"][0];
+    let signals = symbol["signals"].as_array().unwrap();
+    let trades = symbol["trades"].as_array().unwrap();
+    assert!(!signals.is_empty(), "fixture must emit signals");
+    assert!(!trades.is_empty(), "signals must produce closed trades");
+
+    for trade in trades {
+        let signal_id = trade["signal_id"].as_str().unwrap();
+        let signal = signals
+            .iter()
+            .find(|signal| signal["signal_id"].as_str() == Some(signal_id))
+            .unwrap_or_else(|| panic!("trade signal {signal_id} has no matching signal"));
+        assert_eq!(signal["status"], "closed");
+        assert_eq!(signal["fill"], trade["fill"]);
+        assert_eq!(signal["exit"], trade["exit"]);
+        assert_eq!(signal["exit_index"], trade["exit_index"]);
+        assert_eq!(signal["pnl"], trade["pnl"]);
+        assert_eq!(signal["pnl_pct"], trade["pnl_pct"]);
+        assert!(signal["pnl"].is_string());
+        assert!(signal["pnl_pct"].is_string());
+    }
+
+    let dir = temp_dir("signal-pnl");
+    let out = dir.join("replay.html");
+    write_report(&payload, &out).unwrap();
+    let html = std::fs::read_to_string(&out).unwrap();
+    assert!(
+        html.contains("signal entry"),
+        "signal event card must render the signal entry"
+    );
+    assert!(
+        html.contains("PnL"),
+        "signal event card must render the per-signal PnL"
+    );
+    std::fs::remove_dir_all(dir).unwrap();
+}
+
+#[test]
+fn ledger_header_includes_exit_and_pnl() {
     let cfg = Config::default();
     let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
     let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
@@ -342,7 +374,7 @@ fn ledger_header_includes_sl_tp_rr() {
     let out = dir.join("replay.html");
     write_report(&payload, &out).unwrap();
     let html = std::fs::read_to_string(&out).unwrap();
-    for needle in ["SL", "TP", "R:R", "Exit Price"] {
+    for needle in ["Entry", "Side", "Fill", "Exit Price", "PnL", "Result"] {
         assert!(html.contains(needle), "ledger header must mention {needle}");
     }
 
@@ -350,27 +382,14 @@ fn ledger_header_includes_sl_tp_rr() {
 }
 
 #[test]
-fn template_shows_levels_and_exit_counts() {
+fn template_resolves_signals_by_id() {
     let cfg = Config::default();
     let run = run("SYNTH-USDT", "synthetic_1day.csv", &cfg);
     let payload = build_payload(&inputs(&[run]), &cfg, "2026-10-21T00:00:00Z".into(), vec![]);
-    let dir = temp_dir("levels-template");
+    let dir = temp_dir("signal-id-template");
     let out = dir.join("replay.html");
     write_report(&payload, &out).unwrap();
     let html = std::fs::read_to_string(&out).unwrap();
-    for needle in [
-        "SL",
-        "TP",
-        "R:R",
-        "TP hits",
-        "SL hits",
-        "avg planned R:R",
-        "beyond TP",
-        "beyond SL",
-        "planned TP/SL",
-    ] {
-        assert!(html.contains(needle), "template must mention {needle}");
-    }
     assert!(
         html.contains("signal_id"),
         "template must resolve signals by signal_id"

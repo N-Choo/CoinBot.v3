@@ -1,0 +1,143 @@
+{
+  "as_of_ms": 1790121600000,
+  "benchmark": {
+    "base": {
+      "avg_abs_exposure": "1",
+      "avg_holding_days": "364",
+      "cagr_pct": "-48.4361498475707",
+      "costs": "2.2746196818091528265487857836",
+      "max_drawdown_pct": "67.315821504350543612349293580",
+      "sharpe": "-0.646833817294992",
+      "sortino": "-0.963185287707563",
+      "total_return_pct": "-48.436149847570726846069159670",
+      "trades": 1,
+      "turnover": "2",
+      "win_rate_pct": "0"
+    },
+    "stress": {
+      "avg_abs_exposure": "1",
+      "avg_holding_days": "364",
+      "cagr_pct": "-48.590957416429",
+      "costs": "4.5469120135477723947303744140",
+      "max_drawdown_pct": "67.315821504350543612349293590",
+      "sharpe": "-0.651512879626155",
+      "sortino": "-0.969686545153861",
+      "total_return_pct": "-48.590957416429030748460556970",
+      "trades": 1,
+      "turnover": "2",
+      "win_rate_pct": "0"
+    }
+  },
+  "costs": {
+    "base": {
+      "fee_bps": "10",
+      "slip_bps": "5"
+    },
+    "stress": {
+      "fee_bps": "20",
+      "slip_bps": "10"
+    }
+  },
+  "dataset": {
+    "candles": 729,
+    "first_open_time": "2024-09-23T00:00:00Z",
+    "last_open_time": "2026-09-21T00:00:00Z",
+    "test": {
+      "candles": 365,
+      "first_open_time": "2025-09-22T00:00:00Z",
+      "last_open_time": "2026-09-21T00:00:00Z"
+    },
+    "train": {
+      "candles": 364,
+      "first_open_time": "2024-09-23T00:00:00Z",
+      "last_open_time": "2025-09-21T00:00:00Z"
+    }
+  },
+  "generated_at": "2026-09-23T00:00:00Z",
+  "selected_lookback": 7,
+  "selection_rule": "highest Sharpe; tie broken by total return",
+  "symbol": "XRP-USDT",
+  "test_results": {
+    "base": {
+      "avg_abs_exposure": "0.9972602739726027397260273973",
+      "avg_holding_days": "14.52",
+      "cagr_pct": "-12.45163071623162",
+      "costs": "79.88828651616083614825554609",
+      "max_drawdown_pct": "54.310975040641776375061443990",
+      "sharpe": "0.1454940563644302",
+      "sortino": "0.1995974189757482",
+      "total_return_pct": "-12.451630716231619607742994510",
+      "trades": 25,
+      "turnover": "50",
+      "win_rate_pct": "72.00"
+    },
+    "stress": {
+      "avg_abs_exposure": "0.9972602739726027397260273973",
+      "avg_holding_days": "14.52",
+      "cagr_pct": "-18.80455517899773",
+      "costs": "154.42540104825181059500159877",
+      "max_drawdown_pct": "56.330292678855562086612893220",
+      "sharpe": "0.03586046893779869",
+      "sortino": "0.0489459206158853",
+      "total_return_pct": "-18.804555178997726475220777140",
+      "trades": 25,
+      "turnover": "50",
+      "win_rate_pct": "72.00"
+    }
+  },
+  "threshold": "0.05",
+  "timeframe": "1day",
+  "train_results": [
+    {
+      "lookback": 5,
+      "metrics": {
+        "avg_abs_exposure": "0.9807692307692307692307692308",
+        "avg_holding_days": "12.275862068965517241379310345",
+        "cagr_pct": "-82.38650562216",
+        "costs": "25.743896026508258878897750183",
+        "max_drawdown_pct": "89.08595139289161759514766283",
+        "sharpe": "-1.269299158805565",
+        "sortino": "-1.673894526995398",
+        "total_return_pct": "-82.30250893464704568486505362",
+        "trades": 29,
+        "turnover": "58",
+        "win_rate_pct": "58.620689655172413793103448280"
+      },
+      "selected": false
+    },
+    {
+      "lookback": 6,
+      "metrics": {
+        "avg_abs_exposure": "0.9807692307692307692307692308",
+        "avg_holding_days": "12.275862068965517241379310345",
+        "cagr_pct": "-82.9543610624166",
+        "costs": "25.780657347854976213037590086",
+        "max_drawdown_pct": "88.62988482995076186094926453",
+        "sharpe": "-1.302665598005717",
+        "sortino": "-1.723023938759611",
+        "total_return_pct": "-82.87153462788666370433188815",
+        "trades": 29,
+        "turnover": "58",
+        "win_rate_pct": "58.620689655172413793103448280"
+      },
+      "selected": false
+    },
+    {
+      "lookback": 7,
+      "metrics": {
+        "avg_abs_exposure": "0.9725274725274725274725274725",
+        "avg_holding_days": "12.607142857142857142857142857",
+        "cagr_pct": "-79.082463163676",
+        "costs": "22.305523864006531165761717487",
+        "max_drawdown_pct": "86.04523853145880852204553194",
+        "sharpe": "-1.106490950917855",
+        "sortino": "-1.467066661107571",
+        "total_return_pct": "-78.992607133091297662286788980",
+        "trades": 28,
+        "turnover": "56",
+        "win_rate_pct": "57.142857142857142857142857140"
+      },
+      "selected": true
+    }
+  ]
+}

@@ -1,0 +1,45 @@
+{
+  "strategy_version": "donchian-v1",
+  "timeframe": "1day",
+  "generated_at": "2026-10-23T00:00:00Z",
+  "expected_symbols": 5,
+  "symbols": [
+    {
+      "symbol": "BTC-USDT",
+      "candles": 1824,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "ETH-USDT",
+      "candles": 1824,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "SOL-USDT",
+      "candles": 1824,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "BNB-USDT",
+      "candles": 1824,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    },
+    {
+      "symbol": "XRP-USDT",
+      "candles": 1824,
+      "winner": null,
+      "successful_configs": 0,
+      "verdict": "Fail"
+    }
+  ],
+  "overall_verdict": "Fail",
+  "data_issues": []
+}

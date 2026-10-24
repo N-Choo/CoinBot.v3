@@ -1,0 +1,431 @@
+{
+  "symbol": "SOL-USDT",
+  "timeframe": "4hour",
+  "strategy_version": "rsi-mom-v1",
+  "first_open_time": "2025-07-24T00:00:00Z",
+  "last_open_time": "2026-10-22T16:00:00Z",
+  "candles": 2735,
+  "content_sha256": "63fbbe83a517aa3429ffaac428c32b4a981954e05359494fdffcb8b4f15841ee",
+  "params": {
+    "window": 100,
+    "init_fund": 1000,
+    "min_train_trades": 10,
+    "min_oos_trades": 10,
+    "max_dd_pct": "20",
+    "train_months": [
+      6,
+      7,
+      8,
+      9,
+      10
+    ],
+    "oos_months": 5,
+    "total_months": 15
+  },
+  "base_costs": {
+    "label": "base",
+    "fee_bps": "10",
+    "slip_bps": "5"
+  },
+  "stress_costs": {
+    "label": "stress",
+    "fee_bps": "20",
+    "slip_bps": "10"
+  },
+  "windows": [
+    {
+      "months": 6,
+      "train": {
+        "start_index": 0,
+        "end_index": 1094,
+        "start_time": "2025-07-24T00:00:00Z",
+        "end_time": "2026-01-22T04:00:00Z"
+      },
+      "oos": {
+        "start_index": 1094,
+        "end_index": 2005,
+        "start_time": "2026-01-22T08:00:00Z",
+        "end_time": "2026-06-23T00:00:00Z"
+      },
+      "top": [
+        {
+          "candidate": {
+            "label": "rsi21-long55-short40",
+            "origin": "grid",
+            "rsi_period": 21,
+            "rsi_long_threshold": "55",
+            "rsi_short_threshold": "40"
+          },
+          "window_months": 6,
+          "train": {
+            "trades": 13,
+            "net_expectancy": "2.1908994645516094740387676144",
+            "net_profit_factor": "1.123451764942419568828644651",
+            "max_drawdown": "136.5259865292493757153631704",
+            "max_drawdown_pct": "11.916424577504357027721064040",
+            "expectancy_stderr": "13.00979014354262",
+            "closed_net_pnl": "28.481693039170923162503978987",
+            "open_net_pnl": "14.015249365387486934448260430",
+            "net_pnl": "42.496942404558410096952239417",
+            "win_rate": "46.153846153846153846153846150"
+          },
+          "train_stress": {
+            "trades": 13,
+            "net_expectancy": "0.7055279214880200737403216372",
+            "net_profit_factor": "1.038052975517224383692468172",
+            "max_drawdown": "142.4784106176088482181976505",
+            "max_drawdown_pct": "12.565677044231934407610278830",
+            "expectancy_stderr": "13.00095061997472",
+            "closed_net_pnl": "9.171862979344260958624181283",
+            "open_net_pnl": "12.538487382410034343736001209",
+            "net_pnl": "21.710350361754295302360182492",
+            "win_rate": "46.153846153846153846153846150"
+          },
+          "oos": {
+            "trades": 13,
+            "net_expectancy": "-3.7892629587731998632171728969",
+            "net_profit_factor": "0.8470918775556517070639144488",
+            "max_drawdown": "322.1569768602723110843728257",
+            "max_drawdown_pct": "27.863545954422488327313169160",
+            "expectancy_stderr": "17.92381406497455",
+            "closed_net_pnl": "-49.26041846405159822182324766",
+            "open_net_pnl": "23.095029879026380994024194738",
+            "net_pnl": "-26.165388585025217227799052922",
+            "win_rate": "23.076923076923076923076923080"
+          },
+          "oos_stress": {
+            "trades": 13,
+            "net_expectancy": "-5.2603331431966627236267771069",
+            "net_profit_factor": "0.7971758922674045018440321394",
+            "max_drawdown": "337.1607627221263125397904401",
+            "max_drawdown_pct": "29.193142578574878308575546420",
+            "expectancy_stderr": "17.94429617083171",
+            "closed_net_pnl": "-68.38433086155661540714810239",
+            "open_net_pnl": "21.558081912257688383617548477",
+            "net_pnl": "-46.826248949298927023530553913",
+            "win_rate": "23.076923076923076923076923080"
+          },
+          "successful": false
+        }
+      ]
+    },
+    {
+      "months": 7,
+      "train": {
+        "start_index": 0,
+        "end_index": 1276,
+        "start_time": "2025-07-24T00:00:00Z",
+        "end_time": "2026-02-21T12:00:00Z"
+      },
+      "oos": {
+        "start_index": 1276,
+        "end_index": 2188,
+        "start_time": "2026-02-21T16:00:00Z",
+        "end_time": "2026-07-23T12:00:00Z"
+      },
+      "top": [
+        {
+          "candidate": {
+            "label": "rsi21-long55-short40",
+            "origin": "grid",
+            "rsi_period": 21,
+            "rsi_long_threshold": "55",
+            "rsi_short_threshold": "40"
+          },
+          "window_months": 7,
+          "train": {
+            "trades": 14,
+            "net_expectancy": "14.382190301449771458641280182",
+            "net_profit_factor": "1.8727393710808596921495707195",
+            "max_drawdown": "136.5259865292493757153631704",
+            "max_drawdown_pct": "11.916424577504357027721064040",
+            "expectancy_stderr": "17.1377646623847",
+            "closed_net_pnl": "201.35066422029680042097792255",
+            "open_net_pnl": "-5.6175257731958762886597938361",
+            "net_pnl": "195.73313844710092413231812871",
+            "win_rate": "50.00"
+          },
+          "train_stress": {
+            "trades": 14,
+            "net_expectancy": "12.914428276762180460759680689",
+            "net_profit_factor": "1.7501261126532909174499842874",
+            "max_drawdown": "142.4784106176088482181976505",
+            "max_drawdown_pct": "12.565677044231934407610278830",
+            "expectancy_stderr": "17.14454947678383",
+            "closed_net_pnl": "180.80199587467052645063552965",
+            "open_net_pnl": "-7.1113402061855670103092783722",
+            "net_pnl": "173.69065566848495944032625128",
+            "win_rate": "50.00"
+          },
+          "oos": {
+            "trades": 15,
+            "net_expectancy": "-11.326502669332494177094871112",
+            "net_profit_factor": "0.465037770126918104461669448",
+            "max_drawdown": "265.58506964377746572354808339",
+            "max_drawdown_pct": "26.558506964377746572354808340",
+            "expectancy_stderr": "10.52169619366942",
+            "closed_net_pnl": "-169.89754003998741265642306668",
+            "open_net_pnl": "-6.4834392014519056261343012633",
+            "net_pnl": "-176.38097924143931828255736794",
+            "win_rate": "20.00"
+          },
+          "oos_stress": {
+            "trades": 15,
+            "net_expectancy": "-12.82878199417561680705254335",
+            "net_profit_factor": "0.4268037106453070563438340934",
+            "max_drawdown": "279.17158746439435377690384215",
+            "max_drawdown_pct": "27.917158746439435377690384220",
+            "expectancy_stderr": "10.53235673140489",
+            "closed_net_pnl": "-192.43172991263425210578815025",
+            "open_net_pnl": "-7.975952813067150635208711427",
+            "net_pnl": "-200.40768272570140274099686168",
+            "win_rate": "20.00"
+          },
+          "successful": false
+        },
+        {
+          "candidate": {
+            "label": "rsi21-long60-short40",
+            "origin": "grid",
+            "rsi_period": 21,
+            "rsi_long_threshold": "60",
+            "rsi_short_threshold": "40"
+          },
+          "window_months": 7,
+          "train": {
+            "trades": 12,
+            "net_expectancy": "12.581987111242731881027590892",
+            "net_profit_factor": "1.5728059667893025239704874256",
+            "max_drawdown": "202.8205960916115619235455272",
+            "max_drawdown_pct": "17.270002882129229594225204550",
+            "expectancy_stderr": "21.51697756371453",
+            "closed_net_pnl": "150.98384533491278257233109070",
+            "open_net_pnl": "-24.283234126984126984126984110",
+            "net_pnl": "126.70061120792865558820410659",
+            "win_rate": "50.00"
+          },
+          "train_stress": {
+            "trades": 12,
+            "net_expectancy": "11.117483011621078875433488738",
+            "net_profit_factor": "1.4896969928916350783931697009",
+            "max_drawdown": "208.7543631345016310874279257",
+            "max_drawdown_pct": "17.910240041860480714299245120",
+            "expectancy_stderr": "21.5278897345929",
+            "closed_net_pnl": "133.40979613945294650520186485",
+            "open_net_pnl": "-25.749007936507936507936507919",
+            "net_pnl": "107.66078820294500999726535693",
+            "win_rate": "50.00"
+          },
+          "oos": {
+            "trades": 13,
+            "net_expectancy": "-20.627238596459528022920132277",
+            "net_profit_factor": "0.2728558643347222579078262558",
+            "max_drawdown": "281.27496119891567271336010812",
+            "max_drawdown_pct": "28.127496119891567271336010810",
+            "expectancy_stderr": "12.29359622555047",
+            "closed_net_pnl": "-268.15410175397386429796171960",
+            "open_net_pnl": "-13.120859444941808415398388516",
+            "net_pnl": "-281.27496119891567271336010812",
+            "win_rate": "30.769230769230769230769230770"
+          },
+          "oos_stress": {
+            "trades": 13,
+            "net_expectancy": "-22.130889311330382096564963788",
+            "net_profit_factor": "0.2477469571470940365310986023",
+            "max_drawdown": "302.30496301685629223296315053",
+            "max_drawdown_pct": "30.230496301685629223296315050",
+            "expectancy_stderr": "12.30887096477858",
+            "closed_net_pnl": "-287.70156104729496725534452924",
+            "open_net_pnl": "-14.603401969561324977618621283",
+            "net_pnl": "-302.30496301685629223296315052",
+            "win_rate": "30.769230769230769230769230770"
+          },
+          "successful": false
+        }
+      ]
+    },
+    {
+      "months": 8,
+      "train": {
+        "start_index": 0,
+        "end_index": 1458,
+        "start_time": "2025-07-24T00:00:00Z",
+        "end_time": "2026-03-23T20:00:00Z"
+      },
+      "oos": {
+        "start_index": 1458,
+        "end_index": 2370,
+        "start_time": "2026-03-24T00:00:00Z",
+        "end_time": "2026-08-22T20:00:00Z"
+      },
+      "top": [
+        {
+          "candidate": {
+            "label": "rsi21-long65-short40",
+            "origin": "grid",
+            "rsi_period": 21,
+            "rsi_long_threshold": "65",
+            "rsi_short_threshold": "40"
+          },
+          "window_months": 8,
+          "train": {
+            "trades": 11,
+            "net_expectancy": "8.640951571100662350614490505",
+            "net_profit_factor": "1.3240423651722263466829865888",
+            "max_drawdown": "225.5627651166179787982355932",
+            "max_drawdown_pct": "17.503392449706684865443433910",
+            "expectancy_stderr": "24.9693923930029",
+            "closed_net_pnl": "95.05046728210728585675939556",
+            "open_net_pnl": "-31.932962189747158431918348419",
+            "net_pnl": "63.117505092360127424841047141",
+            "win_rate": "45.454545454545454545454545450"
+          },
+          "train_stress": {
+            "trades": 11,
+            "net_expectancy": "7.1863110507170179299296824215",
+            "net_profit_factor": "1.2615695343969166471424813589",
+            "max_drawdown": "231.6002078191028632845530279",
+            "max_drawdown_pct": "18.133843643728271996803735420",
+            "expectancy_stderr": "24.99214067650122",
+            "closed_net_pnl": "79.049421557887197229226506637",
+            "open_net_pnl": "-33.478543261424263511946184188",
+            "net_pnl": "45.570878296462933717280322449",
+            "win_rate": "45.454545454545454545454545450"
+          },
+          "oos": {
+            "trades": 9,
+            "net_expectancy": "-16.778322513077156562991118022",
+            "net_profit_factor": "0.3583729199686449560677986595",
+            "max_drawdown": "151.9186272138382339757267325",
+            "max_drawdown_pct": "15.191862721383823397572673250",
+            "expectancy_stderr": "15.17102765746406",
+            "closed_net_pnl": "-151.00490261769440906692006220",
+            "open_net_pnl": "112.41448488021992407383165337",
+            "net_pnl": "-38.59041773747448499308840883",
+            "win_rate": "22.222222222222222222222222220"
+          },
+          "oos_stress": {
+            "trades": 9,
+            "net_expectancy": "-18.272100178061342689013114403",
+            "net_profit_factor": "0.3328761638367361794678348598",
+            "max_drawdown": "164.4489016025520842011180296",
+            "max_drawdown_pct": "16.444890160255208420111802960",
+            "expectancy_stderr": "15.18959158136042",
+            "closed_net_pnl": "-164.44890160255208420111802963",
+            "open_net_pnl": "110.74335646026966880481738448",
+            "net_pnl": "-53.70554514228241539630064515",
+            "win_rate": "11.111111111111111111111111110"
+          },
+          "successful": false
+        }
+      ]
+    },
+    {
+      "months": 9,
+      "train": {
+        "start_index": 0,
+        "end_index": 1641,
+        "start_time": "2025-07-24T00:00:00Z",
+        "end_time": "2026-04-23T08:00:00Z"
+      },
+      "oos": {
+        "start_index": 1641,
+        "end_index": 2552,
+        "start_time": "2026-04-23T12:00:00Z",
+        "end_time": "2026-09-22T04:00:00Z"
+      },
+      "top": [
+        {
+          "candidate": {
+            "label": "rsi21-long65-short40",
+            "origin": "grid",
+            "rsi_period": 21,
+            "rsi_long_threshold": "65",
+            "rsi_short_threshold": "40"
+          },
+          "window_months": 9,
+          "train": {
+            "trades": 12,
+            "net_expectancy": "5.9083316796792026082210189881",
+            "net_profit_factor": "1.2233226585453298173265856883",
+            "max_drawdown": "243.3231773142568804281971599",
+            "max_drawdown_pct": "18.881578537304564706024030780",
+            "expectancy_stderr": "22.95704703427943",
+            "closed_net_pnl": "70.899980156150431298652227857",
+            "open_net_pnl": "-25.542887261429205503772747434",
+            "net_pnl": "45.357092894721225794879480423",
+            "win_rate": "41.666666666666666666666666670"
+          },
+          "train_stress": {
+            "trades": 12,
+            "net_expectancy": "4.4470841323755452573879894484",
+            "net_profit_factor": "1.1627496570931190801690551586",
+            "max_drawdown": "250.8128452798333329189475613",
+            "max_drawdown_pct": "19.638155608632244112154248330",
+            "expectancy_stderr": "22.97845245235607",
+            "closed_net_pnl": "53.365009588506543088655873381",
+            "open_net_pnl": "-27.006768752774079005770084318",
+            "net_pnl": "26.358240835732464082885789063",
+            "win_rate": "41.666666666666666666666666670"
+          },
+          "oos": {
+            "trades": 9,
+            "net_expectancy": "0.8786682519151842648376172673",
+            "net_profit_factor": "1.0347645590739998607775964278",
+            "max_drawdown": "138.4121249403098686668373024",
+            "max_drawdown_pct": "13.138205344541424022489323130",
+            "expectancy_stderr": "24.4709517553444",
+            "closed_net_pnl": "7.908014267236658383538555406",
+            "open_net_pnl": "21.305413182267781674309864216",
+            "net_pnl": "29.213427449504440057848419622",
+            "win_rate": "33.333333333333333333333333330"
+          },
+          "oos_stress": {
+            "trades": 9,
+            "net_expectancy": "-0.6518086844670076324889776276",
+            "net_profit_factor": "0.9752719849525044929737086554",
+            "max_drawdown": "143.5485295556792493698808916",
+            "max_drawdown_pct": "13.683017660938608455442089210",
+            "expectancy_stderr": "24.46588592095179",
+            "closed_net_pnl": "-5.866278160203068692400798648",
+            "open_net_pnl": "19.771153673230824566136138831",
+            "net_pnl": "13.904875513027755873735340183",
+            "win_rate": "22.222222222222222222222222220"
+          },
+          "successful": false
+        }
+      ]
+    },
+    {
+      "months": 10,
+      "train": {
+        "start_index": 0,
+        "end_index": 1823,
+        "start_time": "2025-07-24T00:00:00Z",
+        "end_time": "2026-05-23T16:00:00Z"
+      },
+      "oos": {
+        "start_index": 1823,
+        "end_index": 2735,
+        "start_time": "2026-05-23T20:00:00Z",
+        "end_time": "2026-10-22T16:00:00Z"
+      },
+      "top": []
+    }
+  ],
+  "successful_runs": [],
+  "winner": null,
+  "decision": {
+    "verdict": "Fail",
+    "reasons": [
+      "M1-M6: rsi21-long55-short40 failed OOS (13 trades, net expectancy -3.7892629587731998632171728969, PF 0.8470918775556517070639144488).",
+      "M1-M7: rsi21-long55-short40 failed OOS (15 trades, net expectancy -11.326502669332494177094871112, PF 0.465037770126918104461669448).",
+      "M1-M7: rsi21-long60-short40 failed OOS (13 trades, net expectancy -20.627238596459528022920132277, PF 0.2728558643347222579078262558).",
+      "M1-M8: rsi21-long65-short40 failed OOS (9 trades, net expectancy -16.778322513077156562991118022, PF 0.3583729199686449560677986595).",
+      "M1-M9: rsi21-long65-short40 failed OOS (9 trades, net expectancy 0.8786682519151842648376172673, PF 1.0347645590739998607775964278).",
+      "M1-M10: no candidate met the training gates."
+    ]
+  },
+  "overall_verdict": "Fail",
+  "expected_symbols": 5
+}

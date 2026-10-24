@@ -55,6 +55,46 @@ name = "analyzer-execution"
 path = "src/bin/analyzer-execution.rs"
 required-features = ["harness"]
 
+[[bin]]
+name = "analyzer-tuning"
+path = "src/bin/analyzer-tuning.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-walkforward"
+path = "src/bin/analyzer-walkforward.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-fixed"
+path = "src/bin/analyzer-fixed.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-atr-grid"
+path = "src/bin/analyzer-atr-grid.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-donchian"
+path = "src/bin/analyzer-donchian.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-ts-momentum"
+path = "src/bin/analyzer-ts-momentum.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-ts-momentum-wf"
+path = "src/bin/analyzer-ts-momentum-wf.rs"
+required-features = ["harness"]
+
+[[bin]]
+name = "analyzer-percent-momentum"
+path = "src/bin/analyzer-percent-momentum.rs"
+required-features = ["harness"]
+
 [dev-dependencies]
 serde_json = "1"
 syn = { version = "2", features = ["full"] }

@@ -1,0 +1,1799 @@
+{
+  "symbol": "SOL-USDT",
+  "timeframe": "4hour",
+  "generated_at": "2026-09-23T00:00:00Z",
+  "as_of_ms": 1790121600000,
+  "days": 365,
+  "dataset": {
+    "first_open_time": "2025-09-23T00:00:00Z",
+    "last_open_time": "2026-09-22T16:00:00Z",
+    "candles": 2189,
+    "content_sha256": "1bf2ffca0a67cd3067d9c3ad0b059f24d61c27cd36bad8ec4a3f9001a99f14f2"
+  },
+  "split": {
+    "train": {
+      "start_index": 0,
+      "end_index": 2006,
+      "candles": 2006,
+      "start_time": "2025-09-23T00:00:00Z",
+      "end_time": "2026-08-23T04:00:00Z"
+    },
+    "month12": {
+      "start_index": 2006,
+      "end_index": 2189,
+      "candles": 183,
+      "start_time": "2026-08-23T08:00:00Z",
+      "end_time": "2026-09-22T16:00:00Z"
+    }
+  },
+  "strategy": {
+    "rsi_period": 16,
+    "rsi_long_threshold": "60",
+    "rsi_short_threshold": "40",
+    "window": 100
+  },
+  "base_costs": {
+    "label": "base",
+    "fee_bps": "10",
+    "slip_bps": "5"
+  },
+  "stress_costs": {
+    "label": "stress",
+    "fee_bps": "20",
+    "slip_bps": "10"
+  },
+  "grid": {
+    "atr_period": 14,
+    "sl_multipliers": [
+      "1.5",
+      "2.0",
+      "2.5",
+      "3.0",
+      "3.5",
+      "4.0",
+      "4.5",
+      "5.0"
+    ],
+    "tp_multipliers": [
+      "1.5",
+      "2.0",
+      "2.5",
+      "3.0",
+      "3.5",
+      "4.0",
+      "4.5",
+      "5.0"
+    ],
+    "pct_high": "5",
+    "high_adjust": "1.5",
+    "sl_max_pct": "0",
+    "variants": 64
+  },
+  "gate": {
+    "max_drawdown_pct": "20",
+    "qualified": 0,
+    "total": 64,
+    "applied": false,
+    "note": "Drawdown gate failed: only 0 of 64 variants have max DD <= 20%; top 3 selected from all 64 variants without the gate."
+  },
+  "baseline_train": {
+    "trades": 37,
+    "net_expectancy": "-10.154578434858746609471001509",
+    "net_profit_factor": "0.5883187547418595207262525377",
+    "max_drawdown_pct": "46.829494755277325995437227810",
+    "expectancy_stderr": "8.58548514247934",
+    "closed_net_pnl": "-375.71940208977362455042705584",
+    "open_net_pnl": "116.04122127204703367183324426",
+    "net_pnl": "-259.67818081772659087859381158",
+    "win_rate": "27.027027027027027027027027030"
+  },
+  "baseline_month12": {
+    "base": {
+      "trades": 4,
+      "net_expectancy": "-23.50432492270461946113890051",
+      "net_profit_factor": "0",
+      "max_drawdown_pct": "9.401729969081847784455560210",
+      "expectancy_stderr": "3.725854993612733",
+      "closed_net_pnl": "-94.01729969081847784455560204",
+      "open_net_pnl": "63.495077423054865226534123488",
+      "net_pnl": "-30.522222267763612618021478552",
+      "win_rate": "0"
+    },
+    "stress": {
+      "trades": 4,
+      "net_expectancy": "-25.00973322431526768507121858",
+      "net_profit_factor": "0",
+      "max_drawdown_pct": "10.003893289726107074028487440",
+      "expectancy_stderr": "3.732982944746287",
+      "closed_net_pnl": "-100.03893289726107074028487432",
+      "open_net_pnl": "61.897438348308162875167272025",
+      "net_pnl": "-38.141494548952907865117602295",
+      "win_rate": "0"
+    }
+  },
+  "leaderboard": [
+    {
+      "variant": {
+        "label": "SL1.5/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.8298156210413374725008154547",
+        "net_profit_factor": "0.4028060132708872197180455823",
+        "max_drawdown_pct": "30.750808276158044515240608010",
+        "expectancy_stderr": "2.477800747854766",
+        "closed_net_pnl": "-259.53299359957082395503098728",
+        "open_net_pnl": "0",
+        "net_pnl": "-259.53299359957082395503098728",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.969355815029393014362469999",
+        "net_profit_factor": "0.3763326903758592440958625009",
+        "max_drawdown_pct": "35.293511248043900453481734320",
+        "expectancy_stderr": "2.656118332432393",
+        "closed_net_pnl": "-302.83552097111693454577385997",
+        "open_net_pnl": "0",
+        "net_pnl": "-302.83552097111693454577385997",
+        "win_rate": "26.315789473684210526315789470"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.5960161152752700426299208839",
+        "net_profit_factor": "0.4230496762901005326570754497",
+        "max_drawdown_pct": "33.518173310233269581917164540",
+        "expectancy_stderr": "2.932615062067144",
+        "closed_net_pnl": "-288.64861238046026161993699359",
+        "open_net_pnl": "0",
+        "net_pnl": "-288.64861238046026161993699359",
+        "win_rate": "23.684210526315789473684210530"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.4104055067125190627710151505",
+        "net_profit_factor": "0.5131019371099002012124379985",
+        "max_drawdown_pct": "31.267034761538240567093515330",
+        "expectancy_stderr": "3.287107465790301",
+        "closed_net_pnl": "-243.59540925507572438529857572",
+        "open_net_pnl": "0",
+        "net_pnl": "-243.59540925507572438529857572",
+        "win_rate": "23.684210526315789473684210530"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.986617236767698753377795067",
+        "net_profit_factor": "0.3644463985685283487196377409",
+        "max_drawdown_pct": "40.067212103873866611654191680",
+        "expectancy_stderr": "3.088763854738132",
+        "closed_net_pnl": "-341.49145499717255262835621254",
+        "open_net_pnl": "0",
+        "net_pnl": "-341.49145499717255262835621254",
+        "win_rate": "18.421052631578947368421052630"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.223721291646921335340341004",
+        "net_profit_factor": "0.4184001002411914495157246369",
+        "max_drawdown_pct": "38.328439791847756627043965690",
+        "expectancy_stderr": "3.381825012201719",
+        "closed_net_pnl": "-312.50140908258301074293295817",
+        "open_net_pnl": "0",
+        "net_pnl": "-312.50140908258301074293295817",
+        "win_rate": "18.421052631578947368421052630"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.4608253465261439173028869432",
+        "net_profit_factor": "0.4723538019138545503118115328",
+        "max_drawdown_pct": "36.628969857467251855995394120",
+        "expectancy_stderr": "3.676314918959407",
+        "closed_net_pnl": "-283.51136316799346885750970384",
+        "open_net_pnl": "0",
+        "net_pnl": "-283.51136316799346885750970384",
+        "win_rate": "18.421052631578947368421052630"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL1.5/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "1.5",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.121538043554475716574510242",
+        "net_profit_factor": "0.4276612526965176605036560215",
+        "max_drawdown_pct": "39.859019781888133001865168840",
+        "expectancy_stderr": "3.643002304016442",
+        "closed_net_pnl": "-308.61844565507007722983138920",
+        "open_net_pnl": "0",
+        "net_pnl": "-308.61844565507007722983138920",
+        "win_rate": "15.789473684210526315789473680"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.359901331153771615499664556",
+        "net_profit_factor": "0.3905137072861524626660416908",
+        "max_drawdown_pct": "36.185450427618919055553021520",
+        "expectancy_stderr": "3.001918864919494",
+        "closed_net_pnl": "-317.67625058384332138898725311",
+        "open_net_pnl": "0",
+        "net_pnl": "-317.67625058384332138898725311",
+        "win_rate": "39.473684210526315789473684210"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.628133988664095852593446586",
+        "net_profit_factor": "0.3774193218110646232777896733",
+        "max_drawdown_pct": "41.225278895261113209376677390",
+        "expectancy_stderr": "3.237299960127191",
+        "closed_net_pnl": "-365.86909156923564239855097026",
+        "open_net_pnl": "0",
+        "net_pnl": "-365.86909156923564239855097026",
+        "win_rate": "31.578947368421052631578947370"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.092660536389086680583212128",
+        "net_profit_factor": "0.4305879033645044211852697076",
+        "max_drawdown_pct": "38.240441768034792281946575220",
+        "expectancy_stderr": "3.547010202840523",
+        "closed_net_pnl": "-345.52110038278529386216206088",
+        "open_net_pnl": "0",
+        "net_pnl": "-345.52110038278529386216206088",
+        "win_rate": "28.947368421052631578947368420"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.6288774740470740707142843924",
+        "net_profit_factor": "0.5222547789959016179042034688",
+        "max_drawdown_pct": "34.752077477741015817158960350",
+        "expectancy_stderr": "3.926150594552953",
+        "closed_net_pnl": "-289.89734401378881468714280691",
+        "open_net_pnl": "0",
+        "net_pnl": "-289.89734401378881468714280691",
+        "win_rate": "28.947368421052631578947368420"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.224255732094300635041495347",
+        "net_profit_factor": "0.406941071512186086339319146",
+        "max_drawdown_pct": "44.237225273490796060738775870",
+        "expectancy_stderr": "3.848202860019274",
+        "closed_net_pnl": "-388.52171781958342413157682317",
+        "open_net_pnl": "0",
+        "net_pnl": "-388.52171781958342413157682317",
+        "win_rate": "23.684210526315789473684210530"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.183187333194261586994019281",
+        "net_profit_factor": "0.4673283432424983411087768009",
+        "max_drawdown_pct": "41.461811763553838434225086050",
+        "expectancy_stderr": "4.179947452562805",
+        "closed_net_pnl": "-348.96111866138194030577273267",
+        "open_net_pnl": "0",
+        "net_pnl": "-348.96111866138194030577273267",
+        "win_rate": "23.684210526315789473684210530"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.142118934294222538946543218",
+        "net_profit_factor": "0.5277156149728105958782344556",
+        "max_drawdown_pct": "38.749386351389242628769668830",
+        "expectancy_stderr": "4.51335791076868",
+        "closed_net_pnl": "-309.40051950318045647996864230",
+        "open_net_pnl": "0",
+        "net_pnl": "-309.40051950318045647996864230",
+        "win_rate": "23.684210526315789473684210530"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.0/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.0",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.131137115085935950962032393",
+        "net_profit_factor": "0.4188765156013952035099208494",
+        "max_drawdown_pct": "46.550917589499556091201331730",
+        "expectancy_stderr": "4.240468038640778",
+        "closed_net_pnl": "-384.98321037326556613655723092",
+        "open_net_pnl": "0",
+        "net_pnl": "-384.98321037326556613655723092",
+        "win_rate": "18.421052631578947368421052630"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-4.2177082419965180507118656463",
+        "net_profit_factor": "0.6499166134608761577342395656",
+        "max_drawdown_pct": "23.749639375711501524843623900",
+        "expectancy_stderr": "3.501373376883222",
+        "closed_net_pnl": "-160.27291319586768592705089456",
+        "open_net_pnl": "0",
+        "net_pnl": "-160.27291319586768592705089456",
+        "win_rate": "57.894736842105263157894736840"
+      },
+      "top_rank": 2
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-5.5099082000355736926771578945",
+        "net_profit_factor": "0.6199225279359885318051599054",
+        "max_drawdown_pct": "31.708336718628173830620551680",
+        "expectancy_stderr": "3.952185238994235",
+        "closed_net_pnl": "-209.37651160135180032173199999",
+        "open_net_pnl": "0",
+        "net_pnl": "-209.37651160135180032173199999",
+        "win_rate": "50.00"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.0148725635403607408514778632",
+        "net_profit_factor": "0.6235267448344279709618439285",
+        "max_drawdown_pct": "35.350272655555973229322360960",
+        "expectancy_stderr": "4.282034931269443",
+        "closed_net_pnl": "-228.56515741453370815235615880",
+        "open_net_pnl": "0",
+        "net_pnl": "-228.56515741453370815235615880",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-4.5989628226449031584658123868",
+        "net_profit_factor": "0.7163806994606357875032693958",
+        "max_drawdown_pct": "33.022003940419282740330955230",
+        "expectancy_stderr": "4.6478366564583",
+        "closed_net_pnl": "-174.76058726050632002170087070",
+        "open_net_pnl": "0",
+        "net_pnl": "-174.76058726050632002170087070",
+        "win_rate": "42.105263157894736842105263160"
+      },
+      "top_rank": 1
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.156771341556662043426478471",
+        "net_profit_factor": "0.5504135807866124568462502147",
+        "max_drawdown_pct": "41.127362755232941656116450460",
+        "expectancy_stderr": "4.66045254969326",
+        "closed_net_pnl": "-309.95731097915315765020618190",
+        "open_net_pnl": "0",
+        "net_pnl": "-309.95731097915315765020618190",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.6685155391016600963428305868",
+        "net_profit_factor": "0.6324435371359341314470525071",
+        "max_drawdown_pct": "38.048115298248528737642454420",
+        "expectancy_stderr": "5.02626544471592",
+        "closed_net_pnl": "-253.40359048586308366102756230",
+        "open_net_pnl": "0",
+        "net_pnl": "-253.40359048586308366102756230",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.2967585955109654737017002226",
+        "net_profit_factor": "0.6529341045538454455346206096",
+        "max_drawdown_pct": "35.807781093530167747859162280",
+        "expectancy_stderr": "5.16221984392375",
+        "closed_net_pnl": "-239.27682662941668800066460846",
+        "open_net_pnl": "0",
+        "net_pnl": "-239.27682662941668800066460846",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": 3
+    },
+    {
+      "variant": {
+        "label": "SL2.5/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.991964092171230618297007868",
+        "net_profit_factor": "0.4550831366316058208082097952",
+        "max_drawdown_pct": "48.257214233343028053600480190",
+        "expectancy_stderr": "4.678669364646",
+        "closed_net_pnl": "-379.69463550250676349528629897",
+        "open_net_pnl": "0",
+        "net_pnl": "-379.69463550250676349528629897",
+        "win_rate": "28.947368421052631578947368420"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.2227963968645340166898905587",
+        "net_profit_factor": "0.5571849929417732192380604497",
+        "max_drawdown_pct": "31.032768371773381950364594140",
+        "expectancy_stderr": "3.903717502607858",
+        "closed_net_pnl": "-236.46626308085229263421584123",
+        "open_net_pnl": "0",
+        "net_pnl": "-236.46626308085229263421584123",
+        "win_rate": "57.894736842105263157894736840"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.7604730753932171440821503839",
+        "net_profit_factor": "0.5366153548114662640722167007",
+        "max_drawdown_pct": "39.754357467188091310183625300",
+        "expectancy_stderr": "4.338007954881615",
+        "closed_net_pnl": "-294.89797686494225147512171459",
+        "open_net_pnl": "0",
+        "net_pnl": "-294.89797686494225147512171459",
+        "win_rate": "50.00"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.381476140156379621988807012",
+        "net_profit_factor": "0.5430818474612436100898895918",
+        "max_drawdown_pct": "42.389090122466310612919240980",
+        "expectancy_stderr": "4.64567074751651",
+        "closed_net_pnl": "-318.49609332594242563557466647",
+        "open_net_pnl": "0",
+        "net_pnl": "-318.49609332594242563557466647",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.9655663992609220396031415363",
+        "net_profit_factor": "0.6251418183069212061237824612",
+        "max_drawdown_pct": "40.088482770698250427418257610",
+        "expectancy_stderr": "5.00299397336069",
+        "closed_net_pnl": "-264.69152317191503750491937838",
+        "open_net_pnl": "0",
+        "net_pnl": "-264.69152317191503750491937838",
+        "win_rate": "42.105263157894736842105263160"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.820713899943989428294260662",
+        "net_profit_factor": "0.4799427788343329713428110878",
+        "max_drawdown_pct": "50.469006669641314227618509760",
+        "expectancy_stderr": "5.0045490615118",
+        "closed_net_pnl": "-411.18712819787159827518190516",
+        "open_net_pnl": "0",
+        "net_pnl": "-411.18712819787159827518190516",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.332458097488987481210612778",
+        "net_profit_factor": "0.551470238497824721247857819",
+        "max_drawdown_pct": "46.909066434365303017707055640",
+        "expectancy_stderr": "5.36687449792448",
+        "closed_net_pnl": "-354.63340770458152428600328555",
+        "open_net_pnl": "0",
+        "net_pnl": "-354.63340770458152428600328555",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.960701153898292858569482414",
+        "net_profit_factor": "0.5693373482671550999182196609",
+        "max_drawdown_pct": "43.673862861704381881322488990",
+        "expectancy_stderr": "5.49927659954621",
+        "closed_net_pnl": "-340.50664384813512862564033172",
+        "open_net_pnl": "0",
+        "net_pnl": "-340.50664384813512862564033172",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.0/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.0",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-12.655906650558558003164790059",
+        "net_profit_factor": "0.3973555359412021896092882444",
+        "max_drawdown_pct": "55.767540178526202099267039930",
+        "expectancy_stderr": "4.99513546432028",
+        "closed_net_pnl": "-480.92445272122520412026202223",
+        "open_net_pnl": "0",
+        "net_pnl": "-480.92445272122520412026202223",
+        "win_rate": "28.947368421052631578947368420"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.3509060530883142947738982324",
+        "net_profit_factor": "0.5599033495756549028936849336",
+        "max_drawdown_pct": "31.498231847298622552058659800",
+        "expectancy_stderr": "4.13523652824882",
+        "closed_net_pnl": "-241.33443001735594320140813283",
+        "open_net_pnl": "0",
+        "net_pnl": "-241.33443001735594320140813283",
+        "win_rate": "60.526315789473684210526315790"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.9115946023607746883283569671",
+        "net_profit_factor": "0.5412157149693092026909961171",
+        "max_drawdown_pct": "40.29476594296396745534138400",
+        "expectancy_stderr": "4.57774990618151",
+        "closed_net_pnl": "-300.64059488970943815647756475",
+        "open_net_pnl": "0",
+        "net_pnl": "-300.64059488970943815647756475",
+        "win_rate": "52.631578947368421052631578950"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.552216776158639513448863431",
+        "net_profit_factor": "0.5488590132802124554455595451",
+        "max_drawdown_pct": "43.381654146545418105989962990",
+        "expectancy_stderr": "4.8962132658758",
+        "closed_net_pnl": "-324.98423749402830151105681037",
+        "open_net_pnl": "0",
+        "net_pnl": "-324.98423749402830151105681037",
+        "win_rate": "47.368421052631578947368421050"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.0398874430395088485447111295",
+        "net_profit_factor": "0.6332481949298347130328699208",
+        "max_drawdown_pct": "40.457159474017917358039271400",
+        "expectancy_stderr": "5.25050631287897",
+        "closed_net_pnl": "-267.51572283550133624469902292",
+        "open_net_pnl": "0",
+        "net_pnl": "-267.51572283550133624469902292",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-11.095954333270211658447796472",
+        "net_profit_factor": "0.4890772506083384331984402974",
+        "max_drawdown_pct": "51.256196768324849974312158450",
+        "expectancy_stderr": "5.30852388872413",
+        "closed_net_pnl": "-421.64626466426804302101626592",
+        "open_net_pnl": "0",
+        "net_pnl": "-421.64626466426804302101626592",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.511278938591536628845661762",
+        "net_profit_factor": "0.562044990491233671475622234",
+        "max_drawdown_pct": "47.327857237522753798444032160",
+        "expectancy_stderr": "5.66971106216633",
+        "closed_net_pnl": "-361.42859966647839189613514697",
+        "open_net_pnl": "0",
+        "net_pnl": "-361.42859966647839189613514697",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.043102402777168923686044574",
+        "net_profit_factor": "0.5836025812756256772115172707",
+        "max_drawdown_pct": "43.734048854146573031902155020",
+        "expectancy_stderr": "5.81289937268795",
+        "closed_net_pnl": "-343.63789130553241910006969380",
+        "open_net_pnl": "0",
+        "net_pnl": "-343.63789130553241910006969380",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL3.5/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "3.5",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-12.641888307213760985762865394",
+        "net_profit_factor": "0.4230431227740972876749523125",
+        "max_drawdown_pct": "55.630129135142850106993441980",
+        "expectancy_stderr": "5.35932913376645",
+        "closed_net_pnl": "-480.39175567412291745898888497",
+        "open_net_pnl": "0",
+        "net_pnl": "-480.39175567412291745898888497",
+        "win_rate": "31.578947368421052631578947370"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.0277874903152106949183392024",
+        "net_profit_factor": "0.534817402078950391472249922",
+        "max_drawdown_pct": "33.957559235858640294431208400",
+        "expectancy_stderr": "4.322254312377368",
+        "closed_net_pnl": "-267.05592463197800640689688969",
+        "open_net_pnl": "0",
+        "net_pnl": "-267.05592463197800640689688969",
+        "win_rate": "60.526315789473684210526315790"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.732875584402572240869296673",
+        "net_profit_factor": "0.5166119958455670035049166211",
+        "max_drawdown_pct": "43.231655296816264269292251670",
+        "expectancy_stderr": "4.76919482094899",
+        "closed_net_pnl": "-331.84927220729774515303327359",
+        "open_net_pnl": "0",
+        "net_pnl": "-331.84927220729774515303327359",
+        "win_rate": "52.631578947368421052631578950"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.40437049096261175997626878",
+        "net_profit_factor": "0.5252479319469333962447395251",
+        "max_drawdown_pct": "46.535827420425995014486480990",
+        "expectancy_stderr": "5.07673254167936",
+        "closed_net_pnl": "-357.36607865657924687909821363",
+        "open_net_pnl": "0",
+        "net_pnl": "-357.36607865657924687909821363",
+        "win_rate": "47.368421052631578947368421050"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.8920411578434810950721164784",
+        "net_profit_factor": "0.6063307353493975229972450303",
+        "max_drawdown_pct": "43.510426942115007904902866050",
+        "expectancy_stderr": "5.42566004823844",
+        "closed_net_pnl": "-299.89756399805228161274042618",
+        "open_net_pnl": "0",
+        "net_pnl": "-299.89756399805228161274042618",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-12.245447029845492408705654862",
+        "net_profit_factor": "0.4644919787615123569291637827",
+        "max_drawdown_pct": "55.361629942433200616139483690",
+        "expectancy_stderr": "5.51141028438333",
+        "closed_net_pnl": "-465.32698713412871153081488476",
+        "open_net_pnl": "0",
+        "net_pnl": "-465.32698713412871153081488476",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.660771635166817379103520152",
+        "net_profit_factor": "0.5337917260750576781854627934",
+        "max_drawdown_pct": "51.381192591912835815442395920",
+        "expectancy_stderr": "5.86850103248681",
+        "closed_net_pnl": "-405.10932213633906040593376579",
+        "open_net_pnl": "0",
+        "net_pnl": "-405.10932213633906040593376579",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.192595099352449673943902964",
+        "net_profit_factor": "0.5542656450486311049800530768",
+        "max_drawdown_pct": "47.736849753229782235594159450",
+        "expectancy_stderr": "6.00937351013705",
+        "closed_net_pnl": "-387.31861377539308760986831264",
+        "open_net_pnl": "0",
+        "net_pnl": "-387.31861377539308760986831264",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.0/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.0",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 26,
+        "net_expectancy": "-21.009266845122688042816748305",
+        "net_profit_factor": "0.2606923907782801614794342481",
+        "max_drawdown_pct": "58.260540121472921178434772240",
+        "expectancy_stderr": "6.64054662146448",
+        "closed_net_pnl": "-546.24093797318988911323545592",
+        "open_net_pnl": "0",
+        "net_pnl": "-546.24093797318988911323545592",
+        "win_rate": "19.230769230769230769230769230"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.4112417354440449694186342371",
+        "net_profit_factor": "0.5215789132175002399358099586",
+        "max_drawdown_pct": "35.350771511214381879846619630",
+        "expectancy_stderr": "4.427079040759947",
+        "closed_net_pnl": "-281.62718594687370883790810101",
+        "open_net_pnl": "0",
+        "net_pnl": "-281.62718594687370883790810101",
+        "win_rate": "60.526315789473684210526315790"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.260729374346307667766090444",
+        "net_profit_factor": "0.5019460761234146255299483822",
+        "max_drawdown_pct": "45.119253098268150536665592880",
+        "expectancy_stderr": "4.89188716016441",
+        "closed_net_pnl": "-351.90771622515969137511143687",
+        "open_net_pnl": "0",
+        "net_pnl": "-351.90771622515969137511143687",
+        "win_rate": "52.631578947368421052631578950"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.93222428090634718687306255",
+        "net_profit_factor": "0.5116148537996149963931620173",
+        "max_drawdown_pct": "48.489906147360726533476157030",
+        "expectancy_stderr": "5.19031738208244",
+        "closed_net_pnl": "-377.42452267444119310117637691",
+        "open_net_pnl": "0",
+        "net_pnl": "-377.42452267444119310117637691",
+        "win_rate": "47.368421052631578947368421050"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.419894947787216521968910249",
+        "net_profit_factor": "0.5907754406133205944516275261",
+        "max_drawdown_pct": "45.443425803269926084751586470",
+        "expectancy_stderr": "5.53598400741756",
+        "closed_net_pnl": "-319.95600801591422783481858948",
+        "open_net_pnl": "0",
+        "net_pnl": "-319.95600801591422783481858948",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 33,
+        "net_expectancy": "-16.748602282015400454026929942",
+        "net_profit_factor": "0.366343248259718323295304433",
+        "max_drawdown_pct": "57.402176930810993944499054450",
+        "expectancy_stderr": "6.02739704009767",
+        "closed_net_pnl": "-552.70387530650821498288868809",
+        "open_net_pnl": "0",
+        "net_pnl": "-552.70387530650821498288868809",
+        "win_rate": "30.303030303030303030303030300"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-11.224630916422546892168619388",
+        "net_profit_factor": "0.5209461119807277506568978288",
+        "max_drawdown_pct": "53.398001186145517361159161860",
+        "expectancy_stderr": "5.97126765864358",
+        "closed_net_pnl": "-426.53597482405678190240753673",
+        "open_net_pnl": "0",
+        "net_pnl": "-426.53597482405678190240753673",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.756454380608179187009002198",
+        "net_profit_factor": "0.5409273293081611571157925544",
+        "max_drawdown_pct": "49.730465915965113396256147040",
+        "expectancy_stderr": "6.11093876288141",
+        "closed_net_pnl": "-408.74526646311080910634208354",
+        "open_net_pnl": "0",
+        "net_pnl": "-408.74526646311080910634208354",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL4.5/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "4.5",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 26,
+        "net_expectancy": "-21.621594433835510058476841335",
+        "net_profit_factor": "0.2551935914602882387180582112",
+        "max_drawdown_pct": "59.725004082574337707655791020",
+        "expectancy_stderr": "6.75186521664941",
+        "closed_net_pnl": "-562.16145527972326152039787472",
+        "open_net_pnl": "0",
+        "net_pnl": "-562.16145527972326152039787472",
+        "win_rate": "19.230769230769230769230769230"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-7.5585502296998700772388405261",
+        "net_profit_factor": "0.5166657992450403415897221168",
+        "max_drawdown_pct": "35.885990523830689555801146770",
+        "expectancy_stderr": "4.463229224408557",
+        "closed_net_pnl": "-287.22490872859506293507593999",
+        "open_net_pnl": "0",
+        "net_pnl": "-287.22490872859506293507593999",
+        "win_rate": "60.526315789473684210526315790"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP2.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "2.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-9.552437413417033927982795468",
+        "net_profit_factor": "0.4941929628741253089191126525",
+        "max_drawdown_pct": "46.162396983385345346572731030",
+        "expectancy_stderr": "4.95795403431476",
+        "closed_net_pnl": "-362.99262170984728926334622779",
+        "open_net_pnl": "0",
+        "net_pnl": "-362.99262170984728926334622779",
+        "win_rate": "52.631578947368421052631578950"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP2.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "2.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-10.223932319977073447089767574",
+        "net_profit_factor": "0.5043801244105314594674234757",
+        "max_drawdown_pct": "49.569789411407596148211664010",
+        "expectancy_stderr": "5.25162399760673",
+        "closed_net_pnl": "-388.50942815912879098941116783",
+        "open_net_pnl": "0",
+        "net_pnl": "-388.50942815912879098941116783",
+        "win_rate": "47.368421052631578947368421050"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-8.711602986857942782185615274",
+        "net_profit_factor": "0.5825167380833094057300772993",
+        "max_drawdown_pct": "46.511659693138467071621430920",
+        "expectancy_stderr": "5.59563449735536",
+        "closed_net_pnl": "-331.04091350060182572305338040",
+        "open_net_pnl": "0",
+        "net_pnl": "-331.04091350060182572305338040",
+        "win_rate": "44.736842105263157894736842110"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP3.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "3.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 33,
+        "net_expectancy": "-17.045096322208992130648688204",
+        "net_profit_factor": "0.3622794220107043449932944062",
+        "max_drawdown_pct": "58.333975797251833020736171400",
+        "expectancy_stderr": "6.07915751304177",
+        "closed_net_pnl": "-562.48817863289674031140671074",
+        "open_net_pnl": "0",
+        "net_pnl": "-562.48817863289674031140671074",
+        "win_rate": "30.303030303030303030303030300"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP4.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "4.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-11.482112582906455453445409457",
+        "net_profit_factor": "0.5152836541993671918385947743",
+        "max_drawdown_pct": "54.318960111687408731858486420",
+        "expectancy_stderr": "6.016962726335",
+        "closed_net_pnl": "-436.32027815044530723092555937",
+        "open_net_pnl": "0",
+        "net_pnl": "-436.32027815044530723092555937",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-11.013936047092087748285792268",
+        "net_profit_factor": "0.5350476843803093938365727528",
+        "max_drawdown_pct": "50.640834209925215957434082430",
+        "expectancy_stderr": "6.15612634778615",
+        "closed_net_pnl": "-418.52956978949933443486010620",
+        "open_net_pnl": "0",
+        "net_pnl": "-418.52956978949933443486010620",
+        "win_rate": "36.842105263157894736842105260"
+      },
+      "top_rank": null
+    },
+    {
+      "variant": {
+        "label": "SL5.0/TP5.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "5.0",
+        "tp_multiplier": "5.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 25,
+        "net_expectancy": "-21.926870623533064429566912333",
+        "net_profit_factor": "0.2600129066156200883348542089",
+        "max_drawdown_pct": "58.438149140264461254930276530",
+        "expectancy_stderr": "7.10186466055999",
+        "closed_net_pnl": "-548.17176558832661073917280832",
+        "open_net_pnl": "0",
+        "net_pnl": "-548.17176558832661073917280832",
+        "win_rate": "20.00"
+      },
+      "top_rank": null
+    }
+  ],
+  "top": [
+    {
+      "rank": 1,
+      "variant": {
+        "label": "SL2.5/TP3.0",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "3.0",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-4.5989628226449031584658123868",
+        "net_profit_factor": "0.7163806994606357875032693958",
+        "max_drawdown_pct": "33.022003940419282740330955230",
+        "expectancy_stderr": "4.6478366564583",
+        "closed_net_pnl": "-174.76058726050632002170087070",
+        "open_net_pnl": "0",
+        "net_pnl": "-174.76058726050632002170087070",
+        "win_rate": "42.105263157894736842105263160"
+      },
+      "month12": {
+        "base": {
+          "trades": 5,
+          "net_expectancy": "-2.6212309015125472730853138452",
+          "net_profit_factor": "0.8269999785295229030663617244",
+          "max_drawdown_pct": "7.2993464824976938205808343800",
+          "expectancy_stderr": "14.02097482711149",
+          "closed_net_pnl": "-13.106154507562736365426569226",
+          "open_net_pnl": "0",
+          "net_pnl": "-13.106154507562736365426569226",
+          "win_rate": "40.00"
+        },
+        "stress": {
+          "trades": 5,
+          "net_expectancy": "-4.1472939974573996178340052804",
+          "net_profit_factor": "0.741729705258713064605984555",
+          "max_drawdown_pct": "7.7476168102900844835711888500",
+          "expectancy_stderr": "14.01082681095688",
+          "closed_net_pnl": "-20.736469987286998089170026402",
+          "open_net_pnl": "0",
+          "net_pnl": "-20.736469987286998089170026402",
+          "win_rate": "40.00"
+        }
+      }
+    },
+    {
+      "rank": 2,
+      "variant": {
+        "label": "SL2.5/TP1.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "1.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-4.2177082419965180507118656463",
+        "net_profit_factor": "0.6499166134608761577342395656",
+        "max_drawdown_pct": "23.749639375711501524843623900",
+        "expectancy_stderr": "3.501373376883222",
+        "closed_net_pnl": "-160.27291319586768592705089456",
+        "open_net_pnl": "0",
+        "net_pnl": "-160.27291319586768592705089456",
+        "win_rate": "57.894736842105263157894736840"
+      },
+      "month12": {
+        "base": {
+          "trades": 5,
+          "net_expectancy": "-9.215058557326480758926790721",
+          "net_profit_factor": "0.3918104172550119951756070585",
+          "max_drawdown_pct": "7.4404862129253964040321072800",
+          "expectancy_stderr": "9.88946987622583",
+          "closed_net_pnl": "-46.075292786632403794633953604",
+          "open_net_pnl": "0",
+          "net_pnl": "-46.075292786632403794633953604",
+          "win_rate": "40.00"
+        },
+        "stress": {
+          "trades": 5,
+          "net_expectancy": "-10.731216053387786884117382792",
+          "net_profit_factor": "0.3317198311139593458672482299",
+          "max_drawdown_pct": "7.8974242691747196333616035200",
+          "expectancy_stderr": "9.8854632820668",
+          "closed_net_pnl": "-53.656080266938934420586913958",
+          "open_net_pnl": "0",
+          "net_pnl": "-53.656080266938934420586913958",
+          "win_rate": "40.00"
+        }
+      }
+    },
+    {
+      "rank": 3,
+      "variant": {
+        "label": "SL2.5/TP4.5",
+        "enabled": true,
+        "period": 14,
+        "sl_multiplier": "2.5",
+        "tp_multiplier": "4.5",
+        "pct_high": "5",
+        "high_adjust": "1.5",
+        "sl_max_pct": "0"
+      },
+      "train": {
+        "trades": 38,
+        "net_expectancy": "-6.2967585955109654737017002226",
+        "net_profit_factor": "0.6529341045538454455346206096",
+        "max_drawdown_pct": "35.807781093530167747859162280",
+        "expectancy_stderr": "5.16221984392375",
+        "closed_net_pnl": "-239.27682662941668800066460846",
+        "open_net_pnl": "0",
+        "net_pnl": "-239.27682662941668800066460846",
+        "win_rate": "34.210526315789473684210526320"
+      },
+      "month12": {
+        "base": {
+          "trades": 5,
+          "net_expectancy": "-10.021470422255659421792289665",
+          "net_profit_factor": "0.4316677635641399433152886887",
+          "max_drawdown_pct": "8.816559909660030983897190890",
+          "expectancy_stderr": "12.2839660444419",
+          "closed_net_pnl": "-50.107352111278297108961448327",
+          "open_net_pnl": "0",
+          "net_pnl": "-50.107352111278297108961448327",
+          "win_rate": "20.00"
+        },
+        "stress": {
+          "trades": 5,
+          "net_expectancy": "-11.536416483367147051244976629",
+          "net_profit_factor": "0.3875395048714504746028138216",
+          "max_drawdown_pct": "9.418090289191439994507859280",
+          "expectancy_stderr": "12.27379397043334",
+          "closed_net_pnl": "-57.682082416835735256224883144",
+          "open_net_pnl": "0",
+          "net_pnl": "-57.682082416835735256224883144",
+          "win_rate": "20.00"
+        }
+      }
+    }
+  ],
+  "conclusion": "top-1 SL2.5/TP3.0: month-12 base net expectancy -2.6212 vs ATR-off -23.5043, PF 0.8270 vs 0, closed net PnL -13.1062 + open mark 0 = total net PnL -13.1062 vs ATR-off total -30.5222; stress net expectancy -4.1473 vs ATR-off -25.0097.\ntop-2 SL2.5/TP1.5: month-12 base net expectancy -9.2151 vs ATR-off -23.5043, PF 0.3918 vs 0, closed net PnL -46.0753 + open mark 0 = total net PnL -46.0753 vs ATR-off total -30.5222; stress net expectancy -10.7312 vs ATR-off -25.0097.\ntop-3 SL2.5/TP4.5: month-12 base net expectancy -10.0215 vs ATR-off -23.5043, PF 0.4317 vs 0, closed net PnL -50.1074 + open mark 0 = total net PnL -50.1074 vs ATR-off total -30.5222; stress net expectancy -11.5364 vs ATR-off -25.0097.\n\nOn month-12 base costs, 3 of 3 top-3 ATR configs beat ATR-off on closed-trade net expectancy, 3 of 3 beat it on PF, 3 beat it on both, and 1 beat it on total net PnL including open marks. Did any top-3 ATR config beat ATR-off on month 12? By net expectancy: Yes. By total net PnL: Yes."
+}

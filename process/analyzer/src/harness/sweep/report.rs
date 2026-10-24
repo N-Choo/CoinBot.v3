@@ -112,13 +112,6 @@ pub struct BaselineConfig {
     pub rsi_period: usize,
     pub rsi_long_threshold: Decimal,
     pub rsi_short_threshold: Decimal,
-    pub atr_enabled: bool,
-    pub atr_period: usize,
-    pub atr_sl_multiplier: Decimal,
-    pub atr_tp_multiplier: Decimal,
-    pub atr_pct_high: Decimal,
-    pub atr_high_adjust: Decimal,
-    pub atr_sl_max_pct: Decimal,
     pub window: usize,
 }
 
@@ -129,13 +122,6 @@ impl BaselineConfig {
             rsi_period: config.rsi_period,
             rsi_long_threshold: config.rsi_long_threshold,
             rsi_short_threshold: config.rsi_short_threshold,
-            atr_enabled: config.atr_enabled,
-            atr_period: config.atr_period,
-            atr_sl_multiplier: config.atr_sl_multiplier,
-            atr_tp_multiplier: config.atr_tp_multiplier,
-            atr_pct_high: config.atr_pct_high,
-            atr_high_adjust: config.atr_high_adjust,
-            atr_sl_max_pct: config.atr_sl_max_pct,
             window: config.window,
         }
     }
@@ -175,7 +161,7 @@ pub struct SweepResults {
     pub candidate_plan: BTreeMap<String, CandidatePlan>,
 }
 
-const LEADERBOARD_COLUMNS: [&str; 30] = [
+const LEADERBOARD_COLUMNS: [&str; 25] = [
     "timeframe",
     "symbol_or_pooled",
     "label",
@@ -183,9 +169,6 @@ const LEADERBOARD_COLUMNS: [&str; 30] = [
     "rsi_period",
     "rsi_long_threshold",
     "rsi_short_threshold",
-    "atr_enabled",
-    "atr_sl_multiplier",
-    "atr_tp_multiplier",
     "partition",
     "trades",
     "open_at_end",
@@ -198,8 +181,6 @@ const LEADERBOARD_COLUMNS: [&str; 30] = [
     "closed_net_pnl",
     "open_net_pnl",
     "net_pnl",
-    "tp_hits",
-    "sl_hits",
     "other_exits",
     "exposure_candles",
     "time_in_market_pct",
@@ -366,9 +347,6 @@ fn write_leaderboard_row<W: std::io::Write>(
         candidate.rsi_period.to_string(),
         candidate.rsi_long_threshold.to_string(),
         candidate.rsi_short_threshold.to_string(),
-        candidate.atr_enabled.to_string(),
-        candidate.atr_sl_multiplier.to_string(),
-        candidate.atr_tp_multiplier.to_string(),
         partition.to_string(),
         metrics.trades.to_string(),
         metrics.open_at_end.to_string(),
@@ -384,8 +362,6 @@ fn write_leaderboard_row<W: std::io::Write>(
         metrics.closed_net_pnl.to_string(),
         metrics.open_net_pnl.to_string(),
         metrics.net_pnl.to_string(),
-        metrics.tp_hits.to_string(),
-        metrics.sl_hits.to_string(),
         metrics.other_exits.to_string(),
         metrics.exposure_candles.to_string(),
         metrics.time_in_market_pct.to_string(),
@@ -487,25 +463,6 @@ fn write_baseline_config(out: &mut String, results: &SweepResults) {
         ("RSI period", "14, 21".to_string(), "varied"),
         ("RSI long threshold", "55, 60, 65, 70".to_string(), "varied"),
         ("RSI short threshold", "40, 45, 50".to_string(), "varied"),
-        ("ATR enabled", "false, true".to_string(), "varied"),
-        ("ATR SL multiplier", "1.5, 2.0, 2.5".to_string(), "varied"),
-        ("ATR TP multiplier", "2.0, 3.0, 4.0".to_string(), "varied"),
-        ("ATR period", config.atr_period.to_string(), "held constant"),
-        (
-            "ATR pct high",
-            config.atr_pct_high.to_string(),
-            "held constant",
-        ),
-        (
-            "ATR high adjust",
-            config.atr_high_adjust.to_string(),
-            "held constant",
-        ),
-        (
-            "ATR SL max pct",
-            config.atr_sl_max_pct.to_string(),
-            "held constant",
-        ),
         ("Window", config.window.to_string(), "held constant"),
     ];
     for (parameter, value, role) in rows {
@@ -753,7 +710,7 @@ fn write_configurations(out: &mut String, results: &SweepResults) {
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "The `origin` column records how each candidate entered the study: `baseline`, `ofat:<parameter>=<value>` (one factor at a time), or `joint` (deterministic seeded draw)."
+        "The `origin` column records how each candidate entered the study: `baseline` for the pinned profile, or `grid` for the full 24-point RSI grid."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -770,23 +727,20 @@ fn write_configurations(out: &mut String, results: &SweepResults) {
 
         writeln!(
             out,
-            "| Label | Origin | RSI period | Long threshold | Short threshold | ATR enabled | ATR SL | ATR TP |"
+            "| Label | Origin | RSI period | Long threshold | Short threshold |"
         )
         .expect("writing to String cannot fail");
-        writeln!(out, "|---|---|---|---|---|---|---|---|").expect("writing to String cannot fail");
+        writeln!(out, "|---|---|---|---|---|").expect("writing to String cannot fail");
         for outcome in outcomes {
             let candidate = &outcome.candidate;
             writeln!(
                 out,
-                "| {} | {} | {} | {} | {} | {} | {} | {} |",
+                "| {} | {} | {} | {} | {} |",
                 outcome.label,
                 outcome.origin,
                 candidate.rsi_period,
                 candidate.rsi_long_threshold,
-                candidate.rsi_short_threshold,
-                candidate.atr_enabled,
-                candidate.atr_sl_multiplier,
-                candidate.atr_tp_multiplier
+                candidate.rsi_short_threshold
             )
             .expect("writing to String cannot fail");
         }
@@ -940,7 +894,7 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
         fn(&Candidate) -> String,
         fn(&str, &str) -> std::cmp::Ordering,
     );
-    let parameters: [ParameterAccessor; 6] = [
+    let parameters: [ParameterAccessor; 3] = [
         (
             "RSI period",
             |candidate| candidate.rsi_period.to_string(),
@@ -954,21 +908,6 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
         (
             "RSI short threshold",
             |candidate| candidate.rsi_short_threshold.to_string(),
-            lexical_order,
-        ),
-        (
-            "ATR enabled",
-            |candidate| candidate.atr_enabled.to_string(),
-            lexical_order,
-        ),
-        (
-            "ATR SL multiplier",
-            |candidate| candidate.atr_sl_multiplier.to_string(),
-            lexical_order,
-        ),
-        (
-            "ATR TP multiplier",
-            |candidate| candidate.atr_tp_multiplier.to_string(),
             lexical_order,
         ),
     ];
@@ -1008,7 +947,7 @@ fn write_sensitivity(out: &mut String, results: &SweepResults) {
 
     writeln!(
         out,
-        "ATR SL and TP multipliers only affect candidates with ATR enabled; otherwise positions have no protective levels."
+        "Positions are reversal-only and close at end of data; there are no protective levels."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1092,7 +1031,7 @@ fn write_limitations(out: &mut String) {
     writeln!(out).expect("writing to String cannot fail");
     writeln!(
         out,
-        "The neighbor-median-within-one-standard-error stability check from the study spec is approximated by fold and symbol consistency: only 30 of the 432 grid points are sampled, so a candidate's one-step grid neighbors are usually absent. No bootstrap confidence interval is reported; only the pooled standard error of validation net expectancy is shown. The single chronological 60/20/20 split is regime-sensitive, and the holdout is a one-shot evaluation rather than a rolling out-of-sample test."
+        "The neighbor-median-within-one-standard-error stability check from the study spec is approximated by fold and symbol consistency: the full 24-point grid is evaluated, so a candidate's one-step grid neighbors are present. No bootstrap confidence interval is reported; only the pooled standard error of validation net expectancy is shown. The single chronological 60/20/20 split is regime-sensitive, and the holdout is a one-shot evaluation rather than a rolling out-of-sample test."
     )
     .expect("writing to String cannot fail");
     writeln!(out).expect("writing to String cannot fail");
@@ -1224,13 +1163,8 @@ fn code_list(values: &[String]) -> String {
 
 fn config_summary(candidate: &Candidate) -> String {
     format!(
-        "RSI {}/{}:{} ATR {} SL {}x TP {}x",
-        candidate.rsi_period,
-        candidate.rsi_long_threshold,
-        candidate.rsi_short_threshold,
-        if candidate.atr_enabled { "on" } else { "off" },
-        candidate.atr_sl_multiplier,
-        candidate.atr_tp_multiplier
+        "RSI {}/{}:{}",
+        candidate.rsi_period, candidate.rsi_long_threshold, candidate.rsi_short_threshold
     )
 }
 

@@ -1,6 +1,6 @@
 use crate::harness::dataset::Provenance;
-use crate::harness::replay::{Replay, ReplayEvent, ReplaySignal};
-use crate::harness::sim::{unrealized_pnl, Position, SimOutcome};
+use crate::harness::replay::{Replay, ReplayEvent};
+use crate::harness::sim::{unrealized_pnl, ClosedTrade, Position, SimOutcome};
 use crate::harness::stats::SimSummary;
 use crate::strategy::config::Config;
 use crate::strategy::types::Direction;
@@ -32,6 +32,20 @@ pub fn build_payload(
                 .last()
                 .map(|candle| candle.close)
                 .unwrap_or_default();
+            // Index simulated outcomes by signal so each replay signal can
+            // report its own fill, exit, and realized PnL in the event stream.
+            let trades_by_signal: HashMap<&str, &ClosedTrade> = input
+                .sim
+                .trades
+                .iter()
+                .map(|trade| (trade.signal_id.as_str(), trade))
+                .collect();
+            let open_by_signal: HashMap<&str, &Position> = input
+                .sim
+                .open_positions
+                .iter()
+                .map(|position| (position.signal_id.as_str(), position))
+                .collect();
             json!({
                 "symbol": input.symbol,
                 "candles": input.replay.candles.iter().map(|c| json!({
@@ -43,17 +57,33 @@ pub fn build_payload(
                 })).collect::<Vec<_>>(),
                 "rsi": input.replay.rsi.iter().map(|v| v.map(|d| d.to_string())).collect::<Vec<_>>(),
                 "events": input.replay.events.iter().map(event_json).collect::<Vec<_>>(),
-                "signals": input.replay.signals.iter().map(|s| json!({
-                    "candle_index": s.candle_index,
-                    "signal_id": s.signal_id,
-                    "action": direction_str(s.signal.action),
-                    "reason": s.signal.reason,
-                    "confidence": s.signal.confidence.to_string(),
-                    "signal_entry": s.signal.entry_price.to_string(),
-                    "sl": s.signal.sl_price.map(|v| v.to_string()),
-                    "tp": s.signal.tp_price.map(|v| v.to_string()),
-                    "signal_candle_open_time_ms": s.signal.signal_candle_open_time_ms,
-                })).collect::<Vec<_>>(),
+                "signals": input.replay.signals.iter().map(|s| {
+                    let trade = trades_by_signal.get(s.signal_id.as_str()).copied();
+                    let open = open_by_signal.get(s.signal_id.as_str()).copied();
+                    let fill = trade.map(|t| t.fill).or_else(|| open.map(|p| p.fill));
+                    let status = if trade.is_some() {
+                        "closed"
+                    } else if open.is_some() {
+                        "open"
+                    } else {
+                        "unfilled"
+                    };
+                    json!({
+                        "candle_index": s.candle_index,
+                        "signal_id": s.signal_id,
+                        "action": direction_str(s.signal.action),
+                        "reason": s.signal.reason,
+                        "confidence": s.signal.confidence.to_string(),
+                        "signal_entry": s.signal.entry_price.to_string(),
+                        "signal_candle_open_time_ms": s.signal.signal_candle_open_time_ms,
+                        "fill": fill.map(|v| v.to_string()),
+                        "exit": trade.map(|t| t.exit.to_string()),
+                        "exit_index": trade.map(|t| t.exit_index),
+                        "pnl": trade.map(|t| t.pnl.to_string()),
+                        "pnl_pct": trade.map(|t| t.pnl_pct.to_string()),
+                        "status": status,
+                    })
+                }).collect::<Vec<_>>(),
                 "trades": input.sim.trades.iter().map(|t| json!({
                     "entry_index": t.entry_index,
                     "exit_index": t.exit_index,
@@ -65,7 +95,6 @@ pub fn build_payload(
                     "E": t.e.to_string(),
                     "pnl": t.pnl.to_string(),
                     "pnl_pct": t.pnl_pct.to_string(),
-                    "risk_reward": t.risk_reward.map(|v| v.to_string()),
                     "reason": t.reason,
                 })).collect::<Vec<_>>(),
                 "open_positions": input.sim.open_positions.iter().map(|p| json!({
@@ -75,11 +104,9 @@ pub fn build_payload(
                     "signal_entry": p.signal_entry.to_string(),
                     "fill": p.fill.to_string(),
                     "E": p.e.to_string(),
-                    "sl": p.sl.map(|v| v.to_string()),
-                    "tp": p.tp.map(|v| v.to_string()),
                     "unrealized": position_unrealized(p, last_close).to_string(),
                 })).collect::<Vec<_>>(),
-                "account": account_payload(&input.replay.signals, input.sim),
+                "account": account_payload(input.sim),
                 "provenance": input.provenance,
                 "summary": summary_json(input.summary, input.provenance.gaps),
             })
@@ -99,13 +126,6 @@ pub fn build_payload(
             "rsi_period": config.rsi_period,
             "rsi_long_threshold": config.rsi_long_threshold.to_string(),
             "rsi_short_threshold": config.rsi_short_threshold.to_string(),
-            "atr_enabled": config.atr_enabled,
-            "atr_period": config.atr_period,
-            "atr_sl_multiplier": config.atr_sl_multiplier.to_string(),
-            "atr_tp_multiplier": config.atr_tp_multiplier.to_string(),
-            "atr_pct_high": config.atr_pct_high.to_string(),
-            "atr_high_adjust": config.atr_high_adjust.to_string(),
-            "atr_sl_max_pct": config.atr_sl_max_pct.to_string(),
         },
         "symbols": symbols,
         "failures": failures,
@@ -120,15 +140,12 @@ fn direction_str(direction: Direction) -> &'static str {
 }
 
 /// Builds the per-step account payload, enriching each open position with the
-/// side, fill, size, SL, and TP needed by the read-only UI.
-fn account_payload(signals: &[ReplaySignal], sim: &SimOutcome) -> Vec<Value> {
-    let signals_by_id: HashMap<&str, &ReplaySignal> =
-        signals.iter().map(|s| (s.signal_id.as_str(), s)).collect();
-
-    // Closed trades do not carry SL/TP, but they do carry the fill and size
-    // that were active while the position was open. Build a unified lookup for
-    // those fields so every account step can render its open rows without JS
-    // recomputation. SL/TP come from the originating signal.
+/// side, fill, and size needed by the read-only UI.
+fn account_payload(sim: &SimOutcome) -> Vec<Value> {
+    // Closed trades do not appear as open rows, but they do carry the fill and
+    // size that were active while the position was open. Build a unified lookup
+    // for those fields so every account step can render its open rows without
+    // JS recomputation.
     let mut position_meta_by_id: HashMap<&str, (&Decimal, &Decimal, Direction, usize)> =
         HashMap::new();
     for position in &sim.open_positions {
@@ -163,15 +180,12 @@ fn account_payload(signals: &[ReplaySignal], sim: &SimOutcome) -> Vec<Value> {
                         .get(o.signal_id.as_str())
                         .map(|(f, sz, s, i)| (Some(*f), Some(*sz), Some(*s), Some(*i)))
                         .unwrap_or((None, None, None, None));
-                    let signal = signals_by_id.get(o.signal_id.as_str()).copied();
                     json!({
                         "signal_id": o.signal_id,
                         "side": side.map(direction_str),
                         "fill": fill.map(|v| v.to_string()),
                         "e": e.map(|v| v.to_string()),
                         "entry_index": entry_index,
-                        "sl": signal.and_then(|s| s.signal.sl_price).map(|v| v.to_string()),
-                        "tp": signal.and_then(|s| s.signal.tp_price).map(|v| v.to_string()),
                         "unrealized": o.unrealized.to_string(),
                     })
                 }).collect::<Vec<_>>(),
@@ -225,12 +239,7 @@ fn summary_json(summary: &SimSummary, gaps: usize) -> Value {
         "open_count": summary.open_count,
         "skipped_funds": summary.skipped_funds,
         "unfilled_at_end": summary.unfilled_at_end,
-        "invalid_levels": summary.invalid_levels,
         "gaps": gaps,
-        "tp_hits": summary.tp_hits,
-        "sl_hits": summary.sl_hits,
-        "other_exits": summary.other_exits,
-        "avg_risk_reward": summary.avg_risk_reward.map(|v| v.to_string()),
         "returns_label": "gross simulated, excluding fees and slippage",
     })
 }
@@ -302,8 +311,6 @@ mod tests {
             signal_entry: Decimal::from(100),
             fill: Decimal::from(100),
             e: Decimal::from(500),
-            sl: Some(Decimal::from(90)),
-            tp: Some(Decimal::from(120)),
             entry_index: 0,
         };
         assert_eq!(
@@ -342,8 +349,7 @@ mod tests {
                 e: Decimal::ONE,
                 pnl: Decimal::ZERO,
                 pnl_pct: Decimal::ZERO,
-                risk_reward: None,
-                reason: "TP".into(),
+                reason: "reversal".into(),
                 entry_index: 0,
                 exit_index: 1,
             }],
@@ -353,8 +359,6 @@ mod tests {
                 signal_entry: Decimal::ONE,
                 fill: Decimal::ONE,
                 e: Decimal::ONE,
-                sl: Some(Decimal::ONE),
-                tp: Some(Decimal::ONE),
                 entry_index: 0,
             }],
             ..SimOutcome::default()

@@ -2,19 +2,18 @@ use crate::strategy::decimal::{add, div, mul, sub};
 use crate::strategy::error::{Error, Result};
 use rust_decimal::Decimal;
 
-pub mod atr;
 pub mod rsi;
 
 pub type Series = Vec<Option<Decimal>>;
 
 /// pandas-style `ewm(alpha = 1/period, adjust = False)`.
 ///
-/// For NaN-free input (the RSI/ATR use) this matches
+/// For NaN-free input (the RSI use) this matches
 /// `Series.ewm(alpha=1/period, adjust=False).mean()` exactly.
 ///
 /// `None` positions emit `None` and do **not** advance the recursion (equivalent to pandas
 /// `ignore_na=True`): a gap does not decay the previous weight by its length. The Python oracle
-/// uses `ignore_na=False`, but its RSI/ATR inputs contain no NaN, so the two agree on every input
+/// uses `ignore_na=False`, but its RSI inputs contain no NaN, so the two agree on every input
 /// this crate passes. Callers feeding sparse series must not assume default-pandas gap decay.
 pub fn ewm(values: &[Option<Decimal>], period: usize) -> Result<Series> {
     if period == 0 {
