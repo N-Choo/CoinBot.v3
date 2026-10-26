@@ -82,23 +82,6 @@ The original strategy was based on RSI divergence. This research is **closed** a
 
 **Research conclusion:** Positive historical results on individual symbols or periods are not sufficient evidence of a tradable edge. Robustness across unseen data, realistic costs, adequate trade counts, and market regimes remains unproven.
 
-## Reproducibility
-
-Each experiment directory contains its own documentation and results. Depending on the experiment, files may include:
-
-- `README.md` or `report.md` — methodology, assumptions, and reproduction commands.
-- `results.json` — structured experiment results.
-- `leaderboard.csv` — ranked configurations.
-- `equity.csv` — equity-curve data.
-- Per-symbol reports and additional artifacts.
-
-Follow the reproduction instructions in the relevant experiment directory.
-
-Data caches are stored outside version control under `data/`.
-
-The current branch is `feat/analyzer-rsi`.
-
-**Security:** Never commit `.env` files, API keys, wallet data, restricted raw exchange data, or database dumps.
 
 ## Disclaimer
 
