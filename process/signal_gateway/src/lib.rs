@@ -1,3 +1,4 @@
+pub mod agent_client;
 pub mod config;
 pub mod cursor;
 pub mod mapper;
