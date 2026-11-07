@@ -10,10 +10,12 @@ pub enum PriceCheck {
     Off,
 }
 
-#[derive(Debug, Clone, PartialEq)]
+/// Runtime configuration for the signal gateway, loaded from environment variables.
+#[derive(Clone, PartialEq)]
 pub struct Config {
     pub opencode_base_url: String,
     pub opencode_username: String,
+    /// OpenCode password; redacted in debug output.
     pub opencode_password: Option<String>,
     pub opencode_agent: String,
     pub opencode_model: Option<String>,
@@ -24,13 +26,43 @@ pub struct Config {
     pub audit_path: PathBuf,
     pub min_confidence: f64,
     pub price_check: PriceCheck,
+    /// Maximum allowed entry-price drift, as a percentage.
     pub max_entry_drift_pct: f64,
+    /// Delay between signal-generation cycles.
     pub cycle_delay: TimeDelta,
+    /// Time-to-live for generated signals.
     pub signal_ttl: TimeDelta,
     pub run_on_start: bool,
     pub delete_sessions: bool,
     pub reset_state: bool,
     pub kucoin_base_url: String,
+}
+
+impl std::fmt::Debug for Config {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let opencode_password = self.opencode_password.as_ref().map(|_| "<redacted>");
+        f.debug_struct("Config")
+            .field("opencode_base_url", &self.opencode_base_url)
+            .field("opencode_username", &self.opencode_username)
+            .field("opencode_password", &opencode_password)
+            .field("opencode_agent", &self.opencode_agent)
+            .field("opencode_model", &self.opencode_model)
+            .field("opencode_timeout", &self.opencode_timeout)
+            .field("grpc_endpoint", &self.grpc_endpoint)
+            .field("grpc_timeout", &self.grpc_timeout)
+            .field("state_path", &self.state_path)
+            .field("audit_path", &self.audit_path)
+            .field("min_confidence", &self.min_confidence)
+            .field("price_check", &self.price_check)
+            .field("max_entry_drift_pct", &self.max_entry_drift_pct)
+            .field("cycle_delay", &self.cycle_delay)
+            .field("signal_ttl", &self.signal_ttl)
+            .field("run_on_start", &self.run_on_start)
+            .field("delete_sessions", &self.delete_sessions)
+            .field("reset_state", &self.reset_state)
+            .field("kucoin_base_url", &self.kucoin_base_url)
+            .finish()
+    }
 }
 
 impl Config {
@@ -43,9 +75,7 @@ impl Config {
         F: Fn(&str) -> Option<String>,
     {
         let value = |key: &str| lookup(key).filter(|v| !v.is_empty());
-        let value_or = |key: &str, default: &str| {
-            value(key).unwrap_or_else(|| default.to_string())
-        };
+        let value_or = |key: &str, default: &str| value(key).unwrap_or_else(|| default.to_string());
         let parse_u64 = |key: &str, default: u64| -> Result<u64, ProcessError> {
             value_or(key, &default.to_string())
                 .parse::<u64>()
@@ -56,15 +86,22 @@ impl Config {
                 .parse::<f64>()
                 .map_err(|_| ProcessError::InvalidConfig(format!("{key} must be a number")))
         };
-        let parse_bool = |key: &str, default: bool| -> bool {
-            match value(key).as_deref() {
-                Some("true" | "1") => true,
-                Some("false" | "0") => false,
-                Some(other) => {
-                    log::warn!("{key}={other:?} is not a bool; using {default}");
-                    default
-                }
-                None => default,
+        let parse_duration_secs = |key: &str, default: u64| -> Result<i64, ProcessError> {
+            let secs = parse_u64(key, default)?;
+            i64::try_from(secs).map_err(|_| {
+                ProcessError::InvalidConfig(format!("{key} must be at most {}", i64::MAX))
+            })
+        };
+        let parse_bool = |key: &str, default: bool| -> Result<bool, ProcessError> {
+            match value(key) {
+                None => Ok(default),
+                Some(raw) => match raw.to_ascii_lowercase().as_str() {
+                    "true" | "1" => Ok(true),
+                    "false" | "0" => Ok(false),
+                    _ => Err(ProcessError::InvalidConfig(format!(
+                        "{key} must be true, false, 1, or 0, got {raw:?}"
+                    ))),
+                },
             }
         };
 
@@ -92,13 +129,20 @@ impl Config {
             }
         };
 
-        let cycle_delay = TimeDelta::seconds(parse_u64("SIGNAL_GATEWAY_CYCLE_DELAY_SECS", 90)? as i64);
-        let signal_ttl = TimeDelta::seconds(parse_u64("SIGNAL_GATEWAY_SIGNAL_TTL_SECS", 14_400)? as i64);
-        if signal_ttl <= TimeDelta::zero() {
+        let cycle_delay_secs = parse_duration_secs("SIGNAL_GATEWAY_CYCLE_DELAY_SECS", 90)?;
+        if cycle_delay_secs < 0 {
+            return Err(ProcessError::InvalidConfig(
+                "SIGNAL_GATEWAY_CYCLE_DELAY_SECS must be >= 0".into(),
+            ));
+        }
+        let signal_ttl_secs = parse_duration_secs("SIGNAL_GATEWAY_SIGNAL_TTL_SECS", 14_400)?;
+        if signal_ttl_secs <= 0 {
             return Err(ProcessError::InvalidConfig(
                 "SIGNAL_GATEWAY_SIGNAL_TTL_SECS must be > 0".into(),
             ));
         }
+        let cycle_delay = TimeDelta::seconds(cycle_delay_secs);
+        let signal_ttl = TimeDelta::seconds(signal_ttl_secs);
 
         Ok(Self {
             opencode_base_url: value_or("OPENCODE_BASE_URL", "http://127.0.0.1:4096"),
@@ -113,18 +157,15 @@ impl Config {
                 "SIGNAL_GATEWAY_STATE_PATH",
                 "./state/signal_gateway.json",
             )),
-            audit_path: PathBuf::from(value_or(
-                "SIGNAL_GATEWAY_AUDIT_PATH",
-                "./state/audit.jsonl",
-            )),
+            audit_path: PathBuf::from(value_or("SIGNAL_GATEWAY_AUDIT_PATH", "./state/audit.jsonl")),
             min_confidence,
             price_check,
             max_entry_drift_pct,
             cycle_delay,
             signal_ttl,
-            run_on_start: parse_bool("SIGNAL_GATEWAY_RUN_ON_START", false),
-            delete_sessions: parse_bool("SIGNAL_GATEWAY_DELETE_SESSIONS", true),
-            reset_state: parse_bool("SIGNAL_GATEWAY_RESET_STATE", false),
+            run_on_start: parse_bool("SIGNAL_GATEWAY_RUN_ON_START", false)?,
+            delete_sessions: parse_bool("SIGNAL_GATEWAY_DELETE_SESSIONS", true)?,
+            reset_state: parse_bool("SIGNAL_GATEWAY_RESET_STATE", false)?,
             kucoin_base_url: value_or("KUCOIN_BASE_URL", "https://api.kucoin.com"),
         })
     }
@@ -197,5 +238,53 @@ mod tests {
         )]);
         let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
         assert!(err.to_string().contains("PRICE_CHECK"));
+    }
+
+    #[test]
+    fn rejects_zero_entry_drift() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_MAX_ENTRY_DRIFT_PCT".to_string(),
+            "0".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("MAX_ENTRY_DRIFT_PCT"));
+    }
+
+    #[test]
+    fn rejects_zero_signal_ttl() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_SIGNAL_TTL_SECS".to_string(),
+            "0".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("SIGNAL_TTL"));
+    }
+
+    #[test]
+    fn rejects_invalid_boolean() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_DELETE_SESSIONS".to_string(),
+            "yes".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("DELETE_SESSIONS"));
+    }
+
+    #[test]
+    fn rejects_non_numeric_cycle_delay() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_CYCLE_DELAY_SECS".to_string(),
+            "soon".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("CYCLE_DELAY"));
+    }
+
+    #[test]
+    fn debug_redacts_password() {
+        let cfg = config(&[("OPENCODE_PASSWORD", "super-secret")]);
+        let debug = format!("{cfg:?}");
+        assert!(debug.contains("Some(\"<redacted>\")"));
+        assert!(!debug.contains("super-secret"));
     }
 }
