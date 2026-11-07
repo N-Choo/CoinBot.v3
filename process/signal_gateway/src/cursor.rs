@@ -9,10 +9,14 @@ pub fn rotation<T>(items: &[T], cursor: usize) -> Vec<&T> {
 
 /// Next cursor after a full pass.
 pub fn advance(cursor: usize, len: usize) -> usize {
-    if len == 0 { 0 } else { (cursor + 1) % len }
+    if len == 0 {
+        0
+    } else {
+        cursor.wrapping_add(1) % len
+    }
 }
 
-/// Keep a cursor valid after the symbol list changes.
+/// Wrap a cursor into `[0, len)` after the symbol list changes.
 pub fn clamp(cursor: usize, len: usize) -> usize {
     if len == 0 { 0 } else { cursor % len }
 }
@@ -27,6 +31,8 @@ mod tests {
         assert_eq!(rotation(&items, 0), vec![&"a", &"b", &"c"]);
         assert_eq!(rotation(&items, 1), vec![&"b", &"c", &"a"]);
         assert_eq!(rotation(&items, 2), vec![&"c", &"a", &"b"]);
+        assert_eq!(rotation(&items, 3), rotation(&items, 0));
+        assert_eq!(rotation(&items, 4), rotation(&items, 1));
     }
 
     #[test]
@@ -41,6 +47,8 @@ mod tests {
         assert_eq!(advance(2, 3), 0);
         assert_eq!(advance(5, 3), 0);
         assert_eq!(advance(5, 0), 0);
+        assert_eq!(advance(0, 1), 0);
+        assert_eq!(advance(usize::MAX, 3), 0);
     }
 
     #[test]
@@ -48,5 +56,7 @@ mod tests {
         assert_eq!(clamp(5, 3), 2);
         assert_eq!(clamp(1, 3), 1);
         assert_eq!(clamp(5, 0), 0);
+        assert_eq!(clamp(4, 3), 1);
+        assert_eq!(clamp(0, 1), 0);
     }
 }
