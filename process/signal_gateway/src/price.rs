@@ -23,6 +23,7 @@ pub fn parse_last_price(json: &str) -> Result<f64, ProcessError> {
     let price = envelope
         .data
         .price
+        .trim()
         .parse::<f64>()
         .map_err(|e| ProcessError::Internal(format!("bad KuCoin price: {e}")))?;
     if !price.is_finite() || price <= 0.0 {
@@ -39,35 +40,38 @@ pub struct KuCoinPrice {
 }
 
 impl KuCoinPrice {
-    pub fn new(base_url: impl Into<String>, timeout: std::time::Duration) -> Self {
+    pub fn new(
+        base_url: impl Into<String>,
+        timeout: std::time::Duration,
+    ) -> Result<Self, ProcessError> {
         let client = reqwest::Client::builder()
             .timeout(timeout)
+            .redirect(reqwest::redirect::Policy::limited(5))
             .build()
-            .expect("reqwest client");
-        Self {
-            base_url: base_url.into(),
+            .map_err(|e| ProcessError::Internal(format!("build KuCoin client: {e}")))?;
+        Ok(Self {
+            base_url: base_url.into().trim_end_matches('/').to_string(),
             client,
-        }
+        })
     }
 }
 
 #[async_trait]
 impl LastPriceSource for KuCoinPrice {
     async fn last_price(&self, symbol: &str) -> Result<f64, ProcessError> {
-        let url = format!(
-            "{}/api/v1/market/orderbook/level1?symbol={symbol}",
-            self.base_url.trim_end_matches('/')
-        );
         let response = self
             .client
-            .get(url)
+            .get(format!("{}/api/v1/market/orderbook/level1", self.base_url))
+            .query(&[("symbol", symbol)])
             .send()
             .await
-            .map_err(|e| ProcessError::Network(format!("KuCoin price request: {e}")))?;
+            .map_err(|e| {
+                ProcessError::Network(format!("KuCoin price request for {symbol}: {e}"))
+            })?;
 
         if !response.status().is_success() {
             return Err(ProcessError::Network(format!(
-                "KuCoin price status {}",
+                "KuCoin price status {} for {symbol}",
                 response.status()
             )));
         }
@@ -75,7 +79,7 @@ impl LastPriceSource for KuCoinPrice {
         let body = response
             .text()
             .await
-            .map_err(|e| ProcessError::Network(format!("KuCoin price body: {e}")))?;
+            .map_err(|e| ProcessError::Network(format!("KuCoin price body for {symbol}: {e}")))?;
         parse_last_price(&body)
     }
 }
@@ -98,5 +102,11 @@ mod tests {
     #[test]
     fn rejects_malformed_json() {
         assert!(parse_last_price("not json").is_err());
+    }
+
+    #[test]
+    fn trims_surrounding_whitespace() {
+        let price = parse_last_price(r#"{"data":{"price":" 68123.4 "}}"#).unwrap();
+        assert_eq!(price, 68123.4);
     }
 }
