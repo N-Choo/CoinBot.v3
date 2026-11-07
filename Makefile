@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine analyzer
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build logs logs-api-gateway restart test-api trade analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -29,6 +29,7 @@ help:
 	@echo ""
 	@echo "Production"
 	@echo "  make prod-build   Build production images without running"
+	@echo "  make prod         Pull images from ghcr (no build) + (re)start prod & opencode sandbox"
 	@echo ""
 	@echo "Rust"
 	@echo "  make fmt          Check Rust formatting"
@@ -128,6 +129,12 @@ dev:
 
 prod-build:
 	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer-prod
+
+# Pull pre-built images from ghcr (built by CI on main) and (re)start; never builds.
+# First merge to main: image may not exist yet → docker compose build opencode
+prod:
+	docker compose --profile prod --profile tools pull --ignore-pull-failures
+	docker compose --profile prod --profile tools up -d --no-build
 
 logs:
 	docker compose logs -f

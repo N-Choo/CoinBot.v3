@@ -234,9 +234,32 @@ services:
     profiles:
       - prod
 
+  # ── opencode sandbox (AI agent server) ─────
+  # Isolated network namespace: host-localhost unreachable from inside,
+  # outbound webfetch allowed. External clients hit 127.0.0.1:4096 here.
+  # Secrets are runtime-only; never bake them into the image.
+
+  opencode:
+    image: ghcr.io/n-choo/coinbot-opencode:latest
+    build:
+      context: ./process/opencode
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4096:4096"
+    env_file:
+      - path: process/opencode/.env
+        required: true
+    volumes:
+      - opencode_data:/root/.local/share/opencode
+    networks:
+      - app-network
+    profiles:
+      - tools
+
 networks:
   app-network:
     driver: bridge
 
 volumes:
   postgres_data:
+  opencode_data:

@@ -116,6 +116,14 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-trade_engine:latest
+      - name: Build & push opencode sandbox
+        uses: docker/build-push-action@v5
+        with:
+          context: ./process/opencode
+          file: ./process/opencode/Dockerfile
+          platforms: linux/arm64
+          push: true
+          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-opencode:latest
 
   # --- Full-stack smoke test (main only) ---
   smoke-test:
