@@ -86,11 +86,12 @@ impl Config {
                 .parse::<f64>()
                 .map_err(|_| ProcessError::InvalidConfig(format!("{key} must be a number")))
         };
-        let parse_duration_secs = |key: &str, default: u64| -> Result<i64, ProcessError> {
+        let parse_duration = |key: &str, default: u64| -> Result<TimeDelta, ProcessError> {
             let secs = parse_u64(key, default)?;
-            i64::try_from(secs).map_err(|_| {
-                ProcessError::InvalidConfig(format!("{key} must be at most {}", i64::MAX))
-            })
+            let secs = i64::try_from(secs)
+                .map_err(|_| ProcessError::InvalidConfig(format!("{key} is out of range")))?;
+            TimeDelta::try_seconds(secs)
+                .ok_or_else(|| ProcessError::InvalidConfig(format!("{key} is out of range")))
         };
         let parse_bool = |key: &str, default: bool| -> Result<bool, ProcessError> {
             match value(key) {
@@ -129,20 +130,13 @@ impl Config {
             }
         };
 
-        let cycle_delay_secs = parse_duration_secs("SIGNAL_GATEWAY_CYCLE_DELAY_SECS", 90)?;
-        if cycle_delay_secs < 0 {
-            return Err(ProcessError::InvalidConfig(
-                "SIGNAL_GATEWAY_CYCLE_DELAY_SECS must be >= 0".into(),
-            ));
-        }
-        let signal_ttl_secs = parse_duration_secs("SIGNAL_GATEWAY_SIGNAL_TTL_SECS", 14_400)?;
-        if signal_ttl_secs <= 0 {
+        let cycle_delay = parse_duration("SIGNAL_GATEWAY_CYCLE_DELAY_SECS", 90)?;
+        let signal_ttl = parse_duration("SIGNAL_GATEWAY_SIGNAL_TTL_SECS", 14_400)?;
+        if signal_ttl <= TimeDelta::zero() {
             return Err(ProcessError::InvalidConfig(
                 "SIGNAL_GATEWAY_SIGNAL_TTL_SECS must be > 0".into(),
             ));
         }
-        let cycle_delay = TimeDelta::seconds(cycle_delay_secs);
-        let signal_ttl = TimeDelta::seconds(signal_ttl_secs);
 
         Ok(Self {
             opencode_base_url: value_or("OPENCODE_BASE_URL", "http://127.0.0.1:4096"),
@@ -278,6 +272,28 @@ mod tests {
         )]);
         let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
         assert!(err.to_string().contains("CYCLE_DELAY"));
+    }
+
+    #[test]
+    fn rejects_out_of_range_cycle_delay() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_CYCLE_DELAY_SECS".to_string(),
+            "9300000000000000".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("SIGNAL_GATEWAY_CYCLE_DELAY_SECS"));
+        assert!(err.to_string().contains("out of range"));
+    }
+
+    #[test]
+    fn rejects_out_of_range_signal_ttl() {
+        let map = HashMap::from([(
+            "SIGNAL_GATEWAY_SIGNAL_TTL_SECS".to_string(),
+            "9300000000000000".to_string(),
+        )]);
+        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        assert!(err.to_string().contains("SIGNAL_GATEWAY_SIGNAL_TTL_SECS"));
+        assert!(err.to_string().contains("out of range"));
     }
 
     #[test]
