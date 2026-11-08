@@ -208,7 +208,6 @@ services:
     volumes:
       - opencode_data:/root/.local/share/opencode
       - ./.opencode:/app/.opencode:ro
-      - ${HOME}/.local/share/opencode/auth.json:/root/.local/share/opencode/auth.json:ro
     networks:
       - app-network
     profiles:

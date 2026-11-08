@@ -10,4 +10,7 @@ RUN npm i -g opencode-ai@1.19.0
 
 WORKDIR /app
 
-CMD ["opencode", "serve", "--hostname", "0.0.0.0", "--port", "4096"]
+COPY entrypoint.sh /usr/local/bin/opencode-entrypoint.sh
+RUN chmod +x /usr/local/bin/opencode-entrypoint.sh
+
+ENTRYPOINT ["/usr/local/bin/opencode-entrypoint.sh"]
