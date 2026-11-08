@@ -32,6 +32,7 @@ pub fn to_proto(
         "agent {label} conf={:.2} rsi={:.1}({}) {}",
         prediction.confidence, prediction.rsi.value, prediction.rsi.regime, prediction.reason
     );
+    let reason = crate::prediction::sanitize_text(&reason, 500);
 
     Some(ProtoSignal {
         ticker: prediction.symbol.clone(),
@@ -45,7 +46,7 @@ pub fn to_proto(
         sl_price: prediction.invalidation,
         tp_price: prediction.target,
         zone_id: String::new(),
-        reason: reason.chars().take(500).collect(),
+        reason,
     })
 }
 
@@ -142,6 +143,15 @@ mod tests {
                 .reason
                 .starts_with("agent LONG conf=0.72 rsi=63.4(bullish) ")
         );
+    }
+
+    #[test]
+    fn reason_strips_newlines_from_untrusted_text() {
+        let mut p = prediction();
+        p.reason = "line1\nline2".into();
+        let signal = to_proto(&p, candle(), emitted(), 1, TimeDelta::hours(4)).unwrap();
+        assert!(!signal.reason.contains('\n'));
+        assert!(signal.reason.contains("line1 line2"));
     }
 
     #[test]

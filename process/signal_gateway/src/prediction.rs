@@ -51,6 +51,15 @@ pub fn normalize_symbol(symbol: &str) -> String {
     symbol.trim().replace('/', "-").to_uppercase()
 }
 
+/// Replace control characters with spaces and cap the result at `max_chars`.
+pub fn sanitize_text(input: &str, max_chars: usize) -> String {
+    input
+        .chars()
+        .map(|c| if c.is_control() { ' ' } else { c })
+        .take(max_chars)
+        .collect()
+}
+
 pub fn extract_json(text: &str) -> Option<&str> {
     if let Some(start) = text.find("```json") {
         let after = start + "```json".len();
@@ -297,5 +306,12 @@ mod tests {
     #[test]
     fn normalizes_slash_and_case() {
         assert_eq!(normalize_symbol(" btc/usdt "), "BTC-USDT");
+    }
+
+    #[test]
+    fn sanitizes_control_characters_and_truncates() {
+        let sanitized = sanitize_text("a\nb\tc\u{1b}[31m", 100);
+        assert_eq!(sanitized, "a b c [31m");
+        assert_eq!(sanitize_text("abcdef", 3), "abc");
     }
 }

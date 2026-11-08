@@ -155,7 +155,7 @@ impl Gateway {
 
         let Some(valid) = valid else {
             if verdict != "NO-TRADE" {
-                let preview: String = text.chars().take(500).collect();
+                let preview = prediction::sanitize_text(&text, 500);
                 log::warn!("{symbol}: dropping prediction ({validation}): {preview}");
             }
             self.write_audit(
