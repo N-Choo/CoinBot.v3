@@ -15,21 +15,6 @@ export default function Dashboard() {
       />
       <div className="relative z-[1] w-full">
         <div className="max-w-[1400px] mx-auto p-3 sm:p-5 flex flex-col gap-3 sm:gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div className="min-w-0">
-              <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-                Dashboard
-                <span className="h-1 w-1 rounded-full bg-accent" aria-hidden="true" />
-                Overview
-              </div>
-              <h1 className="mt-1.5 text-xl sm:text-2xl font-bold tracking-tight text-text-main">Portfolio</h1>
-            </div>
-            <div className="flex items-center gap-2 rounded-full border border-border-light bg-bg-panel px-3 py-1.5 font-mono text-[10px] text-text-muted">
-              <span className="h-1.5 w-1.5 rounded-full bg-up" aria-hidden="true" />
-              Live
-            </div>
-          </div>
-
           <BalanceStats />
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-[minmax(0,1fr)_340px] gap-3 sm:gap-4">
