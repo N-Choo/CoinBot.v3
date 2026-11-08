@@ -159,6 +159,8 @@ services:
       dockerfile: process/trade-engine/Dockerfile
       target: dev-builder
     command: cargo run -p trade-engine
+    ports:
+      - "127.0.0.1:50051:50051"
     volumes:
       - .:/app
       - /app/target
@@ -202,10 +204,11 @@ services:
       - "127.0.0.1:4096:4096"
     env_file:
       - path: process/opencode/.env
-        required: true
+        required: false
     volumes:
       - opencode_data:/root/.local/share/opencode
       - ./.opencode:/app/.opencode:ro
+      - ${HOME}/.local/share/opencode/auth.json:/root/.local/share/opencode/auth.json:ro
     networks:
       - app-network
     profiles:

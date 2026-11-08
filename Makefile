@@ -6,7 +6,7 @@ help:
 	@echo "CoinBot.v3 Makefile"
 	@echo ""
 	@echo "Getting Started"
-	@echo "  make dev          Start all services (DB + Redis + API + worker + trade-engine + frontend)"
+	@echo "  make dev          Start all services (DB + Redis + API + worker + trade-engine + opencode + frontend)"
 	@echo ""
 	@echo "Testing (starts Postgres + Redis automatically)"
 	@echo "  make test         Run all Rust tests"
@@ -100,7 +100,7 @@ restart:
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine frontend
+		docker compose up api_gateway deposit-worker trade-engine opencode frontend
 
 prod-build:
 	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod

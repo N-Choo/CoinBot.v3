@@ -90,7 +90,7 @@ Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_
 ## Quick start
 
 ```bash
-make dev     # Postgres + Redis + API + worker + trade-engine + frontend
+make dev     # Postgres + Redis + API + worker + trade-engine + opencode + frontend
 make trade   # trade-engine + signal-gateway live (starts Postgres + Redis)
 make test    # Rust tests
 make ci      # full pipeline: fmt-fix, clippy, test, frontend lint-fix, frontend tests, build
