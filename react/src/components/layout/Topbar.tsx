@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { useTheme } from '../../hooks/useTheme'
 import { useAuth } from '../../hooks/useAuth'
 import WalletAlert from '../ui/WalletAlert'
+import Logo from './Logo'
 
 export default function Topbar() {
   const navigate = useNavigate()
@@ -32,7 +33,7 @@ export default function Topbar() {
       <header className="fixed top-0 left-0 right-0 h-14 sm:h-[56px] xs:h-12 flex items-center justify-center z-[1000] bg-bg-dark border-b border-border-light">
         <div className="w-full h-full flex items-center justify-between px-6 sm:px-8 xs:px-4">
           <div className="flex items-center gap-2.5 cursor-pointer shrink-0" onClick={() => navigate('/')}>
-            <span className="text-text-main font-mono font-extrabold text-lg sm:text-lg xs:text-base tracking-[0.5px]">CoinBot</span>
+            <Logo />
           </div>
 
           <nav className="hidden md:flex items-center gap-0.5">
