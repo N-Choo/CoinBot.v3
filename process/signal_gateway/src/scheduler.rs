@@ -23,7 +23,7 @@ pub fn candle_close(open: DateTime<Utc>) -> DateTime<Utc> {
 
 /// Next wake time: the next 4h boundary plus `delay`.
 pub fn next_close_after(now: DateTime<Utc>, delay: TimeDelta) -> DateTime<Utc> {
-    floor_to_4h(now) + TimeDelta::hours(CANDLE_HOURS) + delay
+    floor_to_4h(now - delay) + TimeDelta::hours(CANDLE_HOURS) + delay
 }
 
 #[cfg(test)]
@@ -62,5 +62,13 @@ mod tests {
     #[test]
     fn candle_close_is_four_hours_later() {
         assert_eq!(candle_close(at(0, 0, 0)), at(4, 0, 0));
+    }
+
+    #[test]
+    fn next_close_does_not_skip_the_delay_window() {
+        let delay = TimeDelta::seconds(90);
+        assert_eq!(next_close_after(at(4, 0, 45), delay), at(4, 1, 30));
+        assert_eq!(next_close_after(at(4, 1, 29), delay), at(4, 1, 30));
+        assert_eq!(next_close_after(at(4, 1, 30), delay), at(8, 1, 30));
     }
 }

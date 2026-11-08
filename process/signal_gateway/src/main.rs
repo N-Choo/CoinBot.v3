@@ -10,6 +10,7 @@ use signal_gateway::publisher::GrpcPublisher;
 use signal_gateway::runner::{Gateway, RetryPolicy};
 use signal_gateway::state::State;
 use signal_gateway::symbols;
+use tokio::sync::watch;
 
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
@@ -46,12 +47,50 @@ async fn main() -> Result<(), ProcessError> {
         RetryPolicy::default(),
     );
 
+    let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    tokio::spawn(async move {
+        #[cfg(unix)]
+        {
+            use tokio::signal::unix::{SignalKind, signal};
+            match signal(SignalKind::terminate()) {
+                Ok(mut term) => {
+                    tokio::select! {
+                        result = tokio::signal::ctrl_c() => {
+                            if let Err(e) = result {
+                                log::error!("ctrl_c handler: {e}");
+                            }
+                        }
+                        _ = term.recv() => {}
+                    }
+                }
+                Err(e) => {
+                    log::error!("SIGTERM handler: {e}");
+                    if let Err(e) = tokio::signal::ctrl_c().await {
+                        log::error!("ctrl_c handler: {e}");
+                    }
+                }
+            }
+        }
+        #[cfg(not(unix))]
+        {
+            if let Err(e) = tokio::signal::ctrl_c().await {
+                log::error!("ctrl_c handler: {e}");
+            }
+        }
+        let _ = shutdown_tx.send(true);
+    });
+
     if config.run_on_start {
         let candle = signal_gateway::scheduler::most_recent_closed_candle_open(Utc::now());
         run_once(&mut gateway, &config, candle).await;
     }
 
     loop {
+        if *shutdown_rx.borrow() {
+            log::info!("shutting down");
+            return Ok(());
+        }
+
         let now = Utc::now();
         let next = signal_gateway::scheduler::next_close_after(now, config.cycle_delay);
         let wait = (next - now)
@@ -61,10 +100,15 @@ async fn main() -> Result<(), ProcessError> {
 
         tokio::select! {
             _ = tokio::time::sleep(wait) => {}
-            _ = tokio::signal::ctrl_c() => {
+            _ = shutdown_rx.changed() => {
                 log::info!("shutting down");
                 return Ok(());
             }
+        }
+
+        if *shutdown_rx.borrow() {
+            log::info!("shutting down");
+            return Ok(());
         }
 
         let candle = signal_gateway::scheduler::most_recent_closed_candle_open(Utc::now());

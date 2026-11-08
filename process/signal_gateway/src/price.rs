@@ -44,13 +44,23 @@ impl KuCoinPrice {
         base_url: impl Into<String>,
         timeout: std::time::Duration,
     ) -> Result<Self, ProcessError> {
+        let base_url = base_url.into();
+        let parsed = reqwest::Url::parse(&base_url).map_err(|e| {
+            ProcessError::InvalidConfig(format!("invalid KUCOIN_BASE_URL {base_url:?}: {e}"))
+        })?;
+        if !matches!(parsed.scheme(), "http" | "https") {
+            return Err(ProcessError::InvalidConfig(format!(
+                "KUCOIN_BASE_URL must use http or https, got {}",
+                parsed.scheme()
+            )));
+        }
         let client = reqwest::Client::builder()
             .timeout(timeout)
             .redirect(reqwest::redirect::Policy::limited(5))
             .build()
             .map_err(|e| ProcessError::Internal(format!("build KuCoin client: {e}")))?;
         Ok(Self {
-            base_url: base_url.into().trim_end_matches('/').to_string(),
+            base_url: base_url.trim_end_matches('/').to_string(),
             client,
         })
     }
@@ -108,5 +118,16 @@ mod tests {
     fn trims_surrounding_whitespace() {
         let price = parse_last_price(r#"{"data":{"price":" 68123.4 "}}"#).unwrap();
         assert_eq!(price, 68123.4);
+    }
+
+    #[test]
+    fn rejects_invalid_base_urls() {
+        assert!(KuCoinPrice::new("not a url", std::time::Duration::from_secs(1)).is_err());
+        assert!(KuCoinPrice::new("ftp://example.com", std::time::Duration::from_secs(1)).is_err());
+    }
+
+    #[test]
+    fn accepts_trailing_slash() {
+        assert!(KuCoinPrice::new("http://example.com/", std::time::Duration::from_secs(1)).is_ok());
     }
 }
