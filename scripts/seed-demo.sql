@@ -105,3 +105,45 @@ JOIN (VALUES
     ('f6a7b8c9-d0e1-2345-fabc-456789012345', 'sell', 'close', 'seed-order-8', 'open',   '0.0200', '84100', '0.00', '1682', INTERVAL '3 hours')
 ) AS v(nonce, side, action, comment, status, qty, price, fee, funds, age)
   ON c.nonce = v.nonce;
+
+-- The chart reads realized PnL from `trade_orders.pnl` on filled close orders.
+-- Pair each seeded close with its most recent preceding filled entry on the
+-- same contract and compute the round trip. The entry fee is prorated to the
+-- closed quantity because the seed closes entries only partially.
+WITH pairs AS (
+    SELECT c.id AS close_id,
+           e.id AS entry_id,
+           e.side AS entry_side,
+           e.filled_qty AS entry_qty,
+           e.fill_price AS entry_price,
+           e.fee AS entry_fee,
+           c.filled_qty AS close_qty,
+           c.fill_price AS close_price,
+           c.fee AS close_fee
+    FROM trade_orders c
+    JOIN LATERAL (
+        SELECT e.*
+        FROM trade_orders e
+        WHERE e.contract_id = c.contract_id
+          AND e.action = 'open'
+          AND e.status = 'filled'
+          AND e.created_at < c.created_at
+        ORDER BY e.created_at DESC
+        LIMIT 1
+    ) e ON TRUE
+    WHERE c.comment LIKE 'seed-order-%'
+      AND c.action = 'close'
+      AND c.status = 'filled'
+      AND c.filled_qty > 0
+      AND c.fill_price IS NOT NULL
+)
+UPDATE trade_orders t
+SET parent_order_id = p.entry_id,
+    pnl = CASE
+              WHEN p.entry_side = 'sell'
+                  THEN (p.entry_price - p.close_price) * p.close_qty
+              ELSE (p.close_price - p.entry_price) * p.close_qty
+          END
+          - (p.entry_fee * p.close_qty / NULLIF(p.entry_qty, 0) + p.close_fee)
+FROM pairs p
+WHERE t.id = p.close_id;

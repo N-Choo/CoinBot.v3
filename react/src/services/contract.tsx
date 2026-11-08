@@ -72,13 +72,18 @@ export async function getMyContracts(): Promise<ContractItem[]> {
 export interface ContractOrder {
   id: string
   side: string
+  action: string
   status: string
   requested_qty: string
   filled_qty: string
   fill_price: string | null
   funds: string
   fee: string
+  /** Realized round-trip PnL; set on filled close orders only. */
+  pnl: string | null
+  parent_order_id: string | null
   created_at: string
+  updated_at: string
 }
 
 export async function getContractOrders(id: string): Promise<ContractOrder[]> {
