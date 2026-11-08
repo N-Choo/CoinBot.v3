@@ -37,13 +37,14 @@ flowchart TB
         GW["api_gateway"]
         DW["deposit-worker"]
         TE["trade-engine<br/>(gRPC server: EngineService)"]
-        SA["analyzer<br/>(RSI momentum)<br/>[ Unvalidated ]"]
+        SG["signal-gateway"]
     end
 
     DB[("PostgreSQL")]
     RD[("Redis")]
     ETH["Ethereum RPC"]
     KC["KuCoin"]
+    OC["opencode<br/>(trade-agent)"]
 
     UI -->|"HTTP /api"| GW
     GW -->|"SQL"| DB
@@ -52,37 +53,36 @@ flowchart TB
     DW -->|"sweep"| KC
     DW -->|"upsert user + credit balance"| DB
 
-    SA -->|"gRPC GetActiveSymbols (pull)"| TE
-    SA -->|"gRPC Publish(Signal) (push)"| TE
-    SA -->|"candles + tickers (public REST)"| KC
+    SG -->|"gRPC GetActiveSymbols (pull)"| TE
+    SG -->|"gRPC Publish(Signal) (push)"| TE
+    SG -->|"HTTP trade-agent"| OC
+    SG -->|"last price (public REST)"| KC
 
     GW -->|"sessions + nonces"| RD
 
     TE -->|"load + verify contracts"| DB
     TE -->|"execute + reconcile orders"| KC
 
-    class UI,GW,DW,TE,SA,DB,RD,ETH,KC plain;
+    class UI,GW,DW,TE,SG,OC,DB,RD,ETH,KC plain;
 ```
 
 | Process          | Role                                                                                                                                                                                                                                                                                                                        | Docs                                       |
 | ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
 | `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                           | [README](process/api_gateway/README.md)    |
 | `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                    | [README](process/deposit-worker/README.md) |
-| `trade-engine`   | Turns analyzer signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `analyzer` calls. Sole writer of order rows and contract funds (via its `ledger`).       | [README](process/trade-engine/README.md)   |
-| `analyzer`       | **[ Unvalidated ]** RSI momentum strategy (Rust): long above RSI 60, short/exit below RSI 50 on 4hour candles by default, with optional ATR SL/TP. Has a deterministic core, an offline backtest harness, and a live path that pushes target-side signals to `trade-engine` over gRPC.                                      | [README](process/analyzer/README.md)       |
+| `trade-engine`   | Turns `signal-gateway` signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `signal-gateway` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
+| `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC. | [README](process/signal_gateway/README.md) |
 | `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                   | [README](react/README.md)                  |
 
 Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`). **Redis** holds gateway sessions (DB 0) and login nonces (DB 1).
 
 ### Signal path
 
-`trade-engine` receives signals from `analyzer` over gRPC (`process/proto/analyzer.proto`). The analyzer pulls `GetActiveSymbols` every 30 s and pushes each signal with `Publish`, which the engine answers with an `Ack`. The link is configured with `GRPC_ADDR` on the engine (the bind address) and `GRPC_TRADE_ENGINE_ENDPOINT` on the analyzer (the engine URL).
-
-Each signal gets exactly one publish attempt; nothing is resent after a restart. The engine deduplicates on `signal_id`. See the [analyzer README](process/analyzer/README.md) for the full live design.
+`trade-engine` serves `EngineService` (defined in `process/proto/analyzer.proto`). `signal-gateway` pulls `GetActiveSymbols` from the engine, calls the `trade-agent` for each active symbol, validates the prediction, and publishes it with `Publish`, which the engine answers with an `Ack`. The engine deduplicates on `signal_id`. See the [signal-gateway README](process/signal_gateway/README.md) for the full design.
 
 ## Repository layout
 
-- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `analyzer`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/analyzer link).
+- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `signal_gateway`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/signal-gateway link).
 - `lib/share/`: shared Rust crate (config, DB models, Redis, RPC helpers).
 - `react/`: frontend SPA.
 - `docs/`, `scripts/`: project docs, demo seed data, and API smoke tests.
@@ -90,8 +90,8 @@ Each signal gets exactly one publish attempt; nothing is resent after a restart.
 ## Quick start
 
 ```bash
-make dev     # Postgres + Redis + API + worker + trade-engine + analyzer + frontend
-make trade   # trade-engine + analyzer live (starts Postgres + Redis)
+make dev     # Postgres + Redis + API + worker + trade-engine + frontend
+make trade   # trade-engine + signal-gateway live (starts Postgres + Redis)
 make test    # Rust tests
-make ci      # full pipeline: fmt-fix, clippy, test, analyzer tests, frontend lint-fix, frontend tests, build
+make ci      # full pipeline: fmt-fix, clippy, test, frontend lint-fix, frontend tests, build
 ```

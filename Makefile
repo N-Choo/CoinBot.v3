@@ -1,25 +1,20 @@
 PACKAGES = api-gateway share deposit trade-engine signal-gateway
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade signal-gateway analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade signal-gateway status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
 	@echo ""
 	@echo "Getting Started"
-	@echo "  make dev          Start all services (DB + Redis + API + worker + trade-engine + analyzer + frontend)"
+	@echo "  make dev          Start all services (DB + Redis + API + worker + trade-engine + frontend)"
 	@echo ""
 	@echo "Testing (starts Postgres + Redis automatically)"
 	@echo "  make test         Run all Rust tests"
 	@echo "  make frontend-test  Frontend tests only"
-	@echo "  make analyzer-check  Rust analyzer core: fmt + clippy + tests"
-	@echo "  make analyzer-test   Rust analyzer tests only"
 	@echo ""
 	@echo "Trading"
-	@echo "  make trade        Run trade-engine + Rust analyzer live (needs DB + creds)"
+	@echo "  make trade        Run trade-engine + signal-gateway live (needs DB + creds)"
 	@echo "  make signal-gateway  Run the signal-gateway service (loads process/signal_gateway/.env)"
-	@echo "  make analyzer-replay  Replay signals into a self-contained HTML report (live KuCoin fetch by default; fees excluded)"
-	@echo "                        make analyzer-replay ARGS='--symbol BTC-USDT --timeframe 1day --limit 500'"
-	@echo "  make analyzer-sweep   Screen analyzer hyperparameter candidates and write sweep artifacts"
 	@echo ""
 	@echo "Development"
 	@echo "  make logs         Follow logs from all services"
@@ -54,7 +49,7 @@ help:
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
-ci: fmt-fix clippy test analyzer-check frontend-lint-fix frontend-test frontend-build
+ci: fmt-fix clippy test frontend-lint-fix frontend-test frontend-build
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -73,27 +68,6 @@ test:
 		rst=$$?; \
 		docker compose stop redis postgres; \
 		exit $$rst
-
-analyzer-check:
-	cargo fmt -p analyzer -- --check
-	cargo clippy -p analyzer --all-targets --no-deps -- -D warnings
-	cargo clippy -p analyzer --features grpc --all-targets --no-deps -- -D warnings
-	cargo clippy -p analyzer --features harness --all-targets --no-deps -- -D warnings
-	cargo test -p analyzer
-	cargo test -p analyzer --features grpc
-	cargo test -p analyzer --features harness
-
-analyzer-test:
-	cargo clippy -p analyzer --features harness --all-targets --no-deps -- -D warnings
-	cargo test -p analyzer
-	cargo test -p analyzer --features grpc
-	cargo test -p analyzer --features harness
-
-analyzer-replay:
-	cargo run -p analyzer --features harness --bin analyzer-replay -- $(ARGS)
-
-analyzer-sweep:
-	cargo run -p analyzer --features harness --bin analyzer-sweep -- $(ARGS)
 
 frontend-install:
 	cd react && npm ci
@@ -122,14 +96,14 @@ status:
 	@docker compose ps 2>/dev/null
 
 restart:
-	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine analyzer)
+	docker compose restart $(or $(SERVICE),api_gateway deposit-worker trade-engine)
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine analyzer frontend
+		docker compose up api_gateway deposit-worker trade-engine frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod analyzer-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod
 
 # Pull pre-built images from ghcr (built by CI on main) and (re)start; never builds.
 # First merge to main: image may not exist yet → docker compose build opencode
@@ -151,8 +125,7 @@ trade:
 		sleep 2 && \
 		(GRPC_ADDR=127.0.0.1:50051 DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo run -p trade-engine & \
 		PID=$$!; sleep 5 && \
-		GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 LIVE_SYMBOLS=XRP-USDT KUCOIN_TIMEFRAME=4hour \
-		cargo run -p analyzer --features "live grpc" --bin analyzer-serve; st=$$?; \
+		(cd process/signal_gateway && GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 cargo run -p signal-gateway); st=$$?; \
 		kill $$PID 2>/dev/null; wait $$PID 2>/dev/null; \
 		exit $$st); \
 		docker compose stop postgres

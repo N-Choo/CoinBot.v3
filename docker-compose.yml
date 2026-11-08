@@ -188,52 +188,6 @@ services:
     profiles:
       - prod
 
-  # ── Analyzer (Rust) ────────────────────────
-
-  analyzer:
-    profiles:
-      - dev
-    build:
-      context: .
-      dockerfile: process/analyzer/Dockerfile
-      target: dev-builder
-    command: cargo run -p analyzer --features "live grpc" --bin analyzer-serve
-    volumes:
-      - .:/app
-      - /app/target
-    env_file:
-      - path: process/analyzer/.env
-        required: false
-    environment:
-      - RUST_LOG=debug
-      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-4hour}
-      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
-    depends_on:
-      - trade-engine
-    networks:
-      - app-network
-
-  analyzer-prod:
-    image: ghcr.io/n-choo/coinbot-analyzer:latest
-    build:
-      context: .
-      dockerfile: process/analyzer/Dockerfile
-    env_file:
-      - path: process/analyzer/.env
-        required: false
-    environment:
-      - RUST_LOG=info
-      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-4hour}
-      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine-prod:50051
-    depends_on:
-      - trade-engine-prod
-    networks:
-      - app-network
-    profiles:
-      - prod
-
   # ── opencode sandbox (AI agent server) ─────
   # Isolated network namespace: host-localhost unreachable from inside,
   # outbound webfetch allowed. External clients hit 127.0.0.1:4096 here.
@@ -251,6 +205,7 @@ services:
         required: true
     volumes:
       - opencode_data:/root/.local/share/opencode
+      - ./.opencode:/app/.opencode:ro
     networks:
       - app-network
     profiles:

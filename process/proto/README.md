@@ -216,22 +216,15 @@ cargo run -p api-gateway
 gRPC handles synchronous calls (request/response); Redis handles asynchronous messaging
 and shared state:
 
-### Pub/Sub — the signal pipeline
+### gRPC — the signal pipeline
 
-The engine and analyzer talk over two fire-and-forget channels:
+The signal pipeline uses `EngineService`, defined in `proto/analyzer.proto` (legacy
+filename):
 
-```
-trade-engine ──PUB "tickers:analyze"──▶ analyzer
-analyzer     ──PUB "signals:result" ──▶ trade-engine
-```
-
-| Channel | Direction | Payload |
-|---|---|---|
-| `tickers:analyze` | engine → analyzer | `["BTC/USDT", …]` |
-| `signals:result`  | analyzer → engine | `[{ ticker, action, confidence, entry_price, sl_price, tp_price, reason }]` |
-
-If no consumer is listening the message is lost — acceptable for the periodic ticker
-refresh and signal fan-out.
+- `trade-engine` serves `EngineService`.
+- `signal-gateway` calls `GetActiveSymbols` to pull the active symbol list, asks the
+  `opencode` trade-agent for a prediction per symbol, then calls `Publish` with each
+  validated signal.
 
 ### Key/value — sessions and nonces
 

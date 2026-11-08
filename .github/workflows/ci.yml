@@ -37,10 +37,6 @@ jobs:
         run: make clippy
       - name: Run Tests
         run: make test
-      - name: Analyzer core + parity
-        run: make analyzer-check
-      - name: Analyzer no-default-features build
-        run: cargo build -p analyzer --no-default-features
 
   # --- Frontend Checks ---
   frontend-test:
@@ -100,14 +96,6 @@ jobs:
           platforms: linux/arm64
           push: true
           tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:latest
-      - name: Build & push analyzer
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: process/analyzer/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
       - name: Build & push trade-engine
         uses: docker/build-push-action@v5
         with:
@@ -153,7 +141,7 @@ jobs:
           exit 1
       - name: Verify all services are running
         run: |
-          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod analyzer-prod frontend-prod"
+          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod frontend-prod"
           running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod ps --status running --services | sort)
           echo "$running"
