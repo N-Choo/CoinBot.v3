@@ -32,6 +32,12 @@ test:
 	 pg_user=$$(sed -n 's/^POSTGRES_USER=//p' .env | tail -1 | tr -d '"'); \
 	 pg_password=$$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | tail -1 | tr -d '"'); \
 	 pg_db=$$(sed -n 's/^POSTGRES_DB=//p' .env | tail -1 | tr -d '"'); \
+	 pulled=0; \
+	 for attempt in 1 2 3; do \
+	   if docker compose pull postgres redis; then pulled=1; break; fi; \
+	   echo "compose pull failed (attempt $$attempt), retrying"; sleep 5; \
+	 done; \
+	 [ "$$pulled" = 1 ] || exit 1; \
 	 docker compose up -d postgres redis && \
 		sleep 2 && \
 		DATABASE_URL="postgres://$${pg_user:-postgres}:$${pg_password:-postgres}@127.0.0.1:5432/$${pg_db:-coinbot}" cargo test $(addprefix -p ,$(PACKAGES)); \
