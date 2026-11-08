@@ -190,6 +190,40 @@ services:
     profiles:
       - prod
 
+  # ── signal-gateway (agent → trade-engine) ──
+
+  signal-gateway:
+    profiles:
+      - dev
+    build:
+      context: .
+      dockerfile: process/signal_gateway/Dockerfile
+      target: dev-builder
+    command: cargo run -p signal-gateway
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=info
+      - OPENCODE_BASE_URL=http://opencode:4096
+      - OPENCODE_PASSWORD=${OPENCODE_PASSWORD:-}
+      - OPENCODE_AGENT=trade-agent
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}
+      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
+      - SIGNAL_GATEWAY_RUN_ON_START=${SIGNAL_GATEWAY_RUN_ON_START:-false}
+      - SIGNAL_GATEWAY_DELETE_SESSIONS=${SIGNAL_GATEWAY_DELETE_SESSIONS:-true}
+      - SIGNAL_GATEWAY_PRICE_CHECK=${SIGNAL_GATEWAY_PRICE_CHECK:-strict}
+      - SIGNAL_GATEWAY_RESET_STATE=${SIGNAL_GATEWAY_RESET_STATE:-false}
+      - SIGNAL_GATEWAY_STATE_PATH=./state/signal_gateway.json
+      - SIGNAL_GATEWAY_AUDIT_PATH=./state/audit.jsonl
+    depends_on:
+      - trade-engine
+      - opencode
+    networks:
+      - app-network
+
   # ── opencode sandbox (AI agent server) ─────
   # Isolated network namespace: host-localhost unreachable from inside,
   # outbound webfetch allowed. External clients hit 127.0.0.1:4096 here.
@@ -212,6 +246,7 @@ services:
       - app-network
     profiles:
       - tools
+      - dev
 
 networks:
   app-network:
