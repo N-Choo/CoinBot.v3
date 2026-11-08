@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo, useRef, useId, type PointerEvent as ReactPointerEvent } from 'react'
+import { useState, useEffect, useMemo, useRef, useCallback, useId, type PointerEvent as ReactPointerEvent } from 'react'
 import Skeleton from '../ui/Skeleton'
 import { useContractsData } from '../../hooks/useContractsData'
 
@@ -63,21 +63,28 @@ export default function PnlChart() {
   const [box, setBox] = useState({ w: 0, h: 0 })
   const [hover, setHover] = useState<{ x: number; y: number; point: HoverPoint } | null>(null)
   const wrapRef = useRef<HTMLDivElement>(null)
+  const [wrapNode, setWrapNode] = useState<HTMLDivElement | null>(null)
   const gradientId = useId()
 
+  // Callback ref: the plot only mounts after the skeleton clears, so observe
+  // the node when it actually attaches instead of once on first render.
+  const attachWrap = useCallback((el: HTMLDivElement | null) => {
+    wrapRef.current = el
+    setWrapNode(el)
+    setBox(el ? { w: el.clientWidth, h: el.clientHeight } : { w: 0, h: 0 })
+  }, [])
+
   useEffect(() => {
-    const el = wrapRef.current
-    if (!el || typeof ResizeObserver === 'undefined') return
+    if (!wrapNode || typeof ResizeObserver === 'undefined') return
     const ro = new ResizeObserver(entries => {
       for (const entry of entries) {
         const { width, height } = entry.contentRect
         setBox({ w: Math.round(width), h: Math.round(height) })
       }
     })
-    ro.observe(el)
-    setBox({ w: el.clientWidth, h: el.clientHeight })
+    ro.observe(wrapNode)
     return () => ro.disconnect()
-  }, [])
+  }, [wrapNode])
 
   // Closed round trips: filled close orders carry the realized PnL.
   const closed = useMemo(() => {
@@ -247,7 +254,7 @@ export default function PnlChart() {
         </span>
       </div>
 
-      <div ref={wrapRef} className="relative w-full h-[215px] sm:h-[250px] mt-1">
+      <div ref={attachWrap} className="relative w-full h-[215px] sm:h-[250px] mt-1">
         {W > 0 && H > 0 && (
           <svg
             width={W}

@@ -1,5 +1,5 @@
 import { render, screen } from '@testing-library/react'
-import { describe, test, expect, vi } from 'vitest'
+import { beforeAll, describe, test, expect, vi } from 'vitest'
 
 import PnlChart from './PnlChart'
 import { getMyContracts, getContractOrders, type ContractItem, type ContractOrder } from '../../services/contract'
@@ -13,6 +13,11 @@ vi.mock('../../services/contract', () => ({
 vi.mock('../../services/kucoin', () => ({
   fetchTickerPrice: vi.fn().mockResolvedValue(120),
 }))
+
+beforeAll(() => {
+  Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get: () => 800 })
+  Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get: () => 220 })
+})
 
 const mockContracts = vi.mocked(getMyContracts)
 const mockOrders = vi.mocked(getContractOrders)
@@ -86,6 +91,7 @@ describe('PnlChart', () => {
     render(<ContractsProvider><PnlChart /></ContractsProvider>)
 
     expect(await screen.findByText('PnL Performance')).toBeInTheDocument()
+    expect(await screen.findByRole('img', { name: 'Cumulative realized PnL over time' })).toBeInTheDocument()
     expect(screen.getAllByText('+$25.50').length).toBeGreaterThan(0)
     expect(screen.getAllByText('+$20.00').length).toBeGreaterThan(0)
     expect(screen.getAllByText('+$45.50').length).toBeGreaterThan(0)
