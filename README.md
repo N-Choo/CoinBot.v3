@@ -89,8 +89,10 @@ Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_
 ## Quick start
 
 ```bash
-make dev     # Postgres + Redis + API + worker + trade-engine + signal-gateway + opencode + frontend
-make trade   # trade-engine + signal-gateway live (starts Postgres + Redis)
-make test    # Rust tests
-make ci      # full pipeline: fmt-fix, clippy, test, frontend lint-fix, frontend tests, build
+make dev       # dev stack: Postgres + Redis + API + worker + trade-engine + signal-gateway + opencode + frontend
+make prod      # pull pre-built images and (re)start the prod stack
+make seed      # insert demo data into the local DB
+make seed-clean  # wipe demo data from the local DB
+make ci-test   # CI-equivalent checks: fmt, clippy, tests, frontend lint/test/build
+make ci        # local auto-fix pipeline: fmt-fix, clippy, tests, frontend lint-fix/test/build
 ```

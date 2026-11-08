@@ -4,17 +4,15 @@
       <stop offset="0" stop-color="#ff8a65"/>
       <stop offset="1" stop-color="#ff5722"/>
     </linearGradient>
+    <linearGradient id="cbm" x1="4" y1="12" x2="76" y2="84" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ff8a65"/>
+      <stop offset="1" stop-color="#ff5722"/>
+    </linearGradient>
   </defs>
 
-  <!-- mark: 4 layer lines -->
-  <g transform="translate(4,12) scale(1.5)" fill="#ff5722">
-    <rect x="4" y="9" width="40" height="6" rx="3"/>
-    <rect x="4" y="17" width="12" height="6" rx="3"/>
-    <rect x="18" y="17" width="24" height="6" rx="3"/>
-    <rect x="4" y="25" width="19" height="6" rx="3"/>
-    <rect x="25" y="25" width="19" height="6" rx="3"/>
-    <rect x="4" y="33" width="8" height="6" rx="3"/>
-  </g>
+  <!-- mark: gradient brand tile -->
+  <rect x="4" y="12" width="72" height="72" rx="19.5" fill="url(#cbm)"/>
+  <rect x="14.5" y="22.5" width="51" height="51" rx="10.5" stroke="#fff" stroke-opacity="0.25" stroke-width="3"/>
 
   <!-- wordmark -->
   <text x="88" y="65" font-family="'Inter','Segoe UI',system-ui,-apple-system,Arial,sans-serif" font-size="50" font-weight="800" letter-spacing="-1.5" fill="url(#cbw)">CoinBot</text>

@@ -12,13 +12,19 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=coinbot
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-coinbot}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
     networks:
       - app-network
 
@@ -26,6 +32,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
     networks:
       - app-network
 
@@ -62,8 +69,11 @@ services:
     environment:
       - GRPC_ADDR=0.0.0.0:50051
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -109,9 +119,13 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - postgres
-      - deposit-worker-prod
+      postgres:
+        condition: service_healthy
+      deposit-worker-prod:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -145,6 +159,7 @@ services:
       - "80:80"
     depends_on:
       - api_gateway-prod
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -186,8 +201,13 @@ services:
       - .env
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - app-network
     profiles:

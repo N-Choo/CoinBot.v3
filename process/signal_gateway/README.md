@@ -23,8 +23,7 @@ cargo run -p signal-gateway
 ```
 
 `cargo run -p signal-gateway` from the repo root does not load the crate-local
-`.env`; export the variables or use the `cd` form above. `make signal-gateway`
-also uses the `cd` form.
+`.env`; export the variables or use the `cd` form above.
 
 Requires `opencode serve` (with the `trade-agent` role) and `trade-engine`
 reachable at the configured endpoints.
