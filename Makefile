@@ -29,9 +29,12 @@ clippy:
 
 test:
 	@[ -f .env ] || cp .env.ci .env; \
+	 pg_user=$$(sed -n 's/^POSTGRES_USER=//p' .env | tail -1 | tr -d '"'); \
+	 pg_password=$$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | tail -1 | tr -d '"'); \
+	 pg_db=$$(sed -n 's/^POSTGRES_DB=//p' .env | tail -1 | tr -d '"'); \
 	 docker compose up -d postgres redis && \
 		sleep 2 && \
-		DATABASE_URL=postgres://postgres:postgres@127.0.0.1:5432/coinbot cargo test $(addprefix -p ,$(PACKAGES)); \
+		DATABASE_URL="postgres://$${pg_user:-postgres}:$${pg_password:-postgres}@127.0.0.1:5432/$${pg_db:-coinbot}" cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
 		docker compose stop redis postgres; \
 		exit $$rst
