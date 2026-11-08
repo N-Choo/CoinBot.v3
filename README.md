@@ -2,7 +2,7 @@
   <img src="react/public/coinbot-lockup.svg" alt="CoinBot" width="300" />
 </div>
 
-<p align="center"><b>Trade on autopilot — your wallet, your funds, your rules.</b></p>
+<p align="center"><b>Automated crypto trading: your wallet, your funds, your rules.</b></p>
 
 <div align="center">
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" />
@@ -11,7 +11,6 @@
   <img src="https://img.shields.io/badge/SQLx-336791?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
-  <img src="https://img.shields.io/badge/Python-3776AB?style=for-the-badge&logo=python&logoColor=white" />
   <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
   <img src="https://img.shields.io/badge/Tailwind-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" />
@@ -22,9 +21,9 @@
 
 <br />
 
-Math does the watching. Our statistical models read the market around the clock, surface the trades worth taking, and fire them straight to KuCoin before the crowd even blinks.
+CoinBot turns trading signals into KuCoin orders automatically. **Status: experimental. No strategy has been validated as profitable.**
 
-## Processes
+## Architecture
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"clusterBkg":"transparent","clusterBorder":"#888","lineColor":"#888","primaryTextColor":"#fff","tertiaryTextColor":"#fff","edgeLabelBackground":"transparent"}}}%%
@@ -80,7 +79,7 @@ Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_
 
 `trade-engine` serves `EngineService` (defined in `process/proto/analyzer.proto`). `signal-gateway` pulls `GetActiveSymbols` from the engine, calls the `trade-agent` for each active symbol, validates the prediction, and publishes it with `Publish`, which the engine answers with an `Ack`. The engine deduplicates on `signal_id`. See the [signal-gateway README](process/signal_gateway/README.md) for the full design.
 
-## Repository layout
+## Layout
 
 - `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `signal_gateway`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/signal-gateway link).
 - `lib/share/`: shared Rust crate (config, DB models, Redis, RPC helpers).
