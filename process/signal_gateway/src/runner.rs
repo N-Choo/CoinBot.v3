@@ -116,7 +116,22 @@ impl Gateway {
         candle_open: DateTime<Utc>,
     ) -> Result<(), ProcessError> {
         let prompt = agent_client::build_prompt(symbol, candle_open);
-        let text = self.call_agent_with_retry(symbol, candle_open).await?;
+        let text = match self.call_agent_with_retry(symbol, candle_open).await {
+            Ok(text) => text,
+            Err(e) => {
+                self.write_audit(
+                    symbol,
+                    candle_open,
+                    &prompt,
+                    "",
+                    "ERROR",
+                    &format!("agent failed: {e}"),
+                    None,
+                    None,
+                );
+                return Err(e);
+            }
+        };
 
         let (verdict, validation, valid) = match prediction::extract_json(&text) {
             None => ("unknown".to_string(), "no JSON block".to_string(), None),
@@ -152,12 +167,27 @@ impl Gateway {
                 &validation,
                 None,
                 None,
-            )?;
+            );
             return Ok(());
         };
 
         if self.config.price_check == PriceCheck::Strict {
-            let last = self.price.last_price(symbol).await?;
+            let last = match self.price.last_price(symbol).await {
+                Ok(last) => last,
+                Err(e) => {
+                    self.write_audit(
+                        symbol,
+                        candle_open,
+                        &prompt,
+                        &text,
+                        &verdict,
+                        &format!("price check failed: {e}"),
+                        None,
+                        None,
+                    );
+                    return Ok(());
+                }
+            };
             if !prediction::price_ok(valid.entry, last, self.config.max_entry_drift_pct) {
                 let note = format!(
                     "rejected: entry {} is more than {}% from last {last}",
@@ -172,7 +202,7 @@ impl Gateway {
                     &note,
                     None,
                     None,
-                )?;
+                );
                 return Ok(());
             }
         }
@@ -191,7 +221,7 @@ impl Gateway {
                 "unmappable",
                 None,
                 None,
-            )?;
+            );
             return Ok(());
         };
 
@@ -206,11 +236,26 @@ impl Gateway {
                 "expired before publish",
                 Some(signal.signal_id.clone()),
                 None,
-            )?;
+            );
             return Ok(());
         }
 
-        let ack = self.publish_with_retry(signal.clone()).await?;
+        let ack = match self.publish_with_retry(signal.clone()).await {
+            Ok(ack) => ack,
+            Err(e) => {
+                self.write_audit(
+                    symbol,
+                    candle_open,
+                    &prompt,
+                    &text,
+                    &verdict,
+                    &format!("publish failed: {e}"),
+                    Some(signal.signal_id.clone()),
+                    None,
+                );
+                return Err(e);
+            }
+        };
         let ack_note = format!("accepted={} reason={}", ack.accepted, ack.reason);
 
         self.state.last_published.insert(
@@ -230,7 +275,7 @@ impl Gateway {
             "valid",
             Some(signal.signal_id.clone()),
             Some(ack_note),
-        )?;
+        );
 
         if !ack.accepted && ack.reason != "duplicate" {
             log::warn!(
@@ -310,8 +355,8 @@ impl Gateway {
         validation: &str,
         signal_id: Option<String>,
         ack: Option<String>,
-    ) -> Result<(), ProcessError> {
-        audit::append(
+    ) {
+        if let Err(e) = audit::append(
             &self.config.audit_path,
             &AuditRecord {
                 at: Utc::now().to_rfc3339(),
@@ -324,6 +369,8 @@ impl Gateway {
                 signal_id,
                 ack,
             },
-        )
+        ) {
+            log::warn!("{symbol}: audit write failed: {e}");
+        }
     }
 }
