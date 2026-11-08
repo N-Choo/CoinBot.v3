@@ -1,5 +1,8 @@
+//! Prediction types, JSON extraction, and validation rules.
+
 use serde::Deserialize;
 
+/// Direction of the agent's trade call.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 pub enum Side {
     #[serde(rename = "LONG")]
@@ -10,6 +13,7 @@ pub enum Side {
     NoTrade,
 }
 
+/// RSI reading reported by the agent.
 #[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct Rsi {
     pub period: u32,
@@ -17,6 +21,7 @@ pub struct Rsi {
     pub regime: String,
 }
 
+/// Raw prediction as returned by the agent.
 #[derive(Debug, Clone, Deserialize)]
 pub struct Prediction {
     pub symbol: String,
@@ -35,6 +40,7 @@ pub struct Prediction {
     pub reason: Option<String>,
 }
 
+/// Prediction that passed validation.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ValidPrediction {
     pub symbol: String,
@@ -47,6 +53,7 @@ pub struct ValidPrediction {
     pub reason: String,
 }
 
+/// Normalize a ticker to upper-case with a dash separator.
 pub fn normalize_symbol(symbol: &str) -> String {
     symbol.trim().replace('/', "-").to_uppercase()
 }
@@ -60,6 +67,7 @@ pub fn sanitize_text(input: &str, max_chars: usize) -> String {
         .collect()
 }
 
+/// Extract the first JSON object from free-form agent text.
 pub fn extract_json(text: &str) -> Option<&str> {
     if let Some(start) = text.find("```json") {
         let after = start + "```json".len();
@@ -103,6 +111,7 @@ pub fn extract_json(text: &str) -> Option<&str> {
     None
 }
 
+/// Check that entry is within `max_drift_pct` of the last price.
 pub fn price_ok(entry: f64, last: f64, max_drift_pct: f64) -> bool {
     last.is_finite()
         && entry.is_finite()
@@ -110,6 +119,7 @@ pub fn price_ok(entry: f64, last: f64, max_drift_pct: f64) -> bool {
         && ((entry - last).abs() / last) <= max_drift_pct / 100.0
 }
 
+/// Validate a prediction and return it only when it is tradable.
 pub fn validate(
     prediction: &Prediction,
     requested_symbol: &str,

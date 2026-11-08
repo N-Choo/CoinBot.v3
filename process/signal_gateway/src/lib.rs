@@ -1,13 +1,19 @@
-pub mod agent_client;
-pub mod audit;
+//! Signal gateway: turns agent predictions into trade-engine signals.
+
+pub mod agent;
 pub mod config;
-pub mod cursor;
-pub mod grpc;
-pub mod mapper;
-pub mod prediction;
-pub mod price;
-pub mod publisher;
-pub mod runner;
-pub mod scheduler;
-pub mod state;
-pub mod symbols;
+pub mod core;
+pub mod exchange;
+pub mod persistence;
+pub mod rpc;
+pub mod signal;
+
+// Flat re-exports keep the historical module paths (`crate::runner`,
+// `signal_gateway::price`, ...) working after grouping files into folders.
+pub use agent::{agent_client, prediction};
+pub use core::{runner, scheduler};
+pub use exchange::price;
+pub use persistence as state;
+pub use persistence::{audit, cursor};
+pub use rpc::{grpc, publisher, symbols};
+pub use signal::mapper;

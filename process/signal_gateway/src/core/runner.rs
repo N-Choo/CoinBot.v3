@@ -1,3 +1,5 @@
+//! Gateway orchestration: one cycle per closed candle.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -14,12 +16,14 @@ use crate::price::LastPriceSource;
 use crate::publisher::SignalPublisher;
 use crate::state::{LastPublished, State};
 
+/// Retry delays for agent and gRPC calls.
 #[derive(Debug, Clone)]
 pub struct RetryPolicy {
     pub agent_delays: Vec<Duration>,
     pub grpc_delays: Vec<Duration>,
 }
 
+/// Default backoff schedule.
 impl Default for RetryPolicy {
     fn default() -> Self {
         Self {
@@ -33,6 +37,7 @@ impl Default for RetryPolicy {
     }
 }
 
+/// Runs one symbol at a time through the signal pipeline.
 pub struct Gateway {
     pub config: Config,
     pub state: State,
@@ -43,6 +48,7 @@ pub struct Gateway {
 }
 
 impl Gateway {
+    /// Build a gateway from its collaborators.
     pub fn new(
         config: Config,
         state: State,
@@ -61,6 +67,7 @@ impl Gateway {
         }
     }
 
+    /// Process every active symbol once for a closed candle.
     pub async fn run_cycle(
         &mut self,
         symbols: &[String],
@@ -110,6 +117,7 @@ impl Gateway {
         Ok(())
     }
 
+    /// Run the full pipeline for one symbol.
     async fn process_symbol(
         &mut self,
         symbol: &str,
@@ -305,6 +313,7 @@ impl Gateway {
         Ok(())
     }
 
+    /// Call the agent, retrying transient network errors.
     async fn call_agent_with_retry(
         &self,
         symbol: &str,
@@ -335,6 +344,7 @@ impl Gateway {
         }
     }
 
+    /// Publish a signal, retrying transient gRPC errors.
     async fn publish_with_retry(&self, signal: ProtoSignal) -> Result<share::Ack, ProcessError> {
         let attempts = self.retry.grpc_delays.len() + 1;
         let mut last_error = None;
@@ -362,6 +372,7 @@ impl Gateway {
     }
 
     #[allow(clippy::too_many_arguments)]
+    /// Write one audit entry, logging but not failing on errors.
     fn write_audit(
         &self,
         symbol: &str,

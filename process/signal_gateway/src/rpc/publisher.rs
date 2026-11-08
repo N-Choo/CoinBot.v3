@@ -1,3 +1,5 @@
+//! Publishes signals to the trade engine.
+
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -35,6 +37,7 @@ impl GrpcPublisher {
 
 #[async_trait]
 impl SignalPublisher for GrpcPublisher {
+    /// Publish with a timeout and map gRPC errors.
     async fn publish(&self, signal: ProtoSignal) -> Result<Ack, ProcessError> {
         let mut client = self.client.clone();
         let ack = tokio::time::timeout(self.timeout, client.publish(signal))

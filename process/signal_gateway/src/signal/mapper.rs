@@ -1,11 +1,15 @@
+//! Maps validated predictions to trade-engine wire signals.
+
 use chrono::{DateTime, TimeDelta, Utc};
 use share::Signal as ProtoSignal;
 
 use crate::prediction::{Side, ValidPrediction};
 use crate::scheduler;
 
+/// Wire schema version for emitted signals.
 pub const SCHEMA_VERSION: u32 = 1;
 
+/// Stable signal id from candle open time and ticker.
 pub fn signal_id(candle_open_ms: i64, ticker: &str) -> String {
     format!("sg:{candle_open_ms}:{ticker}")
 }

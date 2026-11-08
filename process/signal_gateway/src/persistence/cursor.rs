@@ -1,3 +1,5 @@
+//! Round-robin cursor helpers.
+
 /// Rotate `items` so the element at `cursor` comes first.
 pub fn rotation<T>(items: &[T], cursor: usize) -> Vec<&T> {
     if items.is_empty() {

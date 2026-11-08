@@ -21,7 +21,7 @@
 
 <br />
 
-CoinBot turns trading signals into KuCoin orders automatically. **Status: experimental. No strategy has been validated as profitable.**
+CoinBot turns trading signals into KuCoin orders automatically.
 
 ## Architecture
 
@@ -65,34 +65,10 @@ flowchart TB
     class UI,GW,DW,TE,SG,OC,DB,RD,ETH,KC plain;
 ```
 
-| Process          | Role                                                                                                                                                                                                                                                                                                                        | Docs                                       |
-| ---------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                           | [README](process/api_gateway/README.md)    |
-| `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                    | [README](process/deposit-worker/README.md) |
+| Process          | Role                                                                                                                                                                                                                                                                                                                                | Docs                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                                   | [README](process/api_gateway/README.md)    |
+| `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                            | [README](process/deposit-worker/README.md) |
 | `trade-engine`   | Turns `signal-gateway` signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `signal-gateway` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
-| `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC. | [README](process/signal_gateway/README.md) |
-| `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                   | [README](react/README.md)                  |
-
-Shared infrastructure: **PostgreSQL** (`users`, `deposits`, `contracts`, `trade_orders`). **Redis** holds gateway sessions (DB 0) and login nonces (DB 1).
-
-### Signal path
-
-`trade-engine` serves `EngineService` (defined in `process/proto/analyzer.proto`). `signal-gateway` pulls `GetActiveSymbols` from the engine, calls the `trade-agent` for each active symbol, validates the prediction, and publishes it with `Publish`, which the engine answers with an `Ack`. The engine deduplicates on `signal_id`. See the [signal-gateway README](process/signal_gateway/README.md) for the full design.
-
-## Layout
-
-- `process/`: runtime services (`api_gateway`, `deposit-worker`, `trade-engine`, `signal_gateway`) plus `migrations/` (SQL, applied in order) and `proto/` (gRPC contracts, including `analyzer.proto` for the engine/signal-gateway link).
-- `lib/share/`: shared Rust crate (config, DB models, Redis, RPC helpers).
-- `react/`: frontend SPA.
-- `docs/`, `scripts/`: project docs, demo seed data, and API smoke tests.
-
-## Quick start
-
-```bash
-make dev       # dev stack: Postgres + Redis + API + worker + trade-engine + signal-gateway + opencode + frontend
-make prod      # pull pre-built images and (re)start the prod stack
-make seed      # insert demo data into the local DB
-make seed-clean  # wipe demo data from the local DB
-make ci-test   # CI-equivalent checks: fmt, clippy, tests, frontend lint/test/build
-make ci        # local auto-fix pipeline: fmt-fix, clippy, tests, frontend lint-fix/test/build
-```
+| `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC.                                                  | [README](process/signal_gateway/README.md) |
+| `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                           | [README](react/README.md)                  |

@@ -1,3 +1,5 @@
+//! 4h candle scheduling helpers.
+
 use chrono::{DateTime, TimeDelta, Timelike, Utc};
 
 pub const CANDLE_HOURS: i64 = 4;

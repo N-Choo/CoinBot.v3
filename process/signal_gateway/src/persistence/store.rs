@@ -1,3 +1,5 @@
+//! Persistent gateway state stored as JSON.
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
@@ -5,14 +7,17 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 use share::ProcessError;
 
+/// Current on-disk state version.
 pub const STATE_VERSION: u32 = 1;
 
+/// Last signal published for a symbol.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct LastPublished {
     pub candle_open_ms: i64,
     pub signal_id: String,
 }
 
+/// Durable gateway state across restarts.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct State {
     pub version: u32,
@@ -23,6 +28,7 @@ pub struct State {
     pub last_published: BTreeMap<String, LastPublished>,
 }
 
+/// Start from empty state.
 impl Default for State {
     fn default() -> Self {
         Self {
@@ -36,6 +42,7 @@ impl Default for State {
 }
 
 impl State {
+    /// Load state from disk, or start fresh when missing or reset.
     pub fn load(path: &Path, reset: bool) -> Result<Self, ProcessError> {
         if reset {
             if path.exists() {
@@ -72,6 +79,7 @@ impl State {
         }
     }
 
+    /// Write state atomically to disk.
     pub fn save(&self, path: &Path) -> Result<(), ProcessError> {
         if let Some(parent) = path.parent()
             && !parent.as_os_str().is_empty()
@@ -90,17 +98,20 @@ impl State {
         Ok(())
     }
 
+    /// Return the next sequence number and increment it.
     pub fn next_seq(&mut self) -> u64 {
         let seq = self.seq;
         self.seq += 1;
         seq
     }
 
+    /// Remember the last candle processed for a symbol.
     pub fn mark_processed(&mut self, symbol: &str, candle_open_ms: i64) {
         self.last_processed
             .insert(symbol.to_string(), candle_open_ms);
     }
 
+    /// Check whether a symbol's candle was already processed.
     pub fn is_processed(&self, symbol: &str, candle_open_ms: i64) -> bool {
         self.last_processed.get(symbol) == Some(&candle_open_ms)
     }

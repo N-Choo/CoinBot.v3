@@ -1,9 +1,12 @@
+//! Environment-backed configuration for the gateway.
+
 use std::path::PathBuf;
 use std::time::Duration;
 
 use chrono::TimeDelta;
 use share::ProcessError;
 
+/// Whether entry prices are checked against the market.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PriceCheck {
     Strict,
@@ -38,6 +41,7 @@ pub struct Config {
     pub kucoin_base_url: String,
 }
 
+/// Debug impl that redacts the opencode password.
 impl std::fmt::Debug for Config {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let opencode_password = self.opencode_password.as_ref().map(|_| "<redacted>");
@@ -66,10 +70,12 @@ impl std::fmt::Debug for Config {
 }
 
 impl Config {
+    /// Load configuration from process environment variables.
     pub fn from_env() -> Result<Self, ProcessError> {
         Self::from_lookup(|key| std::env::var(key).ok())
     }
 
+    /// Load configuration using a custom variable lookup.
     pub fn from_lookup<F>(lookup: F) -> Result<Self, ProcessError>
     where
         F: Fn(&str) -> Option<String>,

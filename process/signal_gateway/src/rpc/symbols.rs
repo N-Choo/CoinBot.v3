@@ -1,3 +1,5 @@
+//! Fetches active symbols from the trade engine.
+
 use std::time::Duration;
 
 use share::engine_service_client::EngineServiceClient;

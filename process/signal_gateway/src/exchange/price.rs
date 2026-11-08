@@ -1,9 +1,13 @@
+//! KuCoin last-price source.
+
 use async_trait::async_trait;
 use serde::Deserialize;
 use share::ProcessError;
 
+/// Source of the latest traded price for a symbol.
 #[async_trait]
 pub trait LastPriceSource: Send + Sync {
+    /// Return the latest price for `symbol`.
     async fn last_price(&self, symbol: &str) -> Result<f64, ProcessError>;
 }
 
@@ -17,6 +21,7 @@ struct Level1 {
     price: String,
 }
 
+/// Parse a KuCoin level1 price response.
 pub fn parse_last_price(json: &str) -> Result<f64, ProcessError> {
     let envelope: Envelope = serde_json::from_str(json)
         .map_err(|e| ProcessError::Internal(format!("bad KuCoin response: {e}")))?;
@@ -34,12 +39,14 @@ pub fn parse_last_price(json: &str) -> Result<f64, ProcessError> {
     Ok(price)
 }
 
+/// HTTP-backed `LastPriceSource` for KuCoin.
 pub struct KuCoinPrice {
     base_url: String,
     client: reqwest::Client,
 }
 
 impl KuCoinPrice {
+    /// Build the client and validate the base URL.
     pub fn new(
         base_url: impl Into<String>,
         timeout: std::time::Duration,
@@ -68,6 +75,7 @@ impl KuCoinPrice {
 
 #[async_trait]
 impl LastPriceSource for KuCoinPrice {
+    /// Fetch the level1 price for one symbol.
     async fn last_price(&self, symbol: &str) -> Result<f64, ProcessError> {
         let response = self
             .client

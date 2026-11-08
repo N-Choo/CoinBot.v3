@@ -1,3 +1,5 @@
+//! HTTP client for the opencode server and prompt construction.
+
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -9,6 +11,7 @@ use share::ProcessError;
 /// Calls the opencode server and returns the trade-agent's text response.
 #[async_trait]
 pub trait AgentClient: Send + Sync {
+    /// Ask the agent for a prediction on one symbol.
     async fn predict(
         &self,
         symbol: &str,
@@ -81,6 +84,7 @@ pub struct OpenCodeClient {
 }
 
 impl OpenCodeClient {
+    /// Build the client, validating the base URL and optional model spec.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         base_url: impl Into<String>,
@@ -133,6 +137,7 @@ impl OpenCodeClient {
         })
     }
 
+    /// Build an HTTP request with optional basic auth.
     fn request(&self, method: reqwest::Method, path: &str) -> reqwest::RequestBuilder {
         let builder = self
             .client
@@ -143,6 +148,7 @@ impl OpenCodeClient {
         }
     }
 
+    /// POST JSON and decode a JSON response.
     async fn post_json<B, R>(&self, path: &str, body: &B) -> Result<R, ProcessError>
     where
         B: Serialize + ?Sized,
@@ -173,6 +179,7 @@ impl OpenCodeClient {
 
 #[async_trait]
 impl AgentClient for OpenCodeClient {
+    /// Create a session, send the prompt, and return the agent's text.
     async fn predict(
         &self,
         symbol: &str,

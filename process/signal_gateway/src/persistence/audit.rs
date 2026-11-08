@@ -1,3 +1,5 @@
+//! Append-only audit log for agent calls and signals.
+
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::Path;
@@ -5,6 +7,7 @@ use std::path::Path;
 use serde::Serialize;
 use share::ProcessError;
 
+/// One audit entry written as a JSON line.
 #[derive(Debug, Serialize)]
 pub struct AuditRecord {
     pub at: String,
@@ -18,6 +21,7 @@ pub struct AuditRecord {
     pub ack: Option<String>,
 }
 
+/// Append one record to the JSONL audit file.
 pub fn append(path: &Path, record: &AuditRecord) -> Result<(), ProcessError> {
     if let Some(parent) = path.parent()
         && !parent.as_os_str().is_empty()

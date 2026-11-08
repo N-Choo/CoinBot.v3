@@ -1,3 +1,5 @@
+//! gRPC channel and error helpers.
+
 use std::time::Duration;
 
 use share::ProcessError;

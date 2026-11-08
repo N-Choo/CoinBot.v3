@@ -1,3 +1,5 @@
+//! Binary entry point: wire services, handle signals, run cycles.
+
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -12,6 +14,7 @@ use signal_gateway::state::State;
 use signal_gateway::symbols;
 use tokio::sync::watch;
 
+/// Start the gateway and run until a shutdown signal arrives.
 #[tokio::main]
 async fn main() -> Result<(), ProcessError> {
     dotenvy::dotenv().ok();
@@ -48,6 +51,7 @@ async fn main() -> Result<(), ProcessError> {
     );
 
     let (shutdown_tx, mut shutdown_rx) = watch::channel(false);
+    // Wait for Ctrl-C or SIGTERM, then flip the shutdown flag.
     tokio::spawn(async move {
         #[cfg(unix)]
         {
@@ -116,6 +120,7 @@ async fn main() -> Result<(), ProcessError> {
     }
 }
 
+/// Fetch active symbols and run one gateway cycle.
 async fn run_once(gateway: &mut Gateway, config: &Config, candle: chrono::DateTime<Utc>) {
     match symbols::fetch_active_symbols_with_retry(
         config.grpc_endpoint.as_str(),
