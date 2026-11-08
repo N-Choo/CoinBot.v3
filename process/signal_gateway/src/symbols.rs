@@ -2,12 +2,15 @@ use std::time::Duration;
 
 use share::engine_service_client::EngineServiceClient;
 use share::{Empty, ProcessError};
-use tonic::transport::Endpoint;
 
+use crate::grpc::{lazy_channel, status_error};
+use crate::prediction::normalize_symbol;
+
+/// Normalize, sort, and de-duplicate a list of raw ticker symbols.
 pub fn normalize_symbols(raw: Vec<String>) -> Vec<String> {
     let mut symbols: Vec<String> = raw
         .into_iter()
-        .map(|symbol| symbol.trim().replace('/', "-").to_uppercase())
+        .map(|symbol| normalize_symbol(&symbol))
         .filter(|symbol| !symbol.is_empty())
         .collect();
     symbols.sort();
@@ -15,25 +18,26 @@ pub fn normalize_symbols(raw: Vec<String>) -> Vec<String> {
     symbols
 }
 
+/// Fetch the trade engine's active symbols over gRPC.
 pub async fn fetch_active_symbols(
     endpoint: &str,
     timeout: Duration,
 ) -> Result<Vec<String>, ProcessError> {
-    let channel = Endpoint::from_shared(endpoint.to_string())
-        .map_err(|e| {
-            ProcessError::InvalidConfig(format!("invalid engine endpoint {endpoint:?}: {e}"))
-        })?
-        .timeout(timeout)
-        .connect_timeout(timeout)
-        .connect_lazy();
+    let channel = lazy_channel(endpoint, timeout)?;
     let mut client = EngineServiceClient::new(channel);
     let response = tokio::time::timeout(timeout, client.get_active_symbols(Empty {}))
         .await
         .map_err(|_| ProcessError::Network("GetActiveSymbols timed out".into()))?
-        .map_err(|e| ProcessError::Network(format!("GetActiveSymbols: {e}")))?;
+        .map_err(|status| status_error("GetActiveSymbols", status))?;
     Ok(normalize_symbols(response.into_inner().tickers))
 }
 
+/// Backoff delay for a retry attempt, capped at 30 seconds.
+pub fn retry_delay(attempt: usize) -> Duration {
+    Duration::from_secs((1u64 << attempt.min(5)).min(30))
+}
+
+/// Fetch active symbols, retrying transient network errors only.
 pub async fn fetch_active_symbols_with_retry(
     endpoint: &str,
     timeout: Duration,
@@ -44,15 +48,23 @@ pub async fn fetch_active_symbols_with_retry(
     for attempt in 0..attempts {
         match fetch_active_symbols(endpoint, timeout).await {
             Ok(symbols) => return Ok(symbols),
-            Err(e) => {
+            Err(e @ ProcessError::Network(_)) => {
                 last_error = Some(e);
                 if attempt + 1 < attempts {
-                    tokio::time::sleep(Duration::from_secs(1 << attempt)).await;
+                    tokio::time::sleep(retry_delay(attempt)).await;
                 }
             }
+            // Permanent errors (e.g. a rejected request or bad configuration)
+            // are not retried.
+            Err(e) => return Err(e),
         }
     }
-    Err(last_error.expect("at least one attempt"))
+    match last_error {
+        Some(e) => Err(e),
+        None => Err(ProcessError::Internal(
+            "no symbol fetch attempt was made".into(),
+        )),
+    }
 }
 
 #[cfg(test)]
@@ -68,5 +80,15 @@ mod tests {
             "".into(),
         ]);
         assert_eq!(symbols, vec!["BTC-USDT", "ETH-USDT"]);
+    }
+
+    #[test]
+    fn backoff_is_exponential_and_capped() {
+        let delays: Vec<u64> = (0..=5)
+            .map(|attempt| retry_delay(attempt).as_secs())
+            .collect();
+        assert_eq!(delays, vec![1, 2, 4, 8, 16, 30]);
+        assert_eq!(retry_delay(6).as_secs(), 30);
+        assert_eq!(retry_delay(usize::MAX).as_secs(), 30);
     }
 }

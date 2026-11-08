@@ -1,6 +1,7 @@
 pub mod agent_client;
 pub mod config;
 pub mod cursor;
+pub mod grpc;
 pub mod mapper;
 pub mod prediction;
 pub mod price;
