@@ -13,7 +13,7 @@ use crate::ledger;
 use crate::symbol::margin_symbol;
 
 /// Place a market exit for `entry` and record it as a linked `close` order.
-pub(super) async fn exit_position(
+pub(crate) async fn exit_position(
     pool: &Pool<Postgres>,
     kcc: &KuCoinClient,
     entry: &TradeOrder,

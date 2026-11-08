@@ -56,8 +56,10 @@ re-exported at the crate root, e.g.:
 
 ```rust
 use share::{TicketRequest, deposit_service_client::DepositServiceClient};
-use share::analyzer_service_client::AnalyzerServiceClient;
+use share::engine_service_client::EngineServiceClient;
 ```
+
+`analyzer.proto` is the legacy filename for the `EngineService` contract.
 
 Building requires `protoc` on the `PATH`.
 

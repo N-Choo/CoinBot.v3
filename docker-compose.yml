@@ -12,13 +12,19 @@ services:
   postgres:
     image: postgres:16-alpine
     environment:
-      - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
-      - POSTGRES_DB=coinbot
+      - POSTGRES_USER=${POSTGRES_USER:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_DB=${POSTGRES_DB:-coinbot}
     ports:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
     networks:
       - app-network
 
@@ -26,6 +32,7 @@ services:
     image: redis:7-alpine
     ports:
       - "6379:6379"
+    restart: unless-stopped
     networks:
       - app-network
 
@@ -45,7 +52,7 @@ services:
     env_file:
       - .env
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
     depends_on:
       - postgres
@@ -61,8 +68,12 @@ services:
       - .env
     environment:
       - GRPC_ADDR=0.0.0.0:50051
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -86,7 +97,7 @@ services:
       - .:/app
       - /app/target
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
       - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
@@ -106,11 +117,15 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - postgres
-      - deposit-worker-prod
+      postgres:
+        condition: service_healthy
+      deposit-worker-prod:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -144,6 +159,7 @@ services:
       - "80:80"
     depends_on:
       - api_gateway-prod
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
@@ -159,13 +175,15 @@ services:
       dockerfile: process/trade-engine/Dockerfile
       target: dev-builder
     command: cargo run -p trade-engine
+    ports:
+      - "127.0.0.1:50051:50051"
     volumes:
       - .:/app
       - /app/target
     env_file:
       - .env
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
     depends_on:
       - postgres
@@ -181,58 +199,77 @@ services:
       dockerfile: process/trade-engine/Dockerfile
     env_file:
       - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
     depends_on:
-      - redis
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - app-network
     profiles:
       - prod
 
-  # ── Analyzer (Rust) ────────────────────────
+  # ── signal-gateway (agent → trade-engine) ──
 
-  analyzer:
+  signal-gateway:
     profiles:
       - dev
     build:
       context: .
-      dockerfile: process/analyzer/Dockerfile
+      dockerfile: process/signal_gateway/Dockerfile
       target: dev-builder
-    command: cargo run -p analyzer --features "live grpc" --bin analyzer-serve
+    command: cargo run -p signal-gateway
     volumes:
       - .:/app
       - /app/target
     env_file:
-      - path: process/analyzer/.env
-        required: false
+      - .env
     environment:
-      - RUST_LOG=debug
-      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-15min}
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - OPENCODE_BASE_URL=http://opencode:4096
+      - OPENCODE_PASSWORD=${OPENCODE_PASSWORD:-}
+      - OPENCODE_AGENT=trade-agent
+      - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}
       - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
+      - SIGNAL_GATEWAY_RUN_ON_START=${SIGNAL_GATEWAY_RUN_ON_START:-false}
+      - SIGNAL_GATEWAY_DELETE_SESSIONS=${SIGNAL_GATEWAY_DELETE_SESSIONS:-true}
+      - SIGNAL_GATEWAY_PRICE_CHECK=${SIGNAL_GATEWAY_PRICE_CHECK:-strict}
+      - SIGNAL_GATEWAY_RESET_STATE=${SIGNAL_GATEWAY_RESET_STATE:-false}
+      - SIGNAL_GATEWAY_STATE_PATH=./state/signal_gateway.json
+      - SIGNAL_GATEWAY_AUDIT_PATH=./state/audit.jsonl
     depends_on:
       - trade-engine
+      - opencode
     networks:
       - app-network
 
-  analyzer-prod:
-    image: ghcr.io/n-choo/coinbot-analyzer:latest
+  # ── opencode sandbox (AI agent server) ─────
+  # Isolated network namespace: host-localhost unreachable from inside,
+  # outbound webfetch allowed. External clients hit 127.0.0.1:4096 here.
+  # Secrets are runtime-only; never bake them into the image.
+
+  opencode:
+    image: ghcr.io/n-choo/coinbot-opencode:latest
     build:
-      context: .
-      dockerfile: process/analyzer/Dockerfile
+      context: ./process/opencode
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:4096:4096"
     env_file:
-      - path: process/analyzer/.env
+      - path: process/opencode/.env
         required: false
-    environment:
-      - RUST_LOG=info
-      - LIVE_SYMBOLS=${LIVE_SYMBOLS:-XRP-USDT}
-      - KUCOIN_TIMEFRAME=${KUCOIN_TIMEFRAME:-4hour}
-      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine-prod:50051
-    depends_on:
-      - trade-engine-prod
+    volumes:
+      - opencode_data:/root/.local/share/opencode
+      - ./.opencode:/app/.opencode:ro
     networks:
       - app-network
     profiles:
-      - prod
+      - tools
+      - dev
 
 networks:
   app-network:
@@ -240,3 +277,4 @@ networks:
 
 volumes:
   postgres_data:
+  opencode_data:

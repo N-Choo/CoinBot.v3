@@ -71,6 +71,18 @@ SELECT
     NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
 FROM users u WHERE u.wallet_address = '0x2300dc555ba1dda773935a2fac059e3c8f1d14a7';
 
+-- XRP is analysis-only in the demo seed: active ticker, but no available fund so
+-- the engine does not execute an order when the gateway publishes a signal.
+INSERT INTO contracts (user_uid, signature, message, nonce, ticker, init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status, created_at, updated_at)
+SELECT
+    u.uid,
+    '0x7234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef7b',
+    '{"nonce":"a7b8c9d0-e1f2-3456-abcd-567890123456","settings":{"Ticker":"XRP/USDT","Amount":"1000","StopLoss":"2.0","TakeProfit":"5.0"}}',
+    'a7b8c9d0-e1f2-3456-abcd-567890123456',
+    'XRP/USDT', '1000', '0', '0', 2.0, 5.0, 'active',
+    NOW() - INTERVAL '6 hours', NOW() - INTERVAL '6 hours'
+FROM users u WHERE u.wallet_address = '0x2300dc555ba1dda773935a2fac059e3c8f1d14a7';
+
 -- Trade orders. `filled` rows carry a close price (fill_price); `open` rows are
 -- still working (no fill_price, filled_qty = 0) and have no exchange_order_id, so
 -- the sweeper leaves them alone.
@@ -93,3 +105,45 @@ JOIN (VALUES
     ('f6a7b8c9-d0e1-2345-fabc-456789012345', 'sell', 'close', 'seed-order-8', 'open',   '0.0200', '84100', '0.00', '1682', INTERVAL '3 hours')
 ) AS v(nonce, side, action, comment, status, qty, price, fee, funds, age)
   ON c.nonce = v.nonce;
+
+-- The chart reads realized PnL from `trade_orders.pnl` on filled close orders.
+-- Pair each seeded close with its most recent preceding filled entry on the
+-- same contract and compute the round trip. The entry fee is prorated to the
+-- closed quantity because the seed closes entries only partially.
+WITH pairs AS (
+    SELECT c.id AS close_id,
+           e.id AS entry_id,
+           e.side AS entry_side,
+           e.filled_qty AS entry_qty,
+           e.fill_price AS entry_price,
+           e.fee AS entry_fee,
+           c.filled_qty AS close_qty,
+           c.fill_price AS close_price,
+           c.fee AS close_fee
+    FROM trade_orders c
+    JOIN LATERAL (
+        SELECT e.*
+        FROM trade_orders e
+        WHERE e.contract_id = c.contract_id
+          AND e.action = 'open'
+          AND e.status = 'filled'
+          AND e.created_at < c.created_at
+        ORDER BY e.created_at DESC
+        LIMIT 1
+    ) e ON TRUE
+    WHERE c.comment LIKE 'seed-order-%'
+      AND c.action = 'close'
+      AND c.status = 'filled'
+      AND c.filled_qty > 0
+      AND c.fill_price IS NOT NULL
+)
+UPDATE trade_orders t
+SET parent_order_id = p.entry_id,
+    pnl = CASE
+              WHEN p.entry_side = 'sell'
+                  THEN (p.entry_price - p.close_price) * p.close_qty
+              ELSE (p.close_price - p.entry_price) * p.close_qty
+          END
+          - (p.entry_fee * p.close_qty / NULLIF(p.entry_qty, 0) + p.close_fee)
+FROM pairs p
+WHERE t.id = p.close_id;

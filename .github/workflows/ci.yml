@@ -5,163 +5,129 @@ on:
     branches: [main, "feature/**", "FEAT/**", "feat/**", "fix/**", "chore/**"]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      build_all:
+        description: Rebuild and push all images
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  # --- Backend Checks ---
-  # The Rust matrix is an **architecture** matrix (x86_64 vs arm64), not an OS matrix.
-  backend-test:
-    name: Rust (Server, ${{ matrix.arch }})
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-latest
-          - arch: arm64
-            runner: ubuntu-24.04-arm
-    runs-on: ${{ matrix.runner }}
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@master
-        with:
-          toolchain: "1.98.1"
-          components: clippy, rustfmt
-      - name: Install protoc
-        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
-      - name: Cache Dependencies
-        uses: Swatinem/rust-cache@v2
-      - name: Check Format
-        run: make fmt
-      - name: Clippy (Linter)
-        run: make clippy
-      - name: Run Tests
-        run: make test
-      - name: Analyzer core + parity
-        run: make analyzer-check
-      - name: Analyzer no-default-features build
-        run: cargo build -p analyzer --no-default-features
-
-  # --- Frontend Checks ---
-  frontend-test:
-    name: React (Web)
+  # --- Detect which service images need rebuilding ---
+  changes:
+    name: Detect changed services
     runs-on: ubuntu-latest
+    outputs:
+      images: ${{ steps.matrix.outputs.images }}
     steps:
       - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
+      - name: Detect changed paths
+        id: filter
+        uses: dorny/paths-filter@v3
         with:
-          node-version: 20
-          cache: "npm"
-          cache-dependency-path: react/package-lock.json
-      - name: Install Dependencies
-        run: cd react && npm ci
-      - name: Lint
-        run: cd react && npm run lint
-      - name: Test
-        run: cd react && npm run test
-      - name: Type Check & Build
-        run: cd react && npm run build
+          filters: |
+            api_gateway:
+              - 'process/api_gateway/**'
+              - 'lib/share/**'
+              - 'process/proto/**'
+              - 'process/migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+            deposit_worker:
+              - 'process/deposit-worker/**'
+              - 'lib/share/**'
+              - 'process/proto/**'
+              - 'process/migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+            trade_engine:
+              - 'process/trade-engine/**'
+              - 'lib/share/**'
+              - 'process/proto/**'
+              - 'process/migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+            signal_gateway:
+              - 'process/signal_gateway/**'
+              - 'lib/share/**'
+              - 'process/proto/**'
+              - 'process/migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
+            opencode:
+              - 'process/opencode/**'
+            frontend:
+              - 'react/**'
+      - name: Build image matrix
+        id: matrix
+        env:
+          BUILD_ALL: ${{ inputs.build_all }}
+          API_GATEWAY: ${{ steps.filter.outputs.api_gateway }}
+          DEPOSIT_WORKER: ${{ steps.filter.outputs.deposit_worker }}
+          TRADE_ENGINE: ${{ steps.filter.outputs.trade_engine }}
+          SIGNAL_GATEWAY: ${{ steps.filter.outputs.signal_gateway }}
+          OPENCODE: ${{ steps.filter.outputs.opencode }}
+          FRONTEND: ${{ steps.filter.outputs.frontend }}
+        run: |
+          set -euo pipefail
+          images='[]'
+          add() { images=$(jq -c --argjson img "$1" '. + [$img]' <<<"$images"); }
+          changed() { [ "${BUILD_ALL:-false}" = "true" ] || [ "$1" = "true" ]; }
 
-  # --- Push ARM64 images to registry (main only) ---
-  push-arm:
-    name: Build & Push ARM64
-    needs: [backend-test, frontend-test, smoke-test]
-    if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
-      - run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-      - name: Lowercase registry owner
-        id: registry
-        run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> $GITHUB_OUTPUT
-      - name: Build & push api_gateway
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: process/api_gateway/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-api_gateway:latest
-      - name: Build & push deposit-worker
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: process/deposit-worker/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-worker:latest
-      - name: Build & push frontend
-        uses: docker/build-push-action@v5
-        with:
-          context: ./react
-          file: ./react/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-frontend:latest
-      - name: Build & push analyzer
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: process/analyzer/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-analyzer:latest
-      - name: Build & push trade-engine
-        uses: docker/build-push-action@v5
-        with:
-          context: .
-          file: process/trade-engine/Dockerfile
-          platforms: linux/arm64
-          push: true
-          tags: ghcr.io/${{ steps.registry.outputs.owner }}/coinbot-trade_engine:latest
+          if changed "$API_GATEWAY"; then
+            add '{"name":"api_gateway","context":".","file":"process/api_gateway/Dockerfile","image":"coinbot-api_gateway"}'
+          fi
+          if changed "$DEPOSIT_WORKER"; then
+            add '{"name":"deposit-worker","context":".","file":"process/deposit-worker/Dockerfile","image":"coinbot-worker"}'
+          fi
+          if changed "$TRADE_ENGINE"; then
+            add '{"name":"trade-engine","context":".","file":"process/trade-engine/Dockerfile","image":"coinbot-trade_engine"}'
+          fi
+          if changed "$SIGNAL_GATEWAY"; then
+            add '{"name":"signal-gateway","context":".","file":"process/signal_gateway/Dockerfile","image":"coinbot-signal-gateway"}'
+          fi
+          if changed "$OPENCODE"; then
+            add '{"name":"opencode","context":"./process/opencode","file":"./process/opencode/Dockerfile","image":"coinbot-opencode"}'
+          fi
+          if changed "$FRONTEND"; then
+            add '{"name":"frontend","context":"./react","file":"./react/Dockerfile","image":"coinbot-frontend"}'
+          fi
+
+          echo "images=$images" >> "$GITHUB_OUTPUT"
+          echo "Image matrix: $images"
+
+  # --- Tests ---
+  backend-test:
+    uses: ./.github/workflows/_backend-test.yml
+
+  frontend-test:
+    uses: ./.github/workflows/_frontend-test.yml
 
   # --- Full-stack smoke test (main only) ---
   smoke-test:
-    name: Smoke Test
+    uses: ./.github/workflows/_smoke-test.yml
     needs: [backend-test, frontend-test]
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Build production images
-        run: make prod-build
-      - name: Start services
-        run: |
-          cp .env.ci .env
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml \
-            --profile prod up -d
-      - name: Wait for api_gateway
-        run: |
-          for i in $(seq 1 30); do
-            if curl -s -o /dev/null http://localhost:8080/api/config; then
-              echo "Backend is ready"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "ERROR: Backend failed to start within 60 seconds"
-          exit 1
-      - name: Verify all services are running
-        run: |
-          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod analyzer-prod frontend-prod"
-          running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
-            --profile prod ps --status running --services | sort)
-          echo "$running"
-          missing=0
-          for svc in $expected; do
-            echo "$running" | grep -qx "$svc" || { echo "ERROR: $svc is not running"; missing=1; }
-          done
-          if [ "$missing" -ne 0 ]; then
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
-            exit 1
-          fi
-      - name: Run smoke tests
-        run: BASE_URL=http://localhost:8080 make test-api
-      - name: Collect logs on failure
-        if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
-      - name: Cleanup
-        if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+
+  # --- Build & push changed images (main only) ---
+  push-arm:
+    uses: ./.github/workflows/_images.yml
+    needs: [changes, backend-test, frontend-test, smoke-test]
+    if: github.ref == 'refs/heads/main' && needs.changes.outputs.images != '[]'
+    permissions:
+      contents: read
+      packages: write
+    with:
+      images: ${{ needs.changes.outputs.images }}

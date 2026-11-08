@@ -6,18 +6,22 @@
 
 <div align="center">
   <img src="https://img.shields.io/badge/Rust-000000?style=for-the-badge&logo=rust&logoColor=white" />
+  <img src="https://img.shields.io/badge/Actix--Web-2f2f2f?style=for-the-badge&logo=rust&logoColor=white" />
   <img src="https://img.shields.io/badge/gRPC-Tonic-244c5a?style=for-the-badge&logo=grpc&logoColor=white" />
+  <img src="https://img.shields.io/badge/SQLx-336791?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/PostgreSQL-4169E1?style=for-the-badge&logo=postgresql&logoColor=white" />
   <img src="https://img.shields.io/badge/Redis-DC382D?style=for-the-badge&logo=redis&logoColor=white" />
   <img src="https://img.shields.io/badge/React-61DAFB?style=for-the-badge&logo=react&logoColor=black" />
   <img src="https://img.shields.io/badge/TypeScript-3178C6?style=for-the-badge&logo=typescript&logoColor=white" />
+  <img src="https://img.shields.io/badge/Tailwind-06B6D4?style=for-the-badge&logo=tailwindcss&logoColor=white" />
   <img src="https://img.shields.io/badge/Docker-2496ED?style=for-the-badge&logo=docker&logoColor=white" />
   <img src="https://img.shields.io/badge/KuCoin-24b47e?style=for-the-badge&logo=kucoin&logoColor=white" />
+  <img src="https://img.shields.io/badge/Ethereum-3C3C3D?style=for-the-badge&logo=ethereum&logoColor=white" />
 </div>
 
 <br />
 
-CoinBot turns trading signals into KuCoin orders automatically. **Status: experimental. No strategy has been validated as profitable.**
+CoinBot turns trading signals into KuCoin orders automatically.
 
 ## Architecture
 
@@ -31,52 +35,56 @@ flowchart TB
     subgraph rust["Rust services"]
         GW["api_gateway"]
         DW["deposit-worker"]
-        TE["trade-engine"]
-        SA["analyzer"]
+        TE["trade-engine<br/>(gRPC server: EngineService)"]
+        SG["signal-gateway"]
     end
 
     DB[("PostgreSQL")]
     RD[("Redis")]
     ETH["Ethereum RPC"]
     KC["KuCoin"]
+    OC["opencode<br/>(trade-agent)"]
 
-    UI -->|"HTTP"| GW
-    GW --> DB
-    GW --> RD
+    UI -->|"HTTP /api"| GW
+    GW -->|"SQL"| DB
     GW -->|"gRPC"| DW
     DW -->|"verify tx"| ETH
     DW -->|"sweep"| KC
-    DW --> DB
-    SA -->|"gRPC signals"| TE
-    SA -->|"candles"| KC
-    TE --> DB
-    TE -->|"orders"| KC
+    DW -->|"upsert user + credit balance"| DB
 
-    class UI,GW,DW,TE,SA,DB,RD,ETH,KC plain;
+    SG -->|"gRPC GetActiveSymbols (pull)"| TE
+    SG -->|"gRPC Publish(Signal) (push)"| TE
+    SG -->|"HTTP trade-agent"| OC
+    SG -->|"last price (public REST)"| KC
+
+    GW -->|"sessions + nonces"| RD
+
+    TE -->|"load + verify contracts"| DB
+    TE -->|"execute + reconcile orders"| KC
+
+    class UI,GW,DW,TE,SG,OC,DB,RD,ETH,KC plain;
 ```
 
-| Service | Role | Docs |
-|---|---|---|
-| `api_gateway` | HTTP API: auth, contracts, deposits | [README](process/api_gateway/README.md) |
-| `deposit-worker` | Verifies and sweeps deposits | [README](process/deposit-worker/README.md) |
-| `trade-engine` | Turns signals into KuCoin cross-margin orders and manages TP/SL exits | [README](process/trade-engine/README.md) |
-| `analyzer` | RSI momentum signal generator (unvalidated) | [README](process/analyzer/README.md) |
-| `frontend` | React SPA | [README](react/README.md) |
+| Process          | Role                                                                                                                                                                                                                                                                                                                                | Docs                                       |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
+| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                                   | [README](process/api_gateway/README.md)    |
+| `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                            | [README](process/deposit-worker/README.md) |
+| `trade-engine`   | Turns `signal-gateway` signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `signal-gateway` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
+| `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC.                                                  | [README](process/signal_gateway/README.md) |
+| `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                           | [README](react/README.md)                  |
 
-**Signal path:** `analyzer` polls active symbols from `trade-engine` and pushes each signal once over gRPC. The engine deduplicates by `signal_id`. Set `GRPC_ADDR` on the engine and `GRPC_TRADE_ENGINE_ENDPOINT` on the analyzer.
+## CI
 
-## Layout
+On every push, the `changes` job detects which services changed. Tests always run; production images are built and pushed **only for changed services** on `main`:
 
-- `process/`: services, SQL `migrations/`, and gRPC `proto/`
-- `lib/share/`: shared Rust crate
-- `react/`: frontend
-- `docs/`, `scripts/`: docs, seed data, smoke tests
+| Changed paths                                                                                                  | Image rebuilt            |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `process/api_gateway/**`                                                                                       | `coinbot-api_gateway`    |
+| `process/deposit-worker/**`                                                                                    | `coinbot-worker`         |
+| `process/trade-engine/**`                                                                                      | `coinbot-trade_engine`   |
+| `process/signal_gateway/**`                                                                                    | `coinbot-signal-gateway` |
+| `process/opencode/**`                                                                                          | `coinbot-opencode`       |
+| `react/**`                                                                                                     | `coinbot-frontend`       |
+| `lib/share/**`, `process/proto/**`, `process/migrations/**`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | all Rust images          |
 
-## Quick start
-
-```bash
-make dev     # run everything
-make trade   # trade-engine + analyzer only
-make test    # Rust tests
-make ci      # full pipeline
-```
+Images are pushed to GHCR as `:latest` and `:<commit-sha>`, with per-image `type=gha` build-layer caching. To force a full rebuild, run **Full-Stack CI → Run workflow** with `build_all` enabled.

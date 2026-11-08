@@ -1,6 +1,6 @@
 //! `EngineService` gRPC server (live spec §6).
 //!
-//! The engine is the server; the analyzer is the client. The analyzer polls
+//! The engine is the server; signal-gateway is the client. signal-gateway polls
 //! [`EngineService::get_active_symbols`] for activation and pushes each signal via
 //! [`EngineService::publish`]. Dedup is in-process only for now — a durable table is a
 //! follow-up — but it must exist so a retried `publish` cannot double-execute a trade.

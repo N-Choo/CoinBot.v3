@@ -7,9 +7,10 @@ use rust_decimal::Decimal;
 
 /// Which protective level a position hit.
 #[derive(Debug, PartialEq, Eq)]
-pub(super) enum ExitReason {
+pub(crate) enum ExitReason {
     TakeProfit,
     StopLoss,
+    Reversal,
 }
 
 impl ExitReason {
@@ -18,6 +19,7 @@ impl ExitReason {
         match self {
             ExitReason::TakeProfit => "TP",
             ExitReason::StopLoss => "SL",
+            ExitReason::Reversal => "REVERSAL",
         }
     }
 }
@@ -31,6 +33,9 @@ pub(super) fn evaluate_exit(
     tp: Decimal,
     sl: Decimal,
 ) -> Option<ExitReason> {
+    if tp <= Decimal::ZERO || sl <= Decimal::ZERO {
+        return None;
+    }
     match side {
         "buy" => {
             if last >= tp {
@@ -98,5 +103,16 @@ mod tests {
     #[test]
     fn unknown_side_never_exits() {
         assert_eq!(evaluate_exit("hold", dec("999"), dec("1"), dec("2")), None);
+    }
+
+    #[test]
+    fn zero_levels_disable_exits() {
+        assert_eq!(evaluate_exit("buy", dec("100"), dec("0"), dec("0")), None);
+        assert_eq!(evaluate_exit("sell", dec("100"), dec("0"), dec("0")), None);
+    }
+
+    #[test]
+    fn reversal_has_a_stable_label() {
+        assert_eq!(ExitReason::Reversal.label(), "REVERSAL");
     }
 }

@@ -1,0 +1,51 @@
+name: Smoke Test
+
+on:
+  workflow_call:
+
+jobs:
+  smoke-test:
+    name: Smoke Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production images
+        run: make prod-build
+      - name: Start services
+        run: |
+          cp .env.ci .env
+          docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+            --profile prod up -d
+      - name: Wait for api_gateway
+        run: |
+          for i in $(seq 1 30); do
+            if curl -s -o /dev/null http://localhost:8080/api/config; then
+              echo "Backend is ready"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "ERROR: Backend failed to start within 60 seconds"
+          exit 1
+      - name: Verify all services are running
+        run: |
+          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod frontend-prod"
+          running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+            --profile prod ps --status running --services | sort)
+          echo "$running"
+          missing=0
+          for svc in $expected; do
+            echo "$running" | grep -qx "$svc" || { echo "ERROR: $svc is not running"; missing=1; }
+          done
+          if [ "$missing" -ne 0 ]; then
+            docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
+            exit 1
+          fi
+      - name: Run smoke tests
+        run: BASE_URL=http://localhost:8080 make test-api
+      - name: Collect logs on failure
+        if: failure()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down

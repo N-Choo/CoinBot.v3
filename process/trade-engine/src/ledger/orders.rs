@@ -28,8 +28,8 @@ pub async fn create_pending_open(
     comment: &str,
     quantity: Decimal,
     fund: Decimal,
-    tp_price: Decimal,
-    sl_price: Decimal,
+    tp_price: Option<Decimal>,
+    sl_price: Option<Decimal>,
 ) -> Result<TradeOrder> {
     let mut tx = pool.begin().await?;
     let order = TradeOrders::create(
@@ -229,8 +229,8 @@ mod tests {
             &comment("close"),
             Decimal::from(1),
             Decimal::ZERO,
-            Decimal::from(120),
-            Decimal::from(90),
+            Some(Decimal::from(120)),
+            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -343,8 +343,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Decimal::from(110),
-            Decimal::from(90),
+            Some(Decimal::from(110)),
+            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -402,8 +402,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(2),
             Decimal::from(100),
-            Decimal::from(110),
-            Decimal::from(90),
+            Some(Decimal::from(110)),
+            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
@@ -433,8 +433,8 @@ mod tests {
             &marker,
             Decimal::from(1),
             Decimal::from(100),
-            Decimal::from(110),
-            Decimal::from(90),
+            Some(Decimal::from(110)),
+            Some(Decimal::from(90)),
         )
         .await;
         assert!(err.is_err(), "over-reserving must error");
@@ -466,8 +466,8 @@ mod tests {
             &comment("entry"),
             Decimal::from(1),
             Decimal::from(100),
-            Decimal::from(110),
-            Decimal::from(90),
+            Some(Decimal::from(110)),
+            Some(Decimal::from(90)),
         )
         .await
         .unwrap();
