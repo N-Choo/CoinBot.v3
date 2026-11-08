@@ -71,6 +71,18 @@ SELECT
     NOW() - INTERVAL '1 day', NOW() - INTERVAL '1 day'
 FROM users u WHERE u.wallet_address = '0x2300dc555ba1dda773935a2fac059e3c8f1d14a7';
 
+-- XRP is analysis-only in the demo seed: active ticker, but no available fund so
+-- the engine does not execute an order when the gateway publishes a signal.
+INSERT INTO contracts (user_uid, signature, message, nonce, ticker, init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status, created_at, updated_at)
+SELECT
+    u.uid,
+    '0x7234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890abcdef7b',
+    '{"nonce":"a7b8c9d0-e1f2-3456-abcd-567890123456","settings":{"Ticker":"XRP/USDT","Amount":"1000","StopLoss":"2.0","TakeProfit":"5.0"}}',
+    'a7b8c9d0-e1f2-3456-abcd-567890123456',
+    'XRP/USDT', '1000', '0', '0', 2.0, 5.0, 'active',
+    NOW() - INTERVAL '6 hours', NOW() - INTERVAL '6 hours'
+FROM users u WHERE u.wallet_address = '0x2300dc555ba1dda773935a2fac059e3c8f1d14a7';
+
 -- Trade orders. `filled` rows carry a close price (fill_price); `open` rows are
 -- still working (no fill_price, filled_qty = 0) and have no exchange_order_id, so
 -- the sweeper leaves them alone.
