@@ -47,10 +47,10 @@ function AnimatedStat({ label, value, format }: Stat) {
 
   return (
     <div className="flex flex-col items-center gap-1 shrink-0" ref={ref}>
-      <span className="text-[24px] sm:text-[18px] lg:text-[24px] font-extrabold font-mono text-text-main" aria-live="polite">
+      <span className="text-[18px] sm:text-[18px] lg:text-[24px] font-extrabold font-mono text-text-main" aria-live="polite">
         {format(display)}
       </span>
-      <span className="text-[11px] sm:text-[9px] lg:text-[11px] text-text-muted uppercase tracking-[0.5px] font-medium">{label}</span>
+      <span className="text-[10px] sm:text-[9px] lg:text-[11px] text-text-muted uppercase tracking-[0.5px] font-medium">{label}</span>
     </div>
   )
 }
@@ -65,7 +65,7 @@ export default function StatsBar() {
     const load = () => {
       getStats()
         .then(d => { if (active) setStats(d) })
-        .catch(() => {})
+        .catch(() => { })
     }
     load()
     const id = setInterval(load, 15_000)
@@ -83,7 +83,7 @@ export default function StatsBar() {
   ]
 
   return (
-    <div className="flex justify-center gap-8 sm:gap-4 lg:gap-12 px-6 py-8 border-y border-border-light bg-bg-panel overflow-x-auto">
+    <div className="flex justify-center gap-2 sm:gap-2 lg:gap-12 px-4 sm:px-6 py-5 sm:py-8 border-y border-border-light bg-bg-panel overflow-x-auto">
       {items.map(s => <AnimatedStat key={s.label} {...s} />)}
     </div>
   )
