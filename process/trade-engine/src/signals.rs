@@ -52,6 +52,15 @@ pub async fn signal_handler(
             continue;
         }
 
+        let has_unsettled = share::db::loan::MarginLoan::unrepaid_for_contract(&db, c.id)
+            .await
+            .map(|loans| loans.iter().any(|l| l.position_closed_at.is_some()))
+            .unwrap_or(false);
+        if has_unsettled {
+            log::warn!("contract {} has unsettled borrow interest; skipping", c.id);
+            continue;
+        }
+
         // Only trade when the available fund covers the per-order budget
         // (half of the initial fund).
         if c.available_fund >= trader::order_budget(c.init_fund) {

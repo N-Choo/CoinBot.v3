@@ -49,6 +49,16 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('contracts:changed', handler)
   }, [])
 
+  // Poll while a cash-out is settling so `closing` becomes `cancelled`.
+  const hasClosing = contracts.some(c => c.status === 'closing')
+  useEffect(() => {
+    if (!hasClosing) return
+    const timer = setInterval(() => {
+      getMyContracts().then(setContracts).catch(() => {})
+    }, 5000)
+    return () => clearInterval(timer)
+  }, [hasClosing])
+
   // Stable key: the set of contract ids. Status-only changes (e.g. closing a
   // contract) don't change it, so orders aren't refetched and the sweep isn't
   // restarted on those updates.

@@ -76,7 +76,7 @@ pub(crate) async fn exit_position(
         return Err(reason);
     };
 
-    ledger::record_placed(pool, exit.id, &data.order_id)
+    ledger::record_placed(pool, exit.id, &data.order_id, None)
         .await
         .map_err(|e| format!("mark_placed failed: {e}"))?;
 

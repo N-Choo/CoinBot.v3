@@ -283,7 +283,7 @@ mod tests {
         .unwrap();
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
             .await
             .unwrap();
         TradeOrders::mark_filled(
@@ -316,7 +316,7 @@ mod tests {
         .expect("fresh exit reserved");
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, close.id, "exch-exit")
+        TradeOrders::mark_placed(&mut tx, close.id, "exch-exit", None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -403,7 +403,7 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -445,7 +445,7 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
             .await
             .unwrap();
         tx.commit().await.unwrap();

@@ -11,6 +11,7 @@ mod decision;
 mod exit;
 mod price;
 
+use std::collections::HashMap;
 use std::time::Duration;
 
 use kucoin::client::rest::KuCoinClient;
@@ -46,6 +47,18 @@ impl From<String> for SweepError {
     fn from(e: String) -> Self {
         SweepError::Other(e)
     }
+}
+
+/// Last prices for `symbols`, with the internal error collapsed to a string so
+/// the settlement loop can reuse the price feed.
+pub(crate) async fn last_prices(
+    kcc: &KuCoinClient,
+    symbols: &[String],
+) -> Result<HashMap<String, Decimal>, String> {
+    fetch_last_prices(kcc, symbols).await.map_err(|e| match e {
+        SweepError::RateLimited => "rate limited by KuCoin".to_string(),
+        SweepError::Other(msg) => msg,
+    })
 }
 
 /// Poll open positions forever and exit any whose TP or SL has been reached.

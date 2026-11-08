@@ -33,7 +33,7 @@ pub(super) async fn reconcile(db: &Pool<Postgres>, kcc: &KuCoinClient) {
         let symbol = margin_symbol(&o.ticker);
         match fetch_by_client_oid(kcc, &o.comment, &symbol).await {
             Ok(Some(data)) => {
-                if let Err(e) = ledger::record_placed(db, o.id, &data.id).await {
+                if let Err(e) = ledger::record_placed(db, o.id, &data.id, None).await {
                     log::error!("[RECONCILE] mark_placed failed for pending {}: {e}", o.id);
                 }
             }

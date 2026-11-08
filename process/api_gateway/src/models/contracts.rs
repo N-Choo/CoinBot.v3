@@ -51,6 +51,10 @@ pub struct ContractView {
     pub total_traded_fund: rust_decimal::Decimal,
     pub sl_pct: f32,
     pub tp_pct: f32,
+    pub borrow_interest: rust_decimal::Decimal,
+    pub platform_fee: Option<rust_decimal::Decimal>,
+    pub net_payout: Option<rust_decimal::Decimal>,
+    pub settled_at: Option<chrono::DateTime<chrono::Utc>>,
     pub created_at: chrono::DateTime<chrono::Utc>,
     pub updated_at: chrono::DateTime<chrono::Utc>,
 }
@@ -66,6 +70,10 @@ impl From<&share::db::contracts::Contract> for ContractView {
             total_traded_fund: c.total_traded_fund,
             sl_pct: c.sl_pct,
             tp_pct: c.tp_pct,
+            borrow_interest: c.borrow_interest,
+            platform_fee: c.settled_at.map(|_| c.platform_fee),
+            net_payout: c.net_payout,
+            settled_at: c.settled_at,
             created_at: c.created_at,
             updated_at: c.updated_at,
         }
