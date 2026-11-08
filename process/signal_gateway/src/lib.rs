@@ -7,6 +7,7 @@ pub mod mapper;
 pub mod prediction;
 pub mod price;
 pub mod publisher;
+pub mod runner;
 pub mod scheduler;
 pub mod state;
 pub mod symbols;
