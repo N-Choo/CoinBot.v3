@@ -1,6 +1,6 @@
 use serde::Deserialize;
 
-/// A trade signal emitted by the analyzer and consumed by the trade engine.
+/// A trade signal emitted by signal-gateway and consumed by the trade engine.
 #[derive(Debug, Clone, Deserialize)]
 pub struct TradeSignal {
     /// Trading pair (e.g. `BTC/USDT`).

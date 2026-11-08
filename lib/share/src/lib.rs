@@ -13,8 +13,8 @@
 //! - [`models`] — domain models (trade signals).
 //! - [`rpc`] — Ethereum JSON-RPC helpers.
 //!
-//! Generated protobuf/gRPC types for the `wallet` and `analyzer` services are
-//! re-exported at the crate root.
+//! Generated protobuf/gRPC types for the `wallet` and `EngineService`
+//! (`analyzer.proto`) are re-exported at the crate root.
 pub mod auth;
 pub mod cache;
 pub mod config;

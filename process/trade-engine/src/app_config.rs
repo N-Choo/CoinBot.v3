@@ -7,7 +7,7 @@ pub struct AppConfig {
     pub kc_key: String,
     pub kc_secret: String,
     pub kc_passphrase: String,
-    /// Bind address for the engine's `EngineService` gRPC server (the analyzer is the client).
+    /// Bind address for the engine's `EngineService` gRPC server (signal-gateway is the client).
     pub grpc_addr: String,
 }
 

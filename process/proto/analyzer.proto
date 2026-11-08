@@ -1,7 +1,7 @@
 syntax = "proto3";
 package analyzer;
 
-// One trade signal pushed by the analyzer.
+// One trade signal pushed by signal-gateway.
 message Signal {
   string ticker = 1;          // KuCoin symbol, e.g. "XRP-USDT"
   string action = 2;          // "BUY" (long) or "SELL" (short)
@@ -25,7 +25,7 @@ message Ack {
 }
 
 // Trade-engine : Server
-// analyzer : Client
+// signal-gateway : Client
 service EngineService {
   rpc GetActiveSymbols(Empty) returns (Symbols);
   rpc Publish(Signal) returns (Ack);

@@ -1,8 +1,8 @@
 # Trade Engine
 
-Rust process that turns analyzer signals into KuCoin cross-margin orders and keeps the ledger in sync.
+Rust process that turns signal-gateway signals into KuCoin cross-margin orders and keeps the ledger in sync.
 
-- The analyzer computes signals and places no orders. The engine re-verifies every contract before acting.
+- The signal-gateway computes signals and places no orders. The engine re-verifies every contract before acting.
 - **Fail-closed:** a check that cannot pass causes a skip, never a guess.
 
 ## Components
@@ -11,7 +11,7 @@ Three background tasks, spawned in `src/main.rs`:
 
 | Task            | Entry                 | Purpose                                                                  |
 | --------------- | --------------------- | ------------------------------------------------------------------------ |
-| gRPC server     | `grpc_handler::serve` | serves `EngineService`; the analyzer pulls symbols and publishes signals |
+| gRPC server     | `grpc_handler::serve` | serves `EngineService`; signal-gateway pulls symbols and publishes signals |
 | Reconciler      | `reconciler::run`     | every 30s, resolves pending orders and settles open orders and funds     |
 | Position exit   | `position_exit::run`  | every 12s, exits held positions at TP or SL (backs off on 429)           |
 
@@ -51,13 +51,13 @@ flowchart LR
         TR["trader"]
     end
     subgraph EXT["external"]
-        AN["analyzer (Rust gRPC client)"]
+        SG["signal-gateway (Rust gRPC client)"]
         PG[("PostgreSQL")]
     end
 
-    AN -->|"GetActiveSymbols"| GR
+    SG -->|"GetActiveSymbols"| GR
     GR -->|"read active tickers"| PG
-    AN -->|"Publish(Signal)"| GR
+    SG -->|"Publish(Signal)"| GR
     GR -->|"dedup + signal_handler"| SH
     SH -->|"read contracts · wallet"| PG
     SH -->|"execute"| TR
@@ -98,12 +98,12 @@ Exact calls behind the ledger edges:
 
 ## gRPC interface
 
-`EngineService` is defined in `process/proto/analyzer.proto`; the analyzer is the client.
+`EngineService` is defined in `process/proto/analyzer.proto` (the legacy filename); the signal-gateway is the client.
 
-| RPC                | Direction         | Payload                                                                                                              |
-| ------------------ | ----------------- | -------------------------------------------------------------------------------------------------------------------- |
-| `GetActiveSymbols` | analyzer → engine | returns the distinct tickers of active contracts                                                                     |
-| `Publish`          | analyzer → engine | `Signal { ticker, action, entry_price, signal_id, seq, expires_at_ms, trigger_time_ms, sl_price, tp_price, reason }` |
+| RPC                | Direction                | Payload                                                                                                              |
+| ------------------ | ------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| `GetActiveSymbols` | signal-gateway → engine | returns the distinct tickers of active contracts                                                                     |
+| `Publish`          | signal-gateway → engine | `Signal { ticker, action, entry_price, signal_id, seq, expires_at_ms, trigger_time_ms, sl_price, tp_price, reason }` |
 
 - `action` is uppercased; anything other than `BUY` or `SELL` is logged and ignored.
 - `Publish` deduplicates on `signal_id` for the process lifetime and returns an `Ack`.
@@ -112,27 +112,25 @@ Exact calls behind the ledger edges:
 
 ## Signal → execution
 
-The analyzer pulls active symbols, then publishes target-side signals over gRPC:
+The signal-gateway pulls active symbols, calls the trade-agent, validates the prediction, and publishes target-side signals over gRPC:
 
 ```mermaid
 sequenceDiagram
     autonumber
-    participant A as analyzer (Rust)
+    participant SG as signal-gateway
     participant TE as trade-engine
     participant DB as PostgreSQL
     participant K as KuCoin
-    A->>TE: GetActiveSymbols
+    SG->>TE: GetActiveSymbols
     TE->>DB: active contracts → distinct tickers
     DB-->>TE: tickers
-    TE-->>A: tickers
-    A->>K: fetch klines per ticker
-    K-->>A: klines
-    A->>A: RSI / ATR → target-side signals
-    A->>TE: Publish(Signal)
+    TE-->>SG: tickers
+    SG->>SG: trade-agent + RSI validation
+    SG->>TE: Publish(Signal)
     Note over TE: dedup on signal_id
     TE->>DB: verify contract + wallet
     TE->>TE: trader::execute
-    TE-->>A: Ack
+    TE-->>SG: Ack
 ```
 
 Each signal is checked against every active contract on its ticker. Failing contracts are skipped:
