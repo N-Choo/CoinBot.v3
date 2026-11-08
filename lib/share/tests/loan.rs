@@ -69,10 +69,15 @@ async fn mark_repaid_charges_the_contract_once() {
     .unwrap();
     tx.commit().await.unwrap();
 
-    let repaid =
-        MarginLoan::mark_repaid(&pool, loan.id, Decimal::from_str("0.25").unwrap(), None, Some("repay-1"))
-            .await
-            .unwrap();
+    let repaid = MarginLoan::mark_repaid(
+        &pool,
+        loan.id,
+        Decimal::from_str("0.25").unwrap(),
+        None,
+        Some("repay-1"),
+    )
+    .await
+    .unwrap();
     assert!(repaid.is_some());
 
     let contract = ContractFilter::new()
@@ -84,10 +89,15 @@ async fn mark_repaid_charges_the_contract_once() {
     assert_eq!(contract.borrow_interest, Decimal::from_str("0.25").unwrap());
 
     // A second call is a no-op and cannot charge twice.
-    let again =
-        MarginLoan::mark_repaid(&pool, loan.id, Decimal::from_str("0.25").unwrap(), None, Some("repay-1"))
-            .await
-            .unwrap();
+    let again = MarginLoan::mark_repaid(
+        &pool,
+        loan.id,
+        Decimal::from_str("0.25").unwrap(),
+        None,
+        Some("repay-1"),
+    )
+    .await
+    .unwrap();
     assert!(again.is_none());
     let contract = ContractFilter::new()
         .with_user(user.uid)
