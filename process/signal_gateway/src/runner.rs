@@ -115,6 +115,7 @@ impl Gateway {
         symbol: &str,
         candle_open: DateTime<Utc>,
     ) -> Result<(), ProcessError> {
+        let started = std::time::Instant::now();
         let prompt = agent_client::build_prompt(symbol, candle_open);
         let text = match self.call_agent_with_retry(symbol, candle_open).await {
             Ok(text) => text,
@@ -154,7 +155,12 @@ impl Gateway {
         };
 
         let Some(valid) = valid else {
-            if verdict != "NO-TRADE" {
+            if verdict == "NO-TRADE" {
+                log::info!(
+                    "{symbol}: NO-TRADE elapsed_ms={}",
+                    started.elapsed().as_millis()
+                );
+            } else {
                 let preview = prediction::sanitize_text(&text, 500);
                 log::warn!("{symbol}: dropping prediction ({validation}): {preview}");
             }
@@ -175,6 +181,7 @@ impl Gateway {
             let last = match self.price.last_price(symbol).await {
                 Ok(last) => last,
                 Err(e) => {
+                    log::warn!("{symbol}: price check failed: {e}");
                     self.write_audit(
                         symbol,
                         candle_open,
@@ -193,6 +200,7 @@ impl Gateway {
                     "rejected: entry {} is more than {}% from last {last}",
                     valid.entry, self.config.max_entry_drift_pct
                 );
+                log::warn!("{symbol}: {note}");
                 self.write_audit(
                     symbol,
                     candle_open,
@@ -264,6 +272,15 @@ impl Gateway {
                 candle_open_ms: candle_open.timestamp_millis(),
                 signal_id: signal.signal_id.clone(),
             },
+        );
+
+        log::info!(
+            "{symbol}: {verdict} conf={:.2} rsi={:.1} seq={} signal={} {ack_note} elapsed_ms={}",
+            valid.confidence,
+            valid.rsi.value,
+            signal.seq,
+            signal.signal_id,
+            started.elapsed().as_millis()
         );
 
         self.write_audit(

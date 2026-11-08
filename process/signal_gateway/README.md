@@ -62,6 +62,20 @@ See `.env.example`. The important settings are `OPENCODE_BASE_URL`,
 `SIGNAL_GATEWAY_MAX_ENTRY_DRIFT_PCT`, `SIGNAL_GATEWAY_SIGNAL_TTL_SECS`, and
 `SIGNAL_GATEWAY_RUN_ON_START`.
 
+## Logging
+
+The default filter is:
+
+```text
+info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn
+```
+
+That keeps dependency chatter out of production while retaining one INFO line
+per processed symbol (verdict, confidence, RSI, `seq`, `signal_id`, Ack, elapsed
+time) and the per-cycle summary. Use `RUST_LOG=debug` for troubleshooting, or
+`RUST_LOG=debug,sqlx=warn` to keep SQL queries quiet. ANSI colors are disabled
+automatically when stdout is not a TTY (containers and log collectors).
+
 ## Behavior notes
 
 - Signals expire at `emitted_at + SIGNAL_GATEWAY_SIGNAL_TTL_SECS` (default 4h),

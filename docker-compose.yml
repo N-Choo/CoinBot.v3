@@ -45,7 +45,7 @@ services:
     env_file:
       - .env
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
     depends_on:
       - postgres
@@ -61,6 +61,7 @@ services:
       - .env
     environment:
       - GRPC_ADDR=0.0.0.0:50051
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
     depends_on:
       - postgres
     networks:
@@ -86,7 +87,7 @@ services:
       - .:/app
       - /app/target
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
       - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
@@ -106,7 +107,7 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
     depends_on:
       - postgres
@@ -167,7 +168,7 @@ services:
     env_file:
       - .env
     environment:
-      - RUST_LOG=debug
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
     depends_on:
       - postgres
@@ -183,6 +184,8 @@ services:
       dockerfile: process/trade-engine/Dockerfile
     env_file:
       - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
     depends_on:
       - redis
     networks:
@@ -206,7 +209,7 @@ services:
     env_file:
       - .env
     environment:
-      - RUST_LOG=info
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - OPENCODE_BASE_URL=http://opencode:4096
       - OPENCODE_PASSWORD=${OPENCODE_PASSWORD:-}
       - OPENCODE_AGENT=trade-agent
