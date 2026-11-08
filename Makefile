@@ -156,6 +156,9 @@ trade:
 		exit $$st); \
 		docker compose stop postgres
 
+signal-gateway:
+	cargo run -p signal-gateway
+
 proto:
 	cargo build -p share --timings
 
