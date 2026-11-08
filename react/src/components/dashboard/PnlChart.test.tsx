@@ -90,7 +90,6 @@ describe('PnlChart', () => {
 
     render(<ContractsProvider><PnlChart /></ContractsProvider>)
 
-    expect(await screen.findByText('PnL Performance')).toBeInTheDocument()
     expect(await screen.findByRole('img', { name: 'Cumulative realized PnL over time' })).toBeInTheDocument()
     expect(screen.getAllByText('+$25.50').length).toBeGreaterThan(0)
     expect(screen.getAllByText('+$20.00').length).toBeGreaterThan(0)

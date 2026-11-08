@@ -206,12 +206,7 @@ export default function PnlChart() {
     <div className="p-3 sm:p-5">
       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
         <div>
-          <div className="flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-text-muted">
-            PnL Performance
-            <span className="h-1 w-1 rounded-full bg-accent" aria-hidden="true" />
-            <span>{range}</span>
-          </div>
-          <div className={`mt-2 font-mono text-[30px] sm:text-[38px] font-bold leading-none tracking-tight ${up ? 'text-up-text' : 'text-down-text'}`}>
+          <div className={`font-mono text-[30px] sm:text-[38px] font-bold leading-none tracking-tight ${up ? 'text-up-text' : 'text-down-text'}`}>
             {money(equity)}
           </div>
           <div className="mt-2 font-mono text-[10px] sm:text-[11px] text-text-muted">
