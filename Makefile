@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine signal-gateway
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
+.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade signal-gateway analyzer-replay analyzer-sweep status seed seed-reset analyzer-check analyzer-test
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -16,6 +16,7 @@ help:
 	@echo ""
 	@echo "Trading"
 	@echo "  make trade        Run trade-engine + Rust analyzer live (needs DB + creds)"
+	@echo "  make signal-gateway  Run the signal-gateway service (loads process/signal_gateway/.env)"
 	@echo "  make analyzer-replay  Replay signals into a self-contained HTML report (live KuCoin fetch by default; fees excluded)"
 	@echo "                        make analyzer-replay ARGS='--symbol BTC-USDT --timeframe 1day --limit 500'"
 	@echo "  make analyzer-sweep   Screen analyzer hyperparameter candidates and write sweep artifacts"
@@ -157,7 +158,7 @@ trade:
 		docker compose stop postgres
 
 signal-gateway:
-	cargo run -p signal-gateway
+	cd process/signal_gateway && cargo run -p signal-gateway
 
 proto:
 	cargo build -p share --timings

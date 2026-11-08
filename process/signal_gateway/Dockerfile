@@ -10,8 +10,13 @@ FROM chef AS builder
 COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --recipe-path recipe.json --release
 COPY . .
-RUN cargo build -p signal-gateway --release
+RUN cargo build -p signal-gateway --release && mkdir -p /app/state
 
-FROM gcr.io/distroless/cc-debian12
-COPY --from=builder /app/target/release/signal-gateway /
+FROM gcr.io/distroless/cc-debian12:nonroot
+WORKDIR /app
+COPY --from=builder --chown=nonroot:nonroot /app/target/release/signal-gateway /signal-gateway
+COPY --from=builder --chown=nonroot:nonroot /app/state /app/state
+ENV SIGNAL_GATEWAY_STATE_PATH=/app/state/signal_gateway.json
+ENV SIGNAL_GATEWAY_AUDIT_PATH=/app/state/audit.jsonl
+USER nonroot:nonroot
 CMD ["/signal-gateway"]

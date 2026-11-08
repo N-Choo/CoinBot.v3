@@ -9,25 +9,58 @@ Standalone Rust service that turns `trade-agent` predictions into
 - Calls the `trade-agent` opencode role once per symbol, sequentially, with a
   rotating round-robin start.
 - Validates the strict JSON prediction, checks entry against the KuCoin last
-  price, then publishes `EngineService.Publish`.
-- Persists `seq`, the round-robin cursor, and processed candles in a local JSON
-  file. Writes an audit JSONL per call.
+  price (when price check is enabled; default strict), then publishes
+  `EngineService.Publish`.
+- Persists `seq`, `last_published`, the round-robin cursor, and processed
+  candles in a local JSON file. Writes an audit JSONL per call.
 
 ## Run
 
 ```bash
-cp process/signal_gateway/.env.example process/signal_gateway/.env
+cd process/signal_gateway
+cp .env.example .env
 cargo run -p signal-gateway
 ```
 
+`cargo run -p signal-gateway` from the repo root does not load the crate-local
+`.env`; export the variables or use the `cd` form above. `make signal-gateway`
+also uses the `cd` form.
+
 Requires `opencode serve` (with the `trade-agent` role) and `trade-engine`
 reachable at the configured endpoints.
+
+## Docker
+
+Build from the repository root (the workspace context is required):
+
+```bash
+docker build -f process/signal_gateway/Dockerfile -t signal-gateway .
+```
+
+The image does not contain a `.env` file. Inject configuration at runtime and
+mount a volume for state and audit:
+
+```bash
+docker run --rm \
+  --env-file process/signal_gateway/.env \
+  -e OPENCODE_BASE_URL=http://host.docker.internal:4096 \
+  -e GRPC_TRADE_ENGINE_ENDPOINT=http://host.docker.internal:50051 \
+  -v signal-gateway-state:/app/state \
+  signal-gateway
+```
+
+Replace the example endpoints with addresses reachable from the container.
+The default state/audit paths are `/app/state/signal_gateway.json` and
+`/app/state/audit.jsonl`. The service exposes no ports and runs as the
+distroless `nonroot` user.
 
 ## Environment
 
 See `.env.example`. The important settings are `OPENCODE_BASE_URL`,
 `OPENCODE_AGENT`, `OPENCODE_MODEL` (`provider/model`), `GRPC_TRADE_ENGINE_ENDPOINT`,
-and `SIGNAL_GATEWAY_MIN_CONFIDENCE`.
+`SIGNAL_GATEWAY_MIN_CONFIDENCE`, `SIGNAL_GATEWAY_PRICE_CHECK`,
+`SIGNAL_GATEWAY_MAX_ENTRY_DRIFT_PCT`, `SIGNAL_GATEWAY_SIGNAL_TTL_SECS`, and
+`SIGNAL_GATEWAY_RUN_ON_START`.
 
 ## Behavior notes
 
@@ -46,7 +79,8 @@ and `SIGNAL_GATEWAY_MIN_CONFIDENCE`.
 ## State and audit
 
 Default paths are `./state/signal_gateway.json` and `./state/audit.jsonl`.
-Corrupt state refuses to start unless `SIGNAL_GATEWAY_RESET_STATE=true`.
+The audit file grows without rotation. Corrupt state refuses to start unless
+`SIGNAL_GATEWAY_RESET_STATE=true`.
 
 ## Test
 

@@ -11,3 +11,4 @@ __pycache__/
 .worktrees/
 process/analyzer/out/
 **/.env
+state/
