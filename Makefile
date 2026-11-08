@@ -1,6 +1,6 @@
 PACKAGES = api-gateway share deposit trade-engine signal-gateway
 
-.PHONY: help clean ci clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build dev proto prod-build prod logs logs-api-gateway restart test-api trade signal-gateway status seed seed-reset
+.PHONY: help clean ci ci-check clippy test fmt fmt-fix frontend-install frontend-lint frontend-lint-fix frontend-test frontend-build frontend-ci dev proto prod-build prod logs logs-api-gateway restart test-api trade signal-gateway status seed seed-reset
 
 help:
 	@echo "CoinBot.v3 Makefile"
@@ -38,18 +38,24 @@ help:
 	@echo "  make frontend-build     Build frontend for production"
 	@echo ""
 	@echo "CI"
-	@echo "  make ci           Full pipeline (fmt + clippy + test + lint + build)"
+	@echo "  make ci           Local auto-fix pipeline (fmt-fix + lint-fix + tests)"
+	@echo "  make ci-check     CI-equivalent checks (fmt + clippy + test + frontend lint/test/build)"
+	@echo "                    Does not include the main-only prod/smoke job"
 	@echo ""
 	@echo "Cleanup"
 	@echo "  make clean        Remove prod containers, images, and volumes"
 	@echo "  make clean-all    Remove ALL containers, images, and volumes"
 	@echo ""
 	@echo "Seeding"
-	@echo "  make seed         Insert demo data into local DB (4 users, 6 contracts, 8 orders)"
+	@echo "  make seed         Insert demo data into local DB (4 users, 7 contracts, 8 orders)"
 	@echo "  make seed-reset   Wipe and re-seed demo data"
 	@echo "  make db           Open psql shell to the local DB"
 
 ci: fmt-fix clippy test frontend-lint-fix frontend-test frontend-build
+
+# Mirrors the PR checks in .github/workflows/ci.yml (backend + frontend jobs).
+# It does not run the main-only prod image build / compose smoke test.
+ci-check: fmt clippy test frontend-ci
 
 fmt:
 	cargo fmt $(addprefix -p ,$(PACKAGES)) -- --check
@@ -82,6 +88,12 @@ frontend-test: frontend-install
 	cd react && npm run test
 
 frontend-build: frontend-install
+	cd react && npm run build
+
+# One install, then the same lint/test/build sequence as the CI frontend job.
+frontend-ci: frontend-install
+	cd react && npm run lint
+	cd react && npm run test
 	cd react && npm run build
 
 clean:
