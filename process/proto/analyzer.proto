@@ -3,7 +3,7 @@ package analyzer;
 
 // One trade signal pushed by signal-gateway.
 message Signal {
-  string ticker = 1;          // KuCoin symbol, e.g. "XRP-USDT"
+  string ticker = 1;          // contract ticker, e.g. "XRP/USDT" (the engine filters contracts by this)
   string action = 2;          // "BUY" (long) or "SELL" (short)
   double entry_price = 3;     // reference entry price (core signal)
   uint32 schema_version = 4;  // payload schema version

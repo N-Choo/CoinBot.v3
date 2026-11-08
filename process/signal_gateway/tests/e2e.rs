@@ -205,7 +205,7 @@ async fn end_to_end_cycle_publishes_valid_predictions() {
         let sent = sent.lock().unwrap();
         assert_eq!(sent.len(), 2);
 
-        assert_eq!(sent[0].ticker, "BTC-USDT");
+        assert_eq!(sent[0].ticker, "BTC/USDT");
         assert_eq!(sent[0].action, "BUY");
         assert_eq!(sent[0].entry_price, 100.0);
         assert_eq!(sent[0].sl_price, 95.0);
@@ -224,7 +224,7 @@ async fn end_to_end_cycle_publishes_valid_predictions() {
                 .contains("agent LONG conf=0.72 rsi=63.4(bullish)")
         );
 
-        assert_eq!(sent[1].ticker, "ETH-USDT");
+        assert_eq!(sent[1].ticker, "ETH/USDT");
         assert_eq!(sent[1].action, "BUY");
         assert_eq!(sent[1].seq, 1);
         assert_eq!(

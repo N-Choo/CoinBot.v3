@@ -35,7 +35,7 @@ pub fn to_proto(
     let reason = crate::prediction::sanitize_text(&reason, 500);
 
     Some(ProtoSignal {
-        ticker: prediction.symbol.clone(),
+        ticker: prediction.symbol.replace('-', "/"),
         action: action.to_string(),
         entry_price: prediction.entry,
         schema_version: SCHEMA_VERSION,
@@ -85,7 +85,7 @@ mod tests {
     fn maps_long_to_buy() {
         let signal = to_proto(&prediction(), candle(), emitted(), 7, TimeDelta::hours(4)).unwrap();
         assert_eq!(signal.action, "BUY");
-        assert_eq!(signal.ticker, "BTC-USDT");
+        assert_eq!(signal.ticker, "BTC/USDT");
         assert_eq!(signal.entry_price, 100.0);
         assert_eq!(signal.sl_price, 95.0);
         assert_eq!(signal.tp_price, 110.0);
