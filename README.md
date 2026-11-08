@@ -72,3 +72,19 @@ flowchart TB
 | `trade-engine`   | Turns `signal-gateway` signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `signal-gateway` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
 | `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC.                                                  | [README](process/signal_gateway/README.md) |
 | `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                           | [README](react/README.md)                  |
+
+## CI
+
+On every push, the `changes` job detects which services changed. Tests always run; production images are built and pushed **only for changed services** on `main`:
+
+| Changed paths                                                                                                  | Image rebuilt            |
+| -------------------------------------------------------------------------------------------------------------- | ------------------------ |
+| `process/api_gateway/**`                                                                                       | `coinbot-api_gateway`    |
+| `process/deposit-worker/**`                                                                                    | `coinbot-worker`         |
+| `process/trade-engine/**`                                                                                      | `coinbot-trade_engine`   |
+| `process/signal_gateway/**`                                                                                    | `coinbot-signal-gateway` |
+| `process/opencode/**`                                                                                          | `coinbot-opencode`       |
+| `react/**`                                                                                                     | `coinbot-frontend`       |
+| `lib/share/**`, `process/proto/**`, `process/migrations/**`, `Cargo.toml`, `Cargo.lock`, `rust-toolchain.toml` | all Rust images          |
+
+Images are pushed to GHCR as `:latest` and `:<commit-sha>`, with per-image `type=gha` build-layer caching. To force a full rebuild, run **Full-Stack CI → Run workflow** with `build_all` enabled.

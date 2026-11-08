@@ -1,0 +1,34 @@
+name: Backend Tests
+
+on:
+  workflow_call:
+
+jobs:
+  backend-test:
+    name: Rust (Server, ${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-latest
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: "1.98.1"
+          components: clippy, rustfmt
+      - name: Install protoc
+        run: sudo apt-get update && sudo apt-get install -y protobuf-compiler
+      - name: Cache Dependencies
+        uses: Swatinem/rust-cache@v2
+      - name: Check Format
+        run: make fmt
+      - name: Clippy (Linter)
+        run: make clippy
+      - name: Run Tests
+        run: make test
