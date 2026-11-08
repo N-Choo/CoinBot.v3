@@ -1,4 +1,5 @@
 pub mod agent_client;
+pub mod audit;
 pub mod config;
 pub mod cursor;
 pub mod grpc;
