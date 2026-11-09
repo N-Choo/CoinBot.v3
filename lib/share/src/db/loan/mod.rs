@@ -21,6 +21,10 @@ pub struct MarginLoan {
     pub interest_usdt: Decimal,
     pub repay_claimed_at: Option<DateTime<Utc>>,
     pub repay_buy_order_id: Option<String>,
+    pub repay_buy_client_oid: Option<String>,
+    pub repay_attempted_at: Option<DateTime<Utc>>,
+    pub repay_attempted_amount: Option<Decimal>,
+    pub repay_attempted_cost_usdt: Option<Decimal>,
     pub repay_order_no: Option<String>,
     pub repaid_at: Option<DateTime<Utc>>,
     pub repaid_cost_usdt: Decimal,
@@ -123,9 +127,13 @@ impl MarginLoan {
         entry_order_id: Uuid,
     ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            r#"UPDATE margin_loans
+            r#"UPDATE margin_loans l
                SET position_closed_at = NOW(), updated_at = NOW()
-               WHERE entry_order_id = $1 AND position_closed_at IS NULL"#,
+               WHERE l.entry_order_id = $1 AND l.position_closed_at IS NULL
+                 AND COALESCE((
+                     SELECT SUM(c.filled_qty) FROM trade_orders c
+                     WHERE c.parent_order_id = $1 AND c.status = 'filled'
+                 ), 0) >= (SELECT filled_qty FROM trade_orders WHERE id = $1)"#,
         )
         .bind(entry_order_id)
         .execute(&mut **tx)
@@ -199,12 +207,37 @@ impl MarginLoan {
         .await
     }
 
-    /// Record the market buy used to acquire the base asset for repayment.
-    pub async fn set_repay_buy(pool: &PgPool, id: Uuid, order_id: &str) -> Result<(), sqlx::Error> {
+    /// Persist the clientOid before the exchange call so an ambiguous placement
+    /// can be recovered on the next pass.
+    pub async fn set_repay_buy_client(
+        pool: &PgPool,
+        id: Uuid,
+        client_oid: &str,
+    ) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE margin_loans SET repay_buy_order_id = $1, updated_at = NOW() WHERE id = $2",
+            "UPDATE margin_loans SET repay_buy_client_oid = $1, updated_at = NOW() WHERE id = $2",
+        )
+        .bind(client_oid)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Record the market buy used to acquire the base asset for repayment.
+    pub async fn set_repay_buy(
+        pool: &PgPool,
+        id: Uuid,
+        order_id: &str,
+        client_oid: &str,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE margin_loans
+               SET repay_buy_order_id = $1, repay_buy_client_oid = $2, updated_at = NOW()
+               WHERE id = $3"#,
         )
         .bind(order_id)
+        .bind(client_oid)
         .bind(id)
         .execute(pool)
         .await?;
@@ -214,7 +247,48 @@ impl MarginLoan {
     /// Forget a shortfall buy that never filled.
     pub async fn clear_repay_buy(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
         sqlx::query(
-            "UPDATE margin_loans SET repay_buy_order_id = NULL, updated_at = NOW() WHERE id = $1",
+            "UPDATE margin_loans SET repay_buy_order_id = NULL, repay_buy_client_oid = NULL, updated_at = NOW() WHERE id = $1",
+        )
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Persist a repay intent before the exchange call. If the call succeeds but
+    /// the DB write that follows fails, the next pass reconciles this intent
+    /// against KuCoin's repay history instead of repaying again.
+    pub async fn set_repay_attempt(
+        pool: &PgPool,
+        id: Uuid,
+        amount: Decimal,
+        cost_usdt: Decimal,
+    ) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE margin_loans
+               SET repay_attempted_at = NOW(),
+                   repay_attempted_amount = $1,
+                   repay_attempted_cost_usdt = $2,
+                   updated_at = NOW()
+               WHERE id = $3 AND repaid_at IS NULL"#,
+        )
+        .bind(amount)
+        .bind(cost_usdt)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Forget a repay intent that the exchange never executed.
+    pub async fn clear_repay_attempt(pool: &PgPool, id: Uuid) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            r#"UPDATE margin_loans
+               SET repay_attempted_at = NULL,
+                   repay_attempted_amount = NULL,
+                   repay_attempted_cost_usdt = NULL,
+                   updated_at = NOW()
+               WHERE id = $1 AND repaid_at IS NULL"#,
         )
         .bind(id)
         .execute(pool)
@@ -296,7 +370,7 @@ impl InterestCharge {
         sqlx::query_as::<_, Self>(
             r#"INSERT INTO margin_interest_charges (currency, amount, day_ratio, created_time)
                VALUES ($1, $2, $3, $4)
-               ON CONFLICT (currency, created_time, amount) DO NOTHING
+               ON CONFLICT (currency, created_time) DO NOTHING
                RETURNING *"#,
         )
         .bind(currency)
@@ -325,7 +399,7 @@ impl InterestCharge {
             r#"INSERT INTO interest_cursors (currency, last_created_time)
                VALUES ($1, $2)
                ON CONFLICT (currency) DO UPDATE
-                 SET last_created_time = EXCLUDED.last_created_time,
+                 SET last_created_time = GREATEST(interest_cursors.last_created_time, EXCLUDED.last_created_time),
                      updated_at = NOW()"#,
         )
         .bind(currency)

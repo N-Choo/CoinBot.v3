@@ -59,16 +59,25 @@ export default function ActiveContracts() {
   const [ordersFilter, setOrdersFilter] = useState('All')
 
   const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
 
   const closeContract = async () => {
     if (!selected) return
     setCancelling(true)
+    setCancelError('')
     try {
       await cancelContract(selected.id)
       setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'closing' } : c)))
       window.dispatchEvent(new Event('contracts:changed'))
-    } catch {
-      // Keep the contract selected; the next poll shows the server state.
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 409) {
+        // Already closing or terminal on the server; refresh the local view.
+        setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'closing' } : c)))
+        window.dispatchEvent(new Event('contracts:changed'))
+      } else {
+        setCancelError('Could not close the contract. Refresh and try again.')
+      }
     } finally {
       setCancelling(false)
     }
@@ -217,14 +226,15 @@ export default function ActiveContracts() {
             )}
           </div>
 
+          {cancelError && <div className="text-down text-[11px]">{cancelError}</div>}
           <button
             className="w-full py-2 border border-down rounded-lg bg-transparent text-down text-[11px] font-bold tracking-wide cursor-pointer transition-colors hover:bg-down hover:text-white disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-down"
             onClick={closeContract}
-            disabled={selected.status !== 'active' || cancelling}
+            disabled={(selected.status !== 'active' && selected.status !== 'inactive') || cancelling}
           >
-            {cancelling ? 'CLOSING...' : selected.status === 'active' ? 'Close Contract' : `Contract ${selected.status}`}
+            {cancelling ? 'CLOSING...' : selected.status === 'active' || selected.status === 'inactive' ? 'Close Contract' : `Contract ${selected.status}`}
           </button>
-          {selected.status === 'active' && (
+          {(selected.status === 'active' || selected.status === 'inactive') && (
             <p className="text-[10px] text-text-muted text-center m-0">Closing releases the contract's funds back to your balance.</p>
           )}
         </div>

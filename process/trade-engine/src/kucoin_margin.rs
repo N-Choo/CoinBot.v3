@@ -22,10 +22,14 @@ pub struct MarginAccount {
 #[allow(dead_code)]
 pub struct MarginAsset {
     pub currency: String,
-    pub total: String,
-    pub available: String,
-    pub hold: String,
-    pub liability: String,
+    #[serde(default)]
+    pub total: Option<String>,
+    #[serde(default)]
+    pub available: Option<String>,
+    #[serde(default)]
+    pub hold: Option<String>,
+    #[serde(default)]
+    pub liability: Option<String>,
     #[serde(default)]
     pub liability_principal: Option<String>,
     #[serde(default)]
@@ -78,13 +82,18 @@ fn err<T>(code: &str, msg: &Option<String>) -> Result<T, String> {
     Err(format!("kucoin margin error: code={code} msg={msg:?}"))
 }
 
+/// Whether an error message represents KuCoin throttling.
+pub fn is_rate_limited(message: &str) -> bool {
+    message.contains("rate limited") || message.contains("429")
+}
+
 /// Fetch the cross-margin (MARGIN_V2) account.
 pub async fn account(kcc: &KuCoinClient) -> Result<MarginAccount, String> {
     let res = kcc
         .send::<KuCoinResponse<MarginAccount>>(
             "GET",
             "",
-            "/api/v3/margin/accounts?quoteCurrency=USDT&queryType=MARGIN_V2",
+            "/api/v3/margin/accounts?quoteCurrency=USDT&queryType=MARGIN",
         )
         .await
         .map_err(|e| e.to_string())?;
@@ -107,6 +116,54 @@ pub async fn interest_page(
     );
     let res = kcc
         .send::<KuCoinResponse<InterestPage>>("GET", "", &endpoint)
+        .await
+        .map_err(|e| e.to_string())?;
+    match res.data {
+        Some(data) => Ok(data),
+        None => err(&res.code, &res.msg),
+    }
+}
+
+/// One repay-history row.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepayHistoryItem {
+    pub order_no: String,
+    pub currency: String,
+    #[serde(default)]
+    pub size: Option<String>,
+    #[serde(default)]
+    pub actual_size: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+    pub created_time: i64,
+}
+
+#[allow(dead_code)]
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RepayHistoryPage {
+    pub current_page: i64,
+    pub page_size: i64,
+    pub total_num: i64,
+    pub total_page: i64,
+    pub items: Vec<RepayHistoryItem>,
+}
+
+/// Fetch one page of repay history for `currency`.
+pub async fn repay_history(
+    kcc: &KuCoinClient,
+    currency: &str,
+    start_ms: i64,
+    end_ms: i64,
+    page: i64,
+) -> Result<RepayHistoryPage, String> {
+    let endpoint = format!(
+        "/api/v3/margin/repay?currency={currency}&isIsolated=false&startTime={start_ms}&endTime={end_ms}&currentPage={page}&pageSize=500"
+    );
+    let res = kcc
+        .send::<KuCoinResponse<RepayHistoryPage>>("GET", "", &endpoint)
         .await
         .map_err(|e| e.to_string())?;
     match res.data {
@@ -178,6 +235,18 @@ mod tests {
         assert_eq!(page.items[0].interest_amount, "0.0001");
     }
 
+    #[test]
+    fn parses_repay_history() {
+        let json = r#"{"code":"200000","data":{
+            "currentPage":1,"pageSize":50,"totalNum":1,"totalPage":1,
+            "items":[{"orderNo":"r-1","currency":"SOL","size":"0.5",
+                      "actualSize":"0.5","status":"SUCCESS","createdTime":1729663213375}]}}"#;
+        let res: KuCoinResponse<RepayHistoryPage> = serde_json::from_str(json).unwrap();
+        let page = res.data.unwrap();
+        assert_eq!(page.items[0].order_no, "r-1");
+        assert_eq!(page.items[0].actual_size.as_deref(), Some("0.5"));
+    }
+
     #[tokio::test]
     #[ignore = "live: needs margin credentials"]
     async fn live_margin_endpoints_parse() {
@@ -195,5 +264,20 @@ mod tests {
             .await
             .expect("interest");
         assert!(page.page_size > 0);
+
+        // Verify the repair-buy order shape without executing it.
+        let req = crate::trader::margin_market_order(
+            "SOL-USDT",
+            kucoin::types::spot::Side::Buy,
+            "0.001".to_string(),
+            &uuid::Uuid::new_v4().to_string(),
+            crate::trader::OrderIntent::Repay,
+        );
+        let res = kcc
+            .margin()
+            .place_order_test(req)
+            .await
+            .expect("order/test should reach the exchange");
+        assert_eq!(res.code, "200000", "order/test rejected: {:?}", res.msg);
     }
 }

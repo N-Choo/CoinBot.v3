@@ -101,7 +101,7 @@ impl Fixture {
         let entry = self.pending_entry(side).await;
 
         let mut tx = self.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
             .await
             .unwrap();
         TradeOrders::mark_filled(
@@ -180,7 +180,7 @@ async fn held_entries_tracks_open_positions() {
     );
 
     let mut tx = fx.pool.begin().await.unwrap();
-    TradeOrders::mark_placed(&mut tx, exit.id, "exch-exit", None)
+    TradeOrders::mark_placed(&mut tx, exit.id, "exch-exit", None, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -211,7 +211,7 @@ async fn reserve_exit_refuses_after_a_filled_close() {
 
     let exit = fx.reserve_exit(&entry).await.expect("fresh exit reserved");
     let mut tx = fx.pool.begin().await.unwrap();
-    TradeOrders::mark_placed(&mut tx, exit.id, "exch-exit", None)
+    TradeOrders::mark_placed(&mut tx, exit.id, "exch-exit", None, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -255,7 +255,7 @@ async fn in_flight_tracks_entries_and_working_closes() {
     );
 
     let mut tx = fx.pool.begin().await.unwrap();
-    TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
+    TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();
@@ -296,7 +296,7 @@ async fn in_flight_tracks_entries_and_working_closes() {
     );
 
     let mut tx = fx.pool.begin().await.unwrap();
-    TradeOrders::mark_placed(&mut tx, close.id, "exch-exit", None)
+    TradeOrders::mark_placed(&mut tx, close.id, "exch-exit", None, None)
         .await
         .unwrap();
     tx.commit().await.unwrap();

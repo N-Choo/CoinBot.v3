@@ -101,7 +101,7 @@ impl Contracts {
                SET available_fund    = available_fund - $1,
                    total_traded_fund = total_traded_fund + $1,
                    updated_at        = NOW()
-               WHERE id = $2 AND available_fund >= $1
+               WHERE id = $2 AND status = 'active' AND available_fund >= $1
                RETURNING *"#,
         )
         .bind(amount)

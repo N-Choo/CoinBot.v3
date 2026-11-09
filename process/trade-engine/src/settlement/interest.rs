@@ -13,33 +13,42 @@ use crate::kucoin_margin;
 const POLL_SECS: u64 = 60;
 
 /// Split `charge` across `(loan_id, outstanding)` pro-rata. The rounding
-/// remainder goes to the last loan so the sum is exact.
+/// remainder goes to the largest loan so the sum is exact.
 pub(crate) fn allocate(charge: Decimal, loans: &[(Uuid, Decimal)]) -> Vec<(Uuid, Decimal)> {
     let total: Decimal = loans.iter().map(|(_, o)| *o).sum();
     if total <= Decimal::ZERO || charge <= Decimal::ZERO {
         return Vec::new();
     }
-    let mut out = Vec::with_capacity(loans.len());
-    let mut allocated = Decimal::ZERO;
-    for (i, (id, outstanding)) in loans.iter().enumerate() {
-        let amount = if i + 1 == loans.len() {
-            charge - allocated
-        } else {
-            (charge * *outstanding / total).round_dp(18)
-        };
-        allocated += amount;
-        out.push((*id, amount));
+    let mut out: Vec<(Uuid, Decimal)> = loans
+        .iter()
+        .map(|(id, outstanding)| (*id, (charge * *outstanding / total).round_dp(18)))
+        .collect();
+    let allocated: Decimal = out.iter().map(|(_, v)| *v).sum();
+    if let Some((idx, _)) = loans.iter().enumerate().max_by_key(|(_, (_, o))| *o) {
+        out[idx].1 += charge - allocated;
     }
     out
 }
 
 /// Background loop.
 pub async fn run(pool: PgPool, kcc: KuCoinClient) {
+    let mut backoff = 0u64;
     loop {
-        if let Err(e) = sweep(&pool, &kcc).await {
-            log::error!("[INTEREST] sweep failed: {e}");
+        match sweep(&pool, &kcc).await {
+            Ok(()) => backoff = 0,
+            Err(e) => {
+                log::error!("[INTEREST] sweep failed: {e}");
+                if kucoin_margin::is_rate_limited(&e) {
+                    backoff = if backoff == 0 {
+                        60
+                    } else {
+                        (backoff * 2).min(300)
+                    };
+                    log::warn!("[INTEREST] backing off {backoff}s");
+                }
+            }
         }
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(POLL_SECS.max(backoff))).await;
     }
 }
 
@@ -48,10 +57,22 @@ pub async fn sweep(pool: &PgPool, kcc: &KuCoinClient) -> Result<(), String> {
     let currencies = MarginLoan::open_currencies(pool)
         .await
         .map_err(|e| e.to_string())?;
+    let mut first_error = None;
     for currency in currencies {
-        sweep_currency(pool, kcc, &currency).await?;
+        if let Err(e) = sweep_currency(pool, kcc, &currency).await {
+            log::error!("[INTEREST] {currency} failed: {e}");
+            if kucoin_margin::is_rate_limited(&e) {
+                return Err(e);
+            }
+            if first_error.is_none() {
+                first_error = Some(e);
+            }
+        }
     }
-    Ok(())
+    match first_error {
+        Some(e) => Err(e),
+        None => Ok(()),
+    }
 }
 
 /// Process one currency. Safe to call concurrently: charge insertion is
@@ -75,46 +96,56 @@ pub async fn sweep_currency(
             .unwrap_or(end - 86_400_000),
     };
 
+    // Fetch every page first, then process the whole window in one transaction.
+    // The cursor only advances after all allocations commit, so a partial
+    // failure cannot skip an older charge.
+    let mut items = Vec::new();
     let mut page = 1;
     loop {
         let data = kucoin_margin::interest_page(kcc, currency, start, end, page).await?;
-        for item in &data.items {
-            let amount: Decimal = item
-                .interest_amount
-                .parse()
-                .map_err(|_| format!("bad interest amount {}", item.interest_amount))?;
-            let day_ratio = item.day_ratio.as_deref().and_then(|v| v.parse().ok());
-
-            let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
-            let Some(charge) =
-                InterestCharge::insert(&mut tx, currency, amount, day_ratio, item.created_time)
-                    .await
-                    .map_err(|e| e.to_string())?
-            else {
-                tx.commit().await.map_err(|e| e.to_string())?;
-                continue;
-            };
-
-            let loans = MarginLoan::open_for_charge(&mut tx, currency, charge.created_time)
-                .await
-                .map_err(|e| e.to_string())?;
-            let pairs: Vec<(Uuid, Decimal)> = loans.iter().map(|l| (l.id, l.outstanding)).collect();
-            for (id, base) in allocate(charge.amount, &pairs) {
-                MarginLoan::apply_interest(&mut tx, id, base, base * price)
-                    .await
-                    .map_err(|e| e.to_string())?;
-            }
-            InterestCharge::set_cursor(&mut tx, currency, charge.created_time)
-                .await
-                .map_err(|e| e.to_string())?;
-            tx.commit().await.map_err(|e| e.to_string())?;
-        }
-
+        items.extend(data.items);
         if page >= data.total_page {
             break;
         }
         page += 1;
     }
+    if items.is_empty() {
+        return Ok(());
+    }
+    items.sort_by_key(|i| i.created_time);
+
+    let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
+    let mut max_ts = start;
+    for item in &items {
+        let amount: Decimal = item
+            .interest_amount
+            .parse()
+            .map_err(|_| format!("bad interest amount {}", item.interest_amount))?;
+        let day_ratio = item.day_ratio.as_deref().and_then(|v| v.parse().ok());
+
+        let Some(charge) =
+            InterestCharge::insert(&mut tx, currency, amount, day_ratio, item.created_time)
+                .await
+                .map_err(|e| e.to_string())?
+        else {
+            continue;
+        };
+
+        let loans = MarginLoan::open_for_charge(&mut tx, currency, charge.created_time)
+            .await
+            .map_err(|e| e.to_string())?;
+        let pairs: Vec<(Uuid, Decimal)> = loans.iter().map(|l| (l.id, l.outstanding)).collect();
+        for (id, base) in allocate(charge.amount, &pairs) {
+            MarginLoan::apply_interest(&mut tx, id, base, base * price)
+                .await
+                .map_err(|e| e.to_string())?;
+        }
+        max_ts = max_ts.max(charge.created_time);
+    }
+    InterestCharge::set_cursor(&mut tx, currency, max_ts)
+        .await
+        .map_err(|e| e.to_string())?;
+    tx.commit().await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -149,7 +180,7 @@ mod tests {
     }
 
     #[test]
-    fn rounding_remainder_goes_to_the_last_loan() {
+    fn rounding_remainder_goes_to_the_largest_loan() {
         let a = Uuid::new_v4();
         let b = Uuid::new_v4();
         let out = allocate(dec("1"), &[(a, dec("1")), (b, dec("2"))]);

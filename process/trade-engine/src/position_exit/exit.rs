@@ -4,7 +4,7 @@ use kucoin::client::rest::KuCoinClient;
 use kucoin::types::spot::Side;
 use log::{info, warn};
 use rust_decimal::Decimal;
-use share::db::trade::TradeOrder;
+use share::db::trade::{TradeOrder, TradeOrders};
 use sqlx::{Pool, Postgres};
 use uuid::Uuid;
 
@@ -29,17 +29,19 @@ pub(crate) async fn exit_position(
     let symbol = margin_symbol(&entry.ticker);
     let comment = Uuid::new_v4().to_string();
 
+    let closed = TradeOrders::filled_close_qty(pool, entry.id)
+        .await
+        .map_err(|e| format!("close-qty lookup failed: {e}"))?;
+    let remaining = (entry.filled_qty - closed).max(rust_decimal::Decimal::ZERO);
+    if remaining.is_zero() {
+        return Ok(());
+    }
+
     // Reserve the exit first so a crash or retry cannot place a second one.
-    let Some(exit) = ledger::reserve_exit(
-        pool,
-        entry,
-        side_str,
-        &comment,
-        entry.filled_qty,
-        entry.filled_qty * last,
-    )
-    .await
-    .map_err(|e| format!("reserve_exit failed: {e}"))?
+    let Some(exit) =
+        ledger::reserve_exit(pool, entry, side_str, &comment, remaining, remaining * last)
+            .await
+            .map_err(|e| format!("reserve_exit failed: {e}"))?
     else {
         // A live exit already exists for this position; nothing to do.
         return Ok(());
@@ -48,7 +50,7 @@ pub(crate) async fn exit_position(
     let request = crate::trader::margin_market_order(
         &symbol,
         exit_side,
-        entry.filled_qty.to_string(),
+        remaining.to_string(),
         &comment,
         crate::trader::OrderIntent::Close,
     );
@@ -76,7 +78,7 @@ pub(crate) async fn exit_position(
         return Err(reason);
     };
 
-    ledger::record_placed(pool, exit.id, &data.order_id, None)
+    ledger::record_placed(pool, exit.id, &data.order_id, None, None)
         .await
         .map_err(|e| format!("mark_placed failed: {e}"))?;
 

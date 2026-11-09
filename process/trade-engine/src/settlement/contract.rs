@@ -20,11 +20,23 @@ const POLL_SECS: u64 = 12;
 
 /// Background loop.
 pub async fn run(pool: PgPool, kcc: KuCoinClient) {
+    let mut backoff = 0u64;
     loop {
-        if let Err(e) = sweep(&pool, &kcc).await {
-            error!("[SETTLE] pass failed: {e}");
+        match sweep(&pool, &kcc).await {
+            Ok(()) => backoff = 0,
+            Err(e) => {
+                error!("[SETTLE] pass failed: {e}");
+                if crate::kucoin_margin::is_rate_limited(&e) {
+                    backoff = if backoff == 0 {
+                        60
+                    } else {
+                        (backoff * 2).min(300)
+                    };
+                    log::warn!("[SETTLE] backing off {backoff}s");
+                }
+            }
         }
-        tokio::time::sleep(Duration::from_secs(POLL_SECS)).await;
+        tokio::time::sleep(Duration::from_secs(POLL_SECS.max(backoff))).await;
     }
 }
 
@@ -38,6 +50,9 @@ pub async fn sweep(pool: &PgPool, kcc: &KuCoinClient) -> Result<(), String> {
     for c in contracts {
         if let Err(e) = settle(pool, kcc, &c).await {
             error!("[SETTLE] contract {} failed: {e}", c.id);
+            if crate::kucoin_margin::is_rate_limited(&e) {
+                return Err(e);
+            }
         }
     }
     Ok(())
@@ -104,6 +119,12 @@ pub async fn finalize(pool: &PgPool, contract_id: Uuid) -> Result<(), String> {
         return Ok(());
     }
     if TradeOrders::has_unsettled_for_contract_tx(&mut tx, c.id)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        return Ok(());
+    }
+    if TradeOrders::has_open_position_for_contract_tx(&mut tx, c.id)
         .await
         .map_err(|e| e.to_string())?
     {
@@ -220,6 +241,116 @@ mod tests {
         assert_eq!(c.net_payout, Some(Decimal::from(1152)));
 
         sqlx::query("DELETE FROM platform_fees WHERE contract_id=$1")
+            .bind(contract.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM contracts WHERE id=$1")
+            .bind(contract.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM users WHERE wallet_address=$1")
+            .bind(&wallet)
+            .execute(&pool)
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn finalize_refuses_an_open_position() {
+        let Some(pool) = pool().await else {
+            return;
+        };
+        let wallet = format!("0xtest{}", Uuid::new_v4().simple());
+        let mut tx = pool.begin().await.unwrap();
+        let user = User::upsert(&mut tx, &wallet).await.unwrap();
+        let user = user
+            .add_balance(&mut tx, Decimal::from(1000))
+            .await
+            .unwrap();
+        user.lock_balance(&mut tx, Decimal::from(1000))
+            .await
+            .unwrap();
+        Contracts::create(
+            &mut tx,
+            user.uid,
+            "sig",
+            "msg",
+            &format!("n-{}", Uuid::new_v4()),
+            "BTC/USDT",
+            Decimal::from(1000),
+            Decimal::from(1000),
+            Decimal::ZERO,
+            2.0,
+            5.0,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let contract = ContractFilter::new()
+            .with_user(user.uid)
+            .execute(&pool)
+            .await
+            .unwrap()[0]
+            .clone();
+
+        let entry = crate::ledger::create_pending_open(
+            &pool,
+            &contract,
+            "buy",
+            &format!("c-{}", Uuid::new_v4()),
+            Decimal::from(1),
+            Decimal::from(100),
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        let mut tx = pool.begin().await.unwrap();
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
+            .await
+            .unwrap();
+        TradeOrders::mark_filled(
+            &mut tx,
+            entry.id,
+            Decimal::from(1),
+            Decimal::from(100),
+            Decimal::ZERO,
+            None,
+            None,
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        sqlx::query(
+            "UPDATE contracts SET status='closing', settlement_target='cancelled' WHERE id=$1",
+        )
+        .bind(contract.id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        finalize(&pool, contract.id).await.unwrap();
+
+        let after = User::find_by_wallet(&pool, &wallet).await.unwrap().unwrap();
+        assert_eq!(
+            after.balance,
+            Decimal::ZERO,
+            "no payout with an open position"
+        );
+        assert_eq!(after.locked_balance, Decimal::from(1000));
+        let c = ContractFilter::new()
+            .with_user(user.uid)
+            .execute(&pool)
+            .await
+            .unwrap()[0]
+            .clone();
+        assert_eq!(c.status, "closing");
+
+        sqlx::query("DELETE FROM trade_orders WHERE contract_id=$1")
             .bind(contract.id)
             .execute(&pool)
             .await

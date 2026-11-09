@@ -59,12 +59,13 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(timer)
   }, [hasClosing])
 
-  // Stable key: the set of contract ids. Status-only changes (e.g. closing a
-  // contract) don't change it, so orders aren't refetched and the sweep isn't
-  // restarted on those updates.
+  // Stable key: the set of contract ids, used by the price sweep.
   const contractIds = contracts.map(c => c.id).join(',')
-  // Derived (not stored): true once the orders for the current id set are in.
-  const ordersReady = contracts.length === 0 || loadedKey === contractIds
+  // Orders are refetched when a contract's status changes (e.g. cash-out adds
+  // close orders and ends in `cancelled`).
+  const ordersKey = contracts.map(c => `${c.id}:${c.status}`).join(',')
+  // Derived (not stored): true once the orders for the current key are in.
+  const ordersReady = contracts.length === 0 || loadedKey === ordersKey
 
   // Load the orders for every contract (needed to compute PnL).
   useEffect(() => {
@@ -79,11 +80,11 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     ).then(entries => {
       if (!active) return
       setOrdersByContract(Object.fromEntries(entries))
-      setLoadedKey(contractIds)
+      setLoadedKey(ordersKey)
     })
     return () => { active = false }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [contractIds])
+  }, [ordersKey])
 
   // Sweep every distinct ticker's price once per second — sequentially, chained
   // so runs never overlap.

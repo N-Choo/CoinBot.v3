@@ -128,3 +128,32 @@ async fn mark_repaid_charges_the_contract_once() {
         .await
         .unwrap();
 }
+
+#[tokio::test]
+async fn interest_cursor_never_moves_backwards() {
+    let Some(pool) = pool().await else { return };
+    let currency = format!("T{}", Uuid::new_v4().simple());
+
+    let mut tx = pool.begin().await.unwrap();
+    share::db::loan::InterestCharge::set_cursor(&mut tx, &currency, 200)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let mut tx = pool.begin().await.unwrap();
+    share::db::loan::InterestCharge::set_cursor(&mut tx, &currency, 100)
+        .await
+        .unwrap();
+    tx.commit().await.unwrap();
+
+    let cursor = share::db::loan::InterestCharge::cursor(&pool, &currency)
+        .await
+        .unwrap();
+    assert_eq!(cursor, Some(200));
+
+    sqlx::query("DELETE FROM interest_cursors WHERE currency = $1")
+        .bind(&currency)
+        .execute(&pool)
+        .await
+        .unwrap();
+}

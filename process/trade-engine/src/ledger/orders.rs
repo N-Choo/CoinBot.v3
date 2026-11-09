@@ -62,9 +62,10 @@ pub async fn record_placed(
     id: Uuid,
     exchange_order_id: &str,
     loan_apply_id: Option<&str>,
+    borrow_size: Option<Decimal>,
 ) -> Result<()> {
     let mut tx = pool.begin().await?;
-    TradeOrders::mark_placed(&mut tx, id, exchange_order_id, loan_apply_id).await?;
+    TradeOrders::mark_placed(&mut tx, id, exchange_order_id, loan_apply_id, borrow_size).await?;
     tx.commit().await
 }
 
@@ -115,23 +116,34 @@ pub async fn record_filled(
     .await?;
 
     // A filled short entry creates one base-asset loan for interest accounting.
+    // `borrow_size` is the exchange's actual borrowed quantity (pooled margin
+    // auto-borrows only the deficit); `Some(0)` means no loan was created.
     if order.action == "open" && order.side == "sell" {
-        let currency = order
-            .ticker
-            .split_once('/')
-            .map(|(base, _)| base)
-            .unwrap_or(order.ticker.as_str())
-            .to_string();
-        share::db::loan::MarginLoan::create(
-            &mut tx,
-            order.contract_id,
-            order.id,
-            &currency,
-            fill.deal_size,
-            order.loan_apply_id.as_deref(),
-            order.created_at,
-        )
-        .await?;
+        // Only an actual borrow creates a loan. `borrow_size` is present when
+        // auto-borrow triggered; a known loan id is a fallback for older rows.
+        let principal = match (order.borrow_size, order.loan_apply_id.as_deref()) {
+            (Some(size), _) => size,
+            (None, Some(_)) => fill.deal_size,
+            (None, None) => Decimal::ZERO,
+        };
+        if principal > Decimal::ZERO {
+            let currency = order
+                .ticker
+                .split_once('/')
+                .map(|(base, _)| base)
+                .unwrap_or(order.ticker.as_str())
+                .to_string();
+            share::db::loan::MarginLoan::create(
+                &mut tx,
+                order.contract_id,
+                order.id,
+                &currency,
+                principal,
+                order.loan_apply_id.as_deref(),
+                order.created_at,
+            )
+            .await?;
+        }
     }
 
     // A filled close ends the parent entry's position (interest may still
@@ -271,7 +283,7 @@ mod tests {
         tx.commit().await.unwrap();
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, close.id, "exch-close", None)
+        TradeOrders::mark_placed(&mut tx, close.id, "exch-close", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -388,7 +400,7 @@ mod tests {
         assert_eq!(reserved.total_traded_fund, Decimal::from(100));
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None)
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -547,7 +559,7 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-short", Some("loan-1"))
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-short", Some("loan-1"), None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -581,6 +593,48 @@ mod tests {
         fx.cleanup().await;
     }
 
+    /// A short entry with no recorded borrow does not fabricate a loan.
+    #[tokio::test]
+    async fn filled_short_without_borrow_creates_no_loan() {
+        let Some(fx) = setup(Decimal::from(1000)).await else {
+            return;
+        };
+        let entry = create_pending_open(
+            &fx.pool,
+            &fx.contract,
+            "sell",
+            &comment("short"),
+            Decimal::from(1),
+            Decimal::from(100),
+            Some(Decimal::from(90)),
+            Some(Decimal::from(110)),
+        )
+        .await
+        .unwrap();
+        let mut tx = fx.pool.begin().await.unwrap();
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-short", None, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        let entry = TradeOrders::find(&fx.pool, entry.id).await.unwrap();
+
+        let fill = Fill {
+            deal_size: Decimal::from(1),
+            fill_price: Decimal::from(100),
+            fee: Decimal::ZERO,
+            fee_currency: Some("USDT"),
+            pnl: None,
+        };
+        record_filled(&fx.pool, &entry, &fill, None).await.unwrap();
+
+        let loans = share::db::loan::MarginLoan::unrepaid_for_contract(&fx.pool, fx.contract.id)
+            .await
+            .unwrap();
+        assert!(loans.is_empty(), "no borrow means no loan");
+
+        fx.cleanup().await;
+    }
+
     /// A filled close marks the parent entry's loan position closed.
     #[tokio::test]
     async fn filled_close_marks_loan_position_closed() {
@@ -600,10 +654,11 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-short", None)
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-short", Some("loan-1"), None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
+        let entry = TradeOrders::find(&fx.pool, entry.id).await.unwrap();
         let fill = Fill {
             deal_size: Decimal::from(1),
             fill_price: Decimal::from(100),
@@ -625,7 +680,7 @@ mod tests {
         .unwrap()
         .expect("close reservation");
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, close.id, "exch-close", None)
+        TradeOrders::mark_placed(&mut tx, close.id, "exch-close", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();

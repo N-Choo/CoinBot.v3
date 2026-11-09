@@ -296,10 +296,7 @@ async fn test_cancel_transitions_and_scopes_by_owner() {
     let session_cache = setup_session_cache().await;
     let nonce_cache = setup_nonce_cache().await;
     session_cache
-        .insert(
-            "test_cancel_owner_token".into(),
-            owner_wallet.clone().into(),
-        )
+        .insert("test_cancel_owner_token".into(), owner_wallet.clone())
         .await;
 
     let app = test::init_service(

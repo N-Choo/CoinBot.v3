@@ -52,10 +52,14 @@ pub async fn signal_handler(
             continue;
         }
 
-        let has_unsettled = share::db::loan::MarginLoan::unrepaid_for_contract(&db, c.id)
-            .await
-            .map(|loans| loans.iter().any(|l| l.position_closed_at.is_some()))
-            .unwrap_or(false);
+        let has_unsettled =
+            match share::db::loan::MarginLoan::unrepaid_for_contract(&db, c.id).await {
+                Ok(loans) => loans.iter().any(|l| l.position_closed_at.is_some()),
+                Err(e) => {
+                    log::error!("contract {} loan lookup failed; skipping: {e}", c.id);
+                    continue;
+                }
+            };
         if has_unsettled {
             log::warn!("contract {} has unsettled borrow interest; skipping", c.id);
             continue;

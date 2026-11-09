@@ -229,11 +229,16 @@ pub async fn execute(
         return Err(ProcessError::Internal(reason));
     };
 
+    let borrow_size = data
+        .borrow_size
+        .as_deref()
+        .and_then(|v| v.parse::<Decimal>().ok());
     ledger::record_placed(
         pool,
         order.id,
         &data.order_id,
         data.loan_apply_id.as_deref(),
+        borrow_size,
     )
     .await?;
 
