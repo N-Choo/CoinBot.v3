@@ -4,9 +4,11 @@ use tokio::signal;
 mod app_config;
 mod app_state;
 mod grpc_handler;
+mod kucoin_margin;
 mod ledger;
 mod position_exit;
 mod reconciler;
+mod settlement;
 mod signals;
 mod symbol;
 mod trader;
@@ -46,6 +48,19 @@ async fn main() -> Result<(), ProcessError> {
     tokio::spawn(async move {
         position_exit::run(order_db, order_kc).await;
     });
+
+    // Accrue borrow interest, repay residual debt, and settle cash-outs.
+    let interest_db = db.clone();
+    let interest_kc = kcc.clone();
+    tokio::spawn(settlement::interest::run(interest_db, interest_kc));
+
+    let repay_db = db.clone();
+    let repay_kc = kcc.clone();
+    tokio::spawn(settlement::repay::run(repay_db, repay_kc));
+
+    let settle_db = db.clone();
+    let settle_kc = kcc.clone();
+    tokio::spawn(settlement::contract::run(settle_db, settle_kc));
 
     // Wait for Ctrl+C before shutting down
     signal::ctrl_c().await.expect("failed to listen for ctrl+c");

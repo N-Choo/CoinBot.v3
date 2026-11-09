@@ -60,6 +60,10 @@ export interface ContractItem {
   total_traded_fund: string
   sl_pct: number
   tp_pct: number
+  borrow_interest: string
+  platform_fee: string | null
+  net_payout: string | null
+  settled_at: string | null
   created_at: string
   updated_at: string
 }
@@ -67,6 +71,11 @@ export interface ContractItem {
 export async function getMyContracts(): Promise<ContractItem[]> {
   const res = await axios.get('/api/contracts/me')
   return res.data
+}
+
+/** Start cash-out for a contract. Settlement is asynchronous. */
+export async function cancelContract(id: string): Promise<void> {
+  await axios.post(`/api/contracts/${id}/cancel`)
 }
 
 export interface ContractOrder {

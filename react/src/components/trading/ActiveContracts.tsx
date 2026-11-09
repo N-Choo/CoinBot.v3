@@ -1,10 +1,11 @@
 import { useState } from 'react'
 import Skeleton from '../ui/Skeleton'
-import { type ContractItem } from '../../services/contract'
+import { type ContractItem, cancelContract } from '../../services/contract'
 import { useContractsData } from '../../hooks/useContractsData'
 
 const STATUS_COLOR: Record<string, string> = {
   active: 'text-up',
+  closing: 'text-accent',
   inactive: 'text-text-muted',
   completed: 'text-accent',
   cancelled: 'text-down',
@@ -14,8 +15,10 @@ const STATUS_COLOR: Record<string, string> = {
 const statusDot = (status: string): string =>
   status === 'active'
     ? 'bg-up'
-    : status === 'inactive'
-      ? 'bg-text-muted'
+    : status === 'closing'
+      ? 'bg-accent'
+      : status === 'inactive'
+        ? 'bg-text-muted'
       : status === 'completed'
         ? 'bg-accent'
         : 'bg-down'
@@ -51,13 +54,33 @@ const timeAgo = (iso: string): string => {
 
 export default function ActiveContracts() {
   const { contracts, setContracts, loading, error, ordersByContract, ordersReady, pnlOf, contractPnl } = useContractsData()
-  const [selected, setSelected] = useState<ContractItem | null>(null)
+  const [selectedId, setSelectedId] = useState<string | null>(null)
+  const selected: ContractItem | null = contracts.find(c => c.id === selectedId) ?? null
   const [ordersFilter, setOrdersFilter] = useState('All')
 
-  const closeContract = () => {
+  const [cancelling, setCancelling] = useState(false)
+  const [cancelError, setCancelError] = useState('')
+
+  const closeContract = async () => {
     if (!selected) return
-    setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'cancelled' } : c)))
-    setSelected(null)
+    setCancelling(true)
+    setCancelError('')
+    try {
+      await cancelContract(selected.id)
+      setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'closing' } : c)))
+      window.dispatchEvent(new Event('contracts:changed'))
+    } catch (err) {
+      const status = (err as { response?: { status?: number } })?.response?.status
+      if (status === 409) {
+        // Already closing or terminal on the server; refresh the local view.
+        setContracts(prev => prev.map(c => (c.id === selected.id ? { ...c, status: 'closing' } : c)))
+        window.dispatchEvent(new Event('contracts:changed'))
+      } else {
+        setCancelError('Could not close the contract. Refresh and try again.')
+      }
+    } finally {
+      setCancelling(false)
+    }
   }
 
   if (selected) {
@@ -76,7 +99,7 @@ export default function ActiveContracts() {
       <div className="flex flex-col bg-bg-panel border border-border-light rounded-xl overflow-hidden transition-colors hover:border-accent/40">
         <div className="flex items-center justify-between px-4 py-2.5 border-b border-border-light">
           <div className="flex items-center gap-2">
-            <button className="bg-transparent border-none text-text-muted cursor-pointer p-0 flex items-center text-sm hover:text-text-main" aria-label="Back" onClick={() => setSelected(null)}>
+            <button className="bg-transparent border-none text-text-muted cursor-pointer p-0 flex items-center text-sm hover:text-text-main" aria-label="Back" onClick={() => setSelectedId(null)}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6" /></svg>
             </button>
             <img className="w-5 h-5 rounded-full shrink-0 object-cover" src={logoUrl(baseSymbol(selected.ticker))} alt="" onError={e => { (e.target as HTMLImageElement).style.display = 'none' }} />
@@ -110,6 +133,22 @@ export default function ActiveContracts() {
             <div className="flex justify-between">
               <span className="text-text-muted">SL / TP</span>
               <span className="text-text-main font-mono">{selected.sl_pct}% / {selected.tp_pct}%</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Borrow interest</span>
+              <span className="text-text-main font-mono">${fmt(selected.borrow_interest)}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Platform fee</span>
+              <span className="text-text-main font-mono">
+                {selected.platform_fee == null ? '—' : `$${fmt(selected.platform_fee)}`}
+              </span>
+            </div>
+            <div className="flex justify-between">
+              <span className="text-text-muted">Net payout</span>
+              <span className="text-text-main font-mono">
+                {selected.net_payout == null ? '—' : `$${fmt(selected.net_payout)}`}
+              </span>
             </div>
             <div className="flex justify-between">
               <span className="text-text-muted">Created</span>
@@ -187,14 +226,15 @@ export default function ActiveContracts() {
             )}
           </div>
 
+          {cancelError && <div className="text-down text-[11px]">{cancelError}</div>}
           <button
             className="w-full py-2 border border-down rounded-lg bg-transparent text-down text-[11px] font-bold tracking-wide cursor-pointer transition-colors hover:bg-down hover:text-white disabled:opacity-40 disabled:cursor-default disabled:hover:bg-transparent disabled:hover:text-down"
             onClick={closeContract}
-            disabled={selected.status !== 'active'}
+            disabled={(selected.status !== 'active' && selected.status !== 'inactive') || cancelling}
           >
-            {selected.status === 'active' ? 'Close Contract' : `Contract ${selected.status}`}
+            {cancelling ? 'CLOSING...' : selected.status === 'active' || selected.status === 'inactive' ? 'Close Contract' : `Contract ${selected.status}`}
           </button>
-          {selected.status === 'active' && (
+          {(selected.status === 'active' || selected.status === 'inactive') && (
             <p className="text-[10px] text-text-muted text-center m-0">Closing releases the contract's funds back to your balance.</p>
           )}
         </div>
@@ -257,11 +297,11 @@ export default function ActiveContracts() {
                     key={c.id}
                     tabIndex={0}
                     className="border-b border-border-light hover:bg-[rgba(255,255,255,0.03)] transition-colors cursor-pointer"
-                    onClick={() => setSelected(c)}
+                    onClick={() => setSelectedId(c.id)}
                     onKeyDown={e => {
                       if (e.key === 'Enter' || e.key === ' ') {
                         e.preventDefault()
-                        setSelected(c)
+                        setSelectedId(c.id)
                       }
                     }}
                   >

@@ -256,6 +256,63 @@ impl Contracts {
         }
     }
 
+    /// Cancel a contract and start cash-out.
+    ///
+    /// `POST /api/contracts/{id}/cancel`
+    ///
+    /// Atomically moves an owned `active`/`inactive` contract to `closing`.
+    /// Settlement (position close, borrow repayment, payout) is asynchronous in
+    /// `trade-engine`; the SPA polls `GET /api/contracts/me`.
+    ///
+    /// Responses:
+    /// - `200 OK` — `{ id, status: "closing" }`.
+    /// - `401 Unauthorized` — missing or invalid session.
+    /// - `404 Not Found` — no such contract owned by the caller.
+    /// - `409 Conflict` — already closing or terminal.
+    /// - `500 Internal Server Error` — persistence failure.
+    pub async fn cancel(
+        header: actix_web::HttpRequest,
+        path: web::Path<Uuid>,
+        session_cache: web::Data<SessionCache>,
+        pool: web::Data<sqlx::PgPool>,
+    ) -> impl Responder {
+        let wallet = match Self::authenticated_wallet(&header, &session_cache).await {
+            Ok(w) => w,
+            Err(resp) => return resp,
+        };
+
+        let user = match share::db::user::User::find_by_wallet(&pool, &wallet).await {
+            Ok(Some(u)) => u,
+            Ok(None) => return HttpResponse::NotFound().finish(),
+            Err(e) => {
+                log::error!("cancel: find_by_wallet failed: {e}");
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
+
+        let id = path.into_inner();
+        match share::db::contracts::Contracts::set_closing(&pool, id, user.uid).await {
+            Ok(Some(c)) => HttpResponse::Ok().json(serde_json::json!({
+                "id": c.id,
+                "status": c.status,
+            })),
+            Ok(None) => {
+                match share::db::contracts::Contracts::find_for_user(&pool, id, user.uid).await {
+                    Ok(Some(_)) => HttpResponse::Conflict().finish(),
+                    Ok(None) => HttpResponse::NotFound().finish(),
+                    Err(e) => {
+                        log::error!("cancel: ownership lookup failed: {e}");
+                        HttpResponse::InternalServerError().finish()
+                    }
+                }
+            }
+            Err(e) => {
+                log::error!("cancel: set_closing failed for {id}: {e}");
+                HttpResponse::InternalServerError().finish()
+            }
+        }
+    }
+
     /// Authenticate the request, mapping failure to a `401` response.
     async fn authenticated_wallet(
         header: &actix_web::HttpRequest,

@@ -32,6 +32,16 @@ pub struct Contract {
     pub tp_pct: f32,
     /// Lifecycle status (see [`Status`](super::Status)).
     pub status: String,
+    /// Cumulative USDT value of borrow interest charged to this contract.
+    pub borrow_interest: Decimal,
+    /// Platform performance fee taken at settlement.
+    pub platform_fee: Decimal,
+    /// Net amount credited to the user at settlement.
+    pub net_payout: Option<Decimal>,
+    /// Final status the settle loop must apply (`cancelled`/`completed`).
+    pub settlement_target: Option<String>,
+    /// When the contract was settled.
+    pub settled_at: Option<chrono::DateTime<chrono::Utc>>,
     /// Creation timestamp.
     pub created_at: chrono::DateTime<chrono::Utc>,
     /// Last update timestamp.
@@ -91,7 +101,7 @@ impl Contracts {
                SET available_fund    = available_fund - $1,
                    total_traded_fund = total_traded_fund + $1,
                    updated_at        = NOW()
-               WHERE id = $2 AND available_fund >= $1
+               WHERE id = $2 AND status = 'active' AND available_fund >= $1
                RETURNING *"#,
         )
         .bind(amount)
@@ -137,6 +147,78 @@ impl Contracts {
                RETURNING *"#,
         )
         .bind(amount)
+        .bind(id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Fetch a contract only when it belongs to `user_uid`.
+    pub async fn find_for_user(
+        pool: &sqlx::PgPool,
+        id: Uuid,
+        user_uid: Uuid,
+    ) -> Result<Option<Contract>, sqlx::Error> {
+        sqlx::query_as::<_, Contract>("SELECT * FROM contracts WHERE id = $1 AND user_uid = $2")
+            .bind(id)
+            .bind(user_uid)
+            .fetch_optional(pool)
+            .await
+    }
+
+    /// Atomically move an owned active/inactive contract to `closing`.
+    ///
+    /// Returns `None` when the contract is missing, foreign, or already
+    /// closing/terminal.
+    pub async fn set_closing(
+        pool: &sqlx::PgPool,
+        id: Uuid,
+        user_uid: Uuid,
+    ) -> Result<Option<Contract>, sqlx::Error> {
+        sqlx::query_as::<_, Contract>(
+            r#"UPDATE contracts
+               SET status = 'closing', settlement_target = 'cancelled', updated_at = NOW()
+               WHERE id = $1 AND user_uid = $2 AND status IN ('active', 'inactive')
+               RETURNING *"#,
+        )
+        .bind(id)
+        .bind(user_uid)
+        .fetch_optional(pool)
+        .await
+    }
+
+    /// Lock a contract row for settlement.
+    pub async fn find_for_update(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+    ) -> Result<Option<Contract>, sqlx::Error> {
+        sqlx::query_as::<_, Contract>("SELECT * FROM contracts WHERE id = $1 FOR UPDATE")
+            .bind(id)
+            .fetch_optional(&mut **tx)
+            .await
+    }
+
+    /// Apply the terminal status and payout fields. Requires `status = 'closing'`.
+    pub async fn finalize(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        id: Uuid,
+        target: &str,
+        fee: Decimal,
+        payout: Decimal,
+    ) -> Result<Contract, sqlx::Error> {
+        sqlx::query_as::<_, Contract>(
+            r#"UPDATE contracts
+               SET status = $1,
+                   available_fund = 0,
+                   platform_fee = $2,
+                   net_payout = $3,
+                   settled_at = NOW(),
+                   updated_at = NOW()
+               WHERE id = $4 AND status = 'closing'
+               RETURNING *"#,
+        )
+        .bind(target)
+        .bind(fee)
+        .bind(payout)
         .bind(id)
         .fetch_one(&mut **tx)
         .await
