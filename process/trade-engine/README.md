@@ -232,7 +232,7 @@ sequenceDiagram
     participant DB as PostgreSQL
     alt action = close
         RC->>DB: find parent entry (PnL basis)
-        Note over RC: pnl and credit = E + pnl (loss capped at E)
+        Note over RC: pnl and credit = portion_funds + pnl (loss capped at the portion)
     else action = open
         Note over RC: entry fill credits nothing
     end
@@ -244,7 +244,7 @@ Settlement rules:
 - **Fill** (`deal_size` > 0): `ledger::record_filled` → `filled`. A close also gets PnL and fund credit (see [Fund accounting](#fund-accounting)).
 - **Errors:** failed `get_order` or missing data is rechecked next cycle. Malformed `deal_funds` or `fee` aborts and retries. Malformed `deal_size` counts as still working.
 - **Idempotent:** `mark_filled` and `mark_cancelled` update only `open` rows. A repeat settle fails its transaction and is logged.
-- **Caveat:** a partly filled, then cancelled order settles as a full fill at the partial `deal_size`.
+- **Partial fills:** a close records its actual filled quantity. If it is below the entry's remaining quantity, the entry stays held and a later close handles the remainder; PnL and credit use only the closed portion.
 
 ## Position exit (TP/SL and reversals)
 
@@ -257,7 +257,7 @@ open another target position. Duplicate-close prevention is atomic.
 
 Every 12 seconds, `position_exit::run` performs one sweep:
 
-1. **Load held positions:** `action = 'open'` and `status = 'filled'`, with no live exit. Live = a close row that is `open` or `filled`, or `pending` under 5 minutes old. Failed or cancelled exits do not block a retry.
+1. **Load held positions:** `action = 'open'` and `status = 'filled'`, with filled close quantity below the entry quantity, and no live exit. Live = a close row that is `pending` or `open`; the global TP/SL query ignores a stale pending close after 5 minutes, while cash-out waits for any `pending` close. Failed, cancelled, and partially filled exits do not block the remainder.
 2. **Fetch prices:** `GET /api/v1/market/orderbook/level1`, once per distinct held symbol. Any failure aborts the sweep.
 3. **Decide:** compare last price with stored `tp_price` / `sl_price`. Skip positions missing either.
    - entry `buy`: exit when `last ≥ tp` (TP) or `last ≤ sl` (SL)
@@ -273,7 +273,7 @@ Every 12 seconds, `position_exit::run` performs one sweep:
 
 **Backoff.** On `429 Too Many Requests` from the price request, the sweep stops and places no exits. Waits: 30, 60, 120, 240, then 300 seconds. A successful sweep resets the wait to 12 seconds. Other errors neither reset nor extend it. A 429 on `place_order` is an ordinary exit failure.
 
-**One live exit per position.** Migration `process/migrations/20261016_order_reconcile_and_deposit_sweep.sql` creates partial unique index `idx_trade_orders_active_close` (at most one `pending` or `open` close row per entry). `reserve_exit` uses `ON CONFLICT DO NOTHING`; a conflict returns no row and the position is skipped. Blocks duplicate exits across engine instances. The reservation also requires the parent entry to still be `filled` and no close in `pending`/`open`/`filled` to exist, so a position settling between `held_entries` and `reserve_exit` cannot be closed twice.
+**One live exit per position.** Migration `process/migrations/20261016_order_reconcile_and_deposit_sweep.sql` creates partial unique index `idx_trade_orders_active_close` (at most one `pending` or `open` close row per entry). `reserve_exit` uses `ON CONFLICT DO NOTHING`; a conflict returns no row and the position is skipped. Blocks duplicate exits across engine instances. The reservation also requires the parent entry to still be `filled`, remaining quantity, and no close in `pending`/`open`, so a position settling between `held_entries` and `reserve_exit` cannot be closed twice and a partial close can be followed by a remainder close.
 
 ## Fund accounting
 
@@ -291,7 +291,7 @@ Per contract:
 | entry fill                            | no credit; sets `fill_price`                                           |
 | entry cancelled (no fill)             | `available_fund += funds`, `total_traded_fund −= funds`                |
 | entry rejected or never placed        | `available_fund += funds`, `total_traded_fund −= funds`                |
-| exit (close) fill                     | `available_fund += E + pnl` (PnL net of both fees, loss capped at `E`) |
+| exit (close) fill                     | `available_fund += portion_funds + pnl` (proportional for a partial close; PnL net of both fees, loss capped at the portion) |
 | exit rejected, failed, or cancelled   | no fund change (an exit reserves no fund)                              |
 
 - The entry reservation happens in `ledger::create_pending_open`, before the exchange call.
@@ -304,4 +304,4 @@ Per contract:
 - Fees are quote-currency. Base-asset fees are converted at the fill price; quote or currency-less fees are used as is.
 - Long (`buy`): `PnL = C − B − fees`. Short (`sell`): `PnL = B − C − fees`.
 - Loss capped at `E`, so `PnL ≥ −E`.
-- Credit `E + PnL` goes to `available_fund` in the same transaction that marks the close `filled`. Entry fills never credit.
+- Credit `portion_funds + PnL` goes to `available_fund` in the same transaction that marks the close `filled` (proportional for a partial close). Entry fills never credit.

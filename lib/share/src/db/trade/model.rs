@@ -24,6 +24,10 @@ pub struct TradeOrder {
     pub comment: String,
     /// Exchange-assigned order id, once accepted.
     pub exchange_order_id: Option<String>,
+    /// Exchange loan application id, when this order auto-borrowed.
+    pub loan_apply_id: Option<String>,
+    /// Actual base quantity borrowed by this order, when auto-borrow returned it.
+    pub borrow_size: Option<Decimal>,
     /// Lifecycle status (see [`Status`](super::Status)).
     pub status: String,
     /// Requested quantity.
@@ -112,11 +116,15 @@ impl TradeOrders {
         sqlx::query_as::<_, TradeOrder>(
             r#"SELECT e.* FROM trade_orders e
                WHERE e.action = 'open' AND e.status = 'filled'
+                 AND COALESCE((
+                     SELECT SUM(c.filled_qty) FROM trade_orders c
+                     WHERE c.parent_order_id = e.id AND c.status = 'filled'
+                 ), 0) < e.filled_qty
                  AND NOT EXISTS (
                      SELECT 1 FROM trade_orders c
                      WHERE c.parent_order_id = e.id
                        AND (
-                           c.status IN ('open', 'filled')
+                           c.status IN ('pending', 'open')
                            OR (c.status = 'pending' AND c.created_at > NOW() - INTERVAL '5 minutes')
                        )
                  )
@@ -151,10 +159,14 @@ impl TradeOrders {
                    SELECT 1 FROM trade_orders p
                    WHERE p.id = $8 AND p.action = 'open' AND p.status = 'filled'
                )
+                 AND COALESCE((
+                   SELECT SUM(c.filled_qty) FROM trade_orders c
+                   WHERE c.parent_order_id = $8 AND c.status = 'filled'
+                 ), 0) < (SELECT filled_qty FROM trade_orders WHERE id = $8)
                  AND NOT EXISTS (
                    SELECT 1 FROM trade_orders c
                    WHERE c.parent_order_id = $8
-                     AND c.status IN ('pending', 'open', 'filled')
+                     AND c.status IN ('pending', 'open')
                )
                ON CONFLICT DO NOTHING
                RETURNING *"#,
@@ -202,6 +214,87 @@ impl TradeOrders {
         .await
     }
 
+    /// Held entries belonging to one contract.
+    ///
+    /// Same rules as [`Self::held_entries`], scoped to `contract_id`.
+    pub async fn held_entries_for_contract(
+        pool: &PgPool,
+        contract_id: Uuid,
+    ) -> Result<Vec<TradeOrder>, sqlx::Error> {
+        sqlx::query_as::<_, TradeOrder>(
+            r#"SELECT e.* FROM trade_orders e
+               WHERE e.contract_id = $1 AND e.action = 'open' AND e.status = 'filled'
+                 AND COALESCE((
+                     SELECT SUM(c.filled_qty) FROM trade_orders c
+                     WHERE c.parent_order_id = e.id AND c.status = 'filled'
+                 ), 0) < e.filled_qty
+                 AND NOT EXISTS (
+                     SELECT 1 FROM trade_orders c
+                     WHERE c.parent_order_id = e.id AND c.status IN ('pending', 'open')
+                 )
+               ORDER BY e.created_at"#,
+        )
+        .bind(contract_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    /// Total quantity already closed for `entry_id`.
+    pub async fn filled_close_qty(pool: &PgPool, entry_id: Uuid) -> Result<Decimal, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT COALESCE(SUM(filled_qty), 0) FROM trade_orders WHERE parent_order_id = $1 AND status = 'filled'",
+        )
+        .bind(entry_id)
+        .fetch_one(pool)
+        .await
+    }
+
+    /// Whether the contract still has an entry with unclosed quantity.
+    pub async fn has_open_position_for_contract_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        contract_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            r#"SELECT EXISTS (
+                   SELECT 1 FROM trade_orders e
+                   WHERE e.contract_id = $1 AND e.action = 'open' AND e.status = 'filled'
+                     AND COALESCE((
+                         SELECT SUM(c.filled_qty) FROM trade_orders c
+                         WHERE c.parent_order_id = e.id AND c.status = 'filled'
+                     ), 0) < e.filled_qty
+               )"#,
+        )
+        .bind(contract_id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Whether `contract_id` has any `pending` or `open` order.
+    pub async fn has_unsettled_for_contract(
+        pool: &PgPool,
+        contract_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM trade_orders WHERE contract_id = $1 AND status IN ('pending','open'))",
+        )
+        .bind(contract_id)
+        .fetch_one(pool)
+        .await
+    }
+
+    /// Transaction-scoped variant of [`Self::has_unsettled_for_contract`].
+    pub async fn has_unsettled_for_contract_tx(
+        tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+        contract_id: Uuid,
+    ) -> Result<bool, sqlx::Error> {
+        sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM trade_orders WHERE contract_id = $1 AND status IN ('pending','open'))",
+        )
+        .bind(contract_id)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
     /// Orders reserved but not yet confirmed placed (no exchange order id).
     ///
     /// Used to reconcile placements whose outcome is unknown (crash, transport
@@ -216,19 +309,27 @@ impl TradeOrders {
         .await
     }
 
-    /// Mark an order as `open`, recording its exchange order id.
+    /// Mark an order as `open`, recording its exchange order id and, when
+    /// present, the loan application id returned by an auto-borrow.
     pub async fn mark_placed(
         tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
         id: Uuid,
         exchange_order_id: &str,
+        loan_apply_id: Option<&str>,
+        borrow_size: Option<Decimal>,
     ) -> Result<TradeOrder, sqlx::Error> {
         sqlx::query_as::<_, TradeOrder>(
             r#"UPDATE trade_orders
-               SET exchange_order_id = $1, status = 'open', updated_at = NOW()
-               WHERE id = $2 AND status = 'pending'
+               SET exchange_order_id = $1,
+                   loan_apply_id = COALESCE($2, loan_apply_id),
+                   borrow_size = COALESCE($3, borrow_size),
+                   status = 'open', updated_at = NOW()
+               WHERE id = $4 AND status = 'pending'
                RETURNING *"#,
         )
         .bind(exchange_order_id)
+        .bind(loan_apply_id)
+        .bind(borrow_size)
         .bind(id)
         .fetch_one(&mut **tx)
         .await

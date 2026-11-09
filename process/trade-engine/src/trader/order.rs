@@ -10,6 +10,7 @@ use kucoin::{
 pub enum OrderIntent {
     Open,
     Close,
+    Repay,
 }
 
 /// Build a cross-margin market order.
@@ -104,6 +105,19 @@ mod tests {
         );
         assert_eq!(req.auto_borrow, Some(false));
         assert_eq!(req.auto_repay, Some(true));
+    }
+
+    #[test]
+    fn repay_intent_never_borrows_or_repays() {
+        let req = margin_market_order(
+            "SOL-USDT",
+            Side::Buy,
+            "1".to_string(),
+            "cid-r",
+            OrderIntent::Repay,
+        );
+        assert_eq!(req.auto_borrow, Some(false));
+        assert_eq!(req.auto_repay, Some(false));
     }
 
     #[test]

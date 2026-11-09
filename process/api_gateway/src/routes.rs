@@ -45,5 +45,6 @@ fn contract_routes() -> impl HttpServiceFactory {
         .route("/nonce", web::get().to(Contracts::get_nonce))
         .route("/sign", web::post().to(Contracts::sign))
         .route("/me", web::get().to(Contracts::get_my_contracts))
+        .route("/{id}/cancel", web::post().to(Contracts::cancel))
         .route("/{id}/orders", web::get().to(Contracts::orders))
 }

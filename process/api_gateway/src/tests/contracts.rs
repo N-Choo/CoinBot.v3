@@ -204,7 +204,146 @@ async fn test_me_returns_only_owners_contracts() {
             .await
             .expect("cleanup contract");
     }
-    for wallet in [owner_wallet, other_wallet] {
+    for (wallet, uid) in [(&owner_wallet, owner_uid), (&other_wallet, other_uid)] {
+        sqlx::query("DELETE FROM contracts WHERE user_uid = $1")
+            .bind(uid)
+            .execute(&pool)
+            .await
+            .expect("cleanup contracts");
+        sqlx::query("DELETE FROM users WHERE wallet_address = $1")
+            .bind(wallet)
+            .execute(&pool)
+            .await
+            .expect("cleanup user");
+    }
+}
+
+/// Cancelling without a session returns `401`.
+#[actix_web::test]
+async fn test_cancel_unauthorized() {
+    let session_cache = setup_session_cache().await;
+    let nonce_cache = setup_nonce_cache().await;
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(dummy_pool()))
+            .app_data(web::Data::new(session_cache))
+            .app_data(web::Data::new(nonce_cache))
+            .configure(api_routes),
+    )
+    .await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/contracts/{}/cancel", Uuid::new_v4()))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+/// An owned active contract moves to `closing`; a repeat returns `409` and a
+/// foreign contract returns `404`.
+#[actix_web::test]
+async fn test_cancel_transitions_and_scopes_by_owner() {
+    let Some(pool) = real_pool() else { return };
+    sqlx::migrate!("../migrations")
+        .run(&pool)
+        .await
+        .expect("migrations failed");
+
+    let owner_wallet = format!("0xcancelowner{}", Uuid::new_v4().simple());
+    let other_wallet = format!("0xcancelother{}", Uuid::new_v4().simple());
+    let owner_nonce = format!("cancel-owner-{}", Uuid::new_v4());
+    let other_nonce = format!("cancel-other-{}", Uuid::new_v4());
+
+    for wallet in [&owner_wallet, &other_wallet] {
+        sqlx::query(
+            "INSERT INTO users (wallet_address) VALUES ($1) ON CONFLICT (wallet_address) DO NOTHING",
+        )
+        .bind(wallet)
+        .execute(&pool)
+        .await
+        .expect("insert user");
+    }
+    let owner_uid = upsert_user(&pool, &owner_wallet).await;
+    let other_uid = upsert_user(&pool, &other_wallet).await;
+
+    for (uid, nonce) in [(owner_uid, &owner_nonce), (other_uid, &other_nonce)] {
+        sqlx::query(
+            r#"INSERT INTO contracts
+                   (user_uid, signature, message, nonce, ticker,
+                    init_fund, available_fund, total_traded_fund, sl_pct, tp_pct, status)
+               VALUES ($1, '0xsig', $2, $3, 'BTC/USDT', '1000', '1000', '0', 2.0, 5.0, 'active')
+               ON CONFLICT (nonce) DO NOTHING"#,
+        )
+        .bind(uid)
+        .bind(nonce)
+        .bind(nonce)
+        .execute(&pool)
+        .await
+        .expect("insert contract");
+    }
+
+    let owner_contract: Uuid = sqlx::query_scalar("SELECT id FROM contracts WHERE nonce = $1")
+        .bind(&owner_nonce)
+        .fetch_one(&pool)
+        .await
+        .expect("owner contract");
+    let other_contract: Uuid = sqlx::query_scalar("SELECT id FROM contracts WHERE nonce = $1")
+        .bind(&other_nonce)
+        .fetch_one(&pool)
+        .await
+        .expect("other contract");
+
+    let session_cache = setup_session_cache().await;
+    let nonce_cache = setup_nonce_cache().await;
+    session_cache
+        .insert("test_cancel_owner_token".into(), owner_wallet.clone())
+        .await;
+
+    let app = test::init_service(
+        App::new()
+            .app_data(web::Data::new(pool.clone()))
+            .app_data(web::Data::new(session_cache))
+            .app_data(web::Data::new(nonce_cache))
+            .configure(api_routes),
+    )
+    .await;
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/contracts/{owner_contract}/cancel"))
+        .cookie(Cookie::new("session_token", "test_cancel_owner_token"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::OK);
+    let body: serde_json::Value = test::read_body_json(resp).await;
+    assert_eq!(body["status"], "closing");
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/contracts/{owner_contract}/cancel"))
+        .cookie(Cookie::new("session_token", "test_cancel_owner_token"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+
+    let req = test::TestRequest::post()
+        .uri(&format!("/api/contracts/{other_contract}/cancel"))
+        .cookie(Cookie::new("session_token", "test_cancel_owner_token"))
+        .to_request();
+    let resp = test::call_service(&app, req).await;
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    for nonce in [&owner_nonce, &other_nonce] {
+        sqlx::query("DELETE FROM contracts WHERE nonce = $1")
+            .bind(nonce)
+            .execute(&pool)
+            .await
+            .expect("cleanup contract");
+    }
+    for (wallet, uid) in [(&owner_wallet, owner_uid), (&other_wallet, other_uid)] {
+        sqlx::query("DELETE FROM contracts WHERE user_uid = $1")
+            .bind(uid)
+            .execute(&pool)
+            .await
+            .expect("cleanup contracts");
         sqlx::query("DELETE FROM users WHERE wallet_address = $1")
             .bind(wallet)
             .execute(&pool)

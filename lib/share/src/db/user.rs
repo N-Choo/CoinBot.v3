@@ -80,6 +80,41 @@ impl User {
         .await
     }
 
+    /// Release `locked` from the locked balance and credit `credit` to available.
+    ///
+    /// Fails with `RowNotFound` when the user's locked balance is lower than
+    /// `locked`, so a data inconsistency cannot create money.
+    pub async fn release_locked_and_credit(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        wallet: &str,
+        locked: Decimal,
+        credit: Decimal,
+    ) -> Result<Self, sqlx::Error> {
+        sqlx::query_as::<_, Self>(
+            r#"UPDATE users
+               SET balance = balance + $1,
+                   locked_balance = locked_balance - $2
+               WHERE wallet_address = $3 AND locked_balance >= $2
+               RETURNING *"#,
+        )
+        .bind(credit)
+        .bind(locked)
+        .bind(wallet)
+        .fetch_one(&mut **tx)
+        .await
+    }
+
+    /// Wallet for `uid` inside an existing transaction.
+    pub async fn wallet_for_uid_tx(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        uid: Uuid,
+    ) -> Result<String, sqlx::Error> {
+        sqlx::query_scalar("SELECT wallet_address FROM users WHERE uid = $1")
+            .bind(uid)
+            .fetch_one(&mut **tx)
+            .await
+    }
+
     /// Move `amount` from available to locked balance.
     ///
     /// Fails (no row) when the available balance is insufficient.

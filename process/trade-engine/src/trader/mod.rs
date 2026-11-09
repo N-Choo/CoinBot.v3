@@ -176,6 +176,18 @@ pub async fn execute(
         }
     }
 
+    // A cancel may have landed after this signal was pulled; never open a new
+    // position for a contract that is no longer active.
+    let status: Option<String> = sqlx::query_scalar("SELECT status FROM contracts WHERE id = $1")
+        .bind(c.id)
+        .fetch_optional(pool)
+        .await
+        .map_err(|e| ProcessError::Internal(format!("contract re-read failed: {e}")))?;
+    if status.as_deref() != Some("active") {
+        info!("[TRADE] contract {} is no longer active; skipping", c.id);
+        return Ok(());
+    }
+
     let order = ledger::create_pending_open(
         pool,
         c,
@@ -217,7 +229,18 @@ pub async fn execute(
         return Err(ProcessError::Internal(reason));
     };
 
-    ledger::record_placed(pool, order.id, &data.order_id).await?;
+    let borrow_size = data
+        .borrow_size
+        .as_deref()
+        .and_then(|v| v.parse::<Decimal>().ok());
+    ledger::record_placed(
+        pool,
+        order.id,
+        &data.order_id,
+        data.loan_apply_id.as_deref(),
+        borrow_size,
+    )
+    .await?;
 
     info!(
         "[TRADE] {} {} qty={quantity} price={price} fund={trade_fund} oid={}",

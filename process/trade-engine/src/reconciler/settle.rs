@@ -100,40 +100,82 @@ async fn settle_filled(
                         return; // retry next cycle
                     }
                 };
+                let entry_qty = entry.filled_qty;
+                if entry_qty.is_zero() {
+                    log::warn!("[RECONCILE] parent entry {} has no filled qty", entry.id);
+                    return;
+                }
+                let closed_before = match TradeOrders::filled_close_qty(db, entry.id).await {
+                    Ok(q) => q,
+                    Err(e) => {
+                        log::error!("[RECONCILE] close-qty lookup failed for {}: {e}", entry.id);
+                        return;
+                    }
+                };
+                let remaining_qty = (entry_qty - closed_before).max(Decimal::ZERO);
+                let portion = deal_size.min(remaining_qty);
+                if portion < deal_size {
+                    log::warn!(
+                        "[RECONCILE] close {} fills {deal_size} but only {remaining_qty} remains; capping",
+                        o.id
+                    );
+                }
                 let entry_price = entry.fill_price.unwrap_or(Decimal::ZERO);
+                let remaining_funds =
+                    entry.funds - (entry.funds * closed_before / entry_qty).round_dp(18);
+                let portion_funds = if portion == remaining_qty {
+                    remaining_funds
+                } else {
+                    (entry.funds * portion / entry_qty).round_dp(18)
+                };
                 // Prefer the entry's real fill for the cost basis; fall back to
                 // the committed fund (never a silent zero) when it is missing.
-                let entry_basis = if !entry.filled_qty.is_zero() && entry.fill_price.is_some() {
-                    entry.filled_qty * entry_price
+                let entry_basis = if entry.fill_price.is_some() {
+                    portion * entry_price
                 } else {
                     log::warn!(
                         "[RECONCILE] parent entry {} lacks a real fill; using committed fund as basis",
                         entry.id
                     );
-                    entry.funds
+                    portion_funds
                 };
-                let entry_fee_q = fee_in_quote(
+                let entry_fee_total = fee_in_quote(
                     entry.fee,
                     entry.fee_currency.as_deref(),
                     &base,
                     &quote,
                     entry_price,
                 );
+                let entry_fee_q = if portion == remaining_qty {
+                    entry_fee_total - (entry_fee_total * closed_before / entry_qty).round_dp(18)
+                } else {
+                    (entry_fee_total * portion / entry_qty).round_dp(18)
+                };
+                let proceeds = if deal_size.is_zero() {
+                    deal_funds
+                } else {
+                    (deal_funds * portion / deal_size).round_dp(18)
+                };
+                let exit_fee_portion = if deal_size.is_zero() {
+                    exit_fee_q
+                } else {
+                    (exit_fee_q * portion / deal_size).round_dp(18)
+                };
                 let raw_pnl = realized_pnl(
                     &entry.side,
                     entry_basis,
-                    deal_funds,
-                    entry_fee_q + exit_fee_q,
+                    proceeds,
+                    entry_fee_q + exit_fee_portion,
                 );
-                let pnl = cap_loss(raw_pnl, entry.funds);
+                let pnl = cap_loss(raw_pnl, portion_funds);
                 if pnl != raw_pnl {
                     log::warn!(
                         "[RECONCILE] close {} raw pnl {raw_pnl} exceeds committed capital {}; capping",
                         o.id,
-                        entry.funds
+                        portion_funds
                     );
                 }
-                (close_credit(entry.funds, pnl), Some(pnl))
+                (close_credit(portion_funds, pnl), Some(pnl))
             }
         }
     } else {
@@ -176,6 +218,7 @@ mod tests {
     use share::db::contracts::{Contract, ContractFilter, Contracts};
     use share::db::user::User;
     use sqlx::PgPool;
+    use std::str::FromStr;
     use uuid::Uuid;
 
     async fn test_pool() -> Option<PgPool> {
@@ -283,7 +326,7 @@ mod tests {
         .unwrap();
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
             .await
             .unwrap();
         TradeOrders::mark_filled(
@@ -316,7 +359,7 @@ mod tests {
         .expect("fresh exit reserved");
 
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, close.id, "exch-exit")
+        TradeOrders::mark_placed(&mut tx, close.id, "exch-exit", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -403,7 +446,7 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -445,7 +488,7 @@ mod tests {
         .await
         .unwrap();
         let mut tx = fx.pool.begin().await.unwrap();
-        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry")
+        TradeOrders::mark_placed(&mut tx, entry.id, "exch-entry", None, None)
             .await
             .unwrap();
         tx.commit().await.unwrap();
@@ -485,6 +528,70 @@ mod tests {
 
     /// Unparseable fill amounts abort the settle without touching the DB, so the
     /// order stays open for the next reconcile cycle.
+    /// A partially filled close credits only the closed portion and leaves the
+    /// entry held for the remainder.
+    #[tokio::test]
+    async fn partial_close_credits_only_the_closed_portion() {
+        let Some(fx) = setup(Decimal::from(1000)).await else {
+            return;
+        };
+        let entry = filled_entry(&fx, "buy", Decimal::from(100)).await;
+
+        let close1 = TradeOrders::reserve_exit(
+            &fx.pool,
+            &entry,
+            "sell",
+            &comment("exit"),
+            Decimal::from_str("0.5").unwrap(),
+            Decimal::ZERO,
+        )
+        .await
+        .unwrap()
+        .expect("first partial close reserved");
+        let mut tx = fx.pool.begin().await.unwrap();
+        TradeOrders::mark_placed(&mut tx, close1.id, "exch-1", None, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        settle_filled(&fx.pool, &close1, "BTC-USDT", &status("0.5", "60", "0")).await;
+
+        let after1 = fx.reload_contract().await;
+        assert_eq!(after1.available_fund, Decimal::from(960));
+        let held = TradeOrders::held_entries(&fx.pool).await.unwrap();
+        assert!(
+            held.iter().any(|e| e.id == entry.id),
+            "partially closed entry must remain held"
+        );
+
+        let close2 = TradeOrders::reserve_exit(
+            &fx.pool,
+            &entry,
+            "sell",
+            &comment("exit"),
+            Decimal::from_str("0.5").unwrap(),
+            Decimal::ZERO,
+        )
+        .await
+        .unwrap()
+        .expect("second partial close reserved");
+        let mut tx = fx.pool.begin().await.unwrap();
+        TradeOrders::mark_placed(&mut tx, close2.id, "exch-2", None, None)
+            .await
+            .unwrap();
+        tx.commit().await.unwrap();
+        settle_filled(&fx.pool, &close2, "BTC-USDT", &status("0.5", "60", "0")).await;
+
+        let after2 = fx.reload_contract().await;
+        assert_eq!(after2.available_fund, Decimal::from(1020));
+        let held = TradeOrders::held_entries(&fx.pool).await.unwrap();
+        assert!(
+            !held.iter().any(|e| e.id == entry.id),
+            "fully closed entry must not remain held"
+        );
+
+        fx.cleanup().await;
+    }
+
     #[tokio::test]
     async fn settle_filled_aborts_on_unparseable_amounts() {
         let Some(fx) = setup(Decimal::from(1000)).await else {
