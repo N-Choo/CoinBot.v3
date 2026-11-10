@@ -1,6 +1,7 @@
 docs/*
 kucoin/
 .env
+.env.ci
 *.log
 .opencode/
 target/
@@ -11,4 +12,5 @@ __pycache__/
 .worktrees/
 process/analyzer/out/
 **/.env
+.env.ci
 state/

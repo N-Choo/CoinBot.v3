@@ -28,7 +28,8 @@ async fn main() -> Result<(), ProcessError> {
     let kcc = app_state.kucoin.clone();
 
     // gPRC server: `EngineService`.
-    let engine_server = grpc_handler::EngineServer::new(db.clone(), kcc.clone());
+    let engine_server =
+        grpc_handler::EngineServer::new(db.clone(), kcc.clone(), config.grpc_auth_token.clone());
     let grpc_addr = config.grpc_addr.clone();
     tokio::spawn(grpc_handler::serve(engine_server, grpc_addr));
 

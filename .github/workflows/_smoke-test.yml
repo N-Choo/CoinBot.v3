@@ -13,7 +13,7 @@ jobs:
         run: make prod-build
       - name: Start services
         run: |
-          cp .env.ci .env
+          cp .env.ci.example .env
           docker compose -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod up -d
       - name: Wait for api_gateway

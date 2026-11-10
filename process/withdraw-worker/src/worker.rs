@@ -5,6 +5,7 @@ use std::time::Duration;
 use chrono::Utc;
 use kucoin::client::rest::KuCoinClient;
 use rust_decimal::Decimal;
+use share::db::user::User;
 use share::db::withdrawals::{Withdrawal, Withdrawals};
 use share::withdraw as intent;
 use sqlx::PgPool;
@@ -31,19 +32,10 @@ enum Outcome {
 
 /// Run until the process is stopped.
 pub async fn run(pool: PgPool, kcc: KuCoinClient, cfg: WorkerConfig) {
-    let mut pass_number: u64 = 0;
-
     loop {
         if let Err(e) = pass(&pool, &kcc, cfg).await {
             log::error!("[WITHDRAW] pass failed: {e}");
         }
-
-        // Solvency is informational and comparatively expensive, so sample it.
-        if pass_number.is_multiple_of(20) {
-            check_solvency(&pool, &kcc).await;
-        }
-
-        pass_number = pass_number.wrapping_add(1);
         tokio::time::sleep(Duration::from_secs(cfg.poll_secs)).await;
     }
 }
@@ -57,21 +49,17 @@ async fn pass(pool: &PgPool, kcc: &KuCoinClient, cfg: WorkerConfig) -> Result<()
         log::info!("[WITHDRAW] {} expired", withdrawal.id);
     }
 
-    while let Some(withdrawal) = Withdrawals::claim_next(pool)
-        .await
-        .map_err(|e| e.to_string())?
-    {
-        match process(pool, kcc, cfg, &withdrawal).await {
-            Ok(Outcome::Continue) => {}
-            Ok(Outcome::Yield) => break,
-            Err(e) => {
-                log::warn!("[WITHDRAW] {} processing failed: {e}", withdrawal.id);
-                // A transient failure before the exchange call returns the row
-                // to pending; the SQL guard keeps attempted rows untouched.
-                let _ = Withdrawals::release_unattempted(pool, withdrawal.id).await;
-                break;
-            }
+    match solvency_status(pool, kcc).await {
+        Some(false) => {
+            log::error!(
+                "[WITHDRAW] solvency breach: user liabilities exceed free USDT; pausing new withdrawals"
+            );
         }
+        None => {
+            log::warn!("[WITHDRAW] solvency check unavailable; proceeding");
+            drain_pending(pool, kcc, cfg).await?;
+        }
+        Some(true) => drain_pending(pool, kcc, cfg).await?,
     }
 
     // Run both independently so a transient history failure cannot stop
@@ -91,12 +79,48 @@ async fn pass(pool: &PgPool, kcc: &KuCoinClient, cfg: WorkerConfig) -> Result<()
     }
 }
 
+async fn drain_pending(pool: &PgPool, kcc: &KuCoinClient, cfg: WorkerConfig) -> Result<(), String> {
+    while let Some(withdrawal) = Withdrawals::claim_next(pool)
+        .await
+        .map_err(|e| e.to_string())?
+    {
+        match process(pool, kcc, cfg, &withdrawal).await {
+            Ok(Outcome::Continue) => {}
+            Ok(Outcome::Yield) => break,
+            Err(e) => {
+                log::warn!("[WITHDRAW] {} processing failed: {e}", withdrawal.id);
+                // A transient failure before the exchange call returns the row
+                // to pending; the SQL guard keeps attempted rows untouched.
+                let _ = Withdrawals::release_unattempted(pool, withdrawal.id).await;
+                break;
+            }
+        }
+    }
+    Ok(())
+}
+
 async fn process(
     pool: &PgPool,
     kcc: &KuCoinClient,
     cfg: WorkerConfig,
     withdrawal: &Withdrawal,
 ) -> Result<Outcome, String> {
+    let Some(owner) = User::find_by_uid(pool, withdrawal.user_uid)
+        .await
+        .map_err(|e| e.to_string())?
+    else {
+        return Err("withdrawal owner no longer exists".into());
+    };
+    if !owner
+        .wallet_address
+        .eq_ignore_ascii_case(&withdrawal.destination)
+    {
+        Withdrawals::mark_failed(pool, withdrawal.id, "destination does not match owner")
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(Outcome::Continue);
+    }
+
     if withdrawal.expires_at <= Utc::now() {
         Withdrawals::mark_expired(pool, withdrawal.id)
             .await
@@ -295,29 +319,32 @@ async fn reconcile_processing(
     Ok(())
 }
 
-/// Log when user liabilities exceed the platform's free USDT.
-async fn check_solvency(pool: &PgPool, kcc: &KuCoinClient) {
+/// `Some(true)` when funded, `Some(false)` on a confirmed breach, `None` when
+/// the check itself could not be completed.
+async fn solvency_status(pool: &PgPool, kcc: &KuCoinClient) -> Option<bool> {
     let liabilities: Decimal =
-        match sqlx::query_scalar("SELECT COALESCE(SUM(balance + locked_balance), 0) FROM users")
+        sqlx::query_scalar("SELECT COALESCE(SUM(balance + locked_balance), 0) FROM users")
             .fetch_one(pool)
             .await
-        {
-            Ok(value) => value,
-            Err(e) => {
-                log::warn!("[WITHDRAW] solvency query failed: {e}");
-                return;
-            }
-        };
+            .map_err(|e| log::warn!("[WITHDRAW] solvency query failed: {e}"))
+            .ok()?;
 
-    let main = exchange::main_available(kcc).await.unwrap_or_default();
-    let margin = exchange::margin_available(kcc).await.unwrap_or_default();
+    let main = exchange::main_available(kcc)
+        .await
+        .map_err(|e| log::warn!("[WITHDRAW] solvency Main lookup failed: {e}"))
+        .ok()?;
+    let margin = exchange::margin_available(kcc)
+        .await
+        .map_err(|e| log::warn!("[WITHDRAW] solvency Margin lookup failed: {e}"))
+        .ok()?;
+
     let available = main + margin;
-
     if liabilities > available {
         log::error!(
             "[WITHDRAW] liabilities {liabilities} exceed free USDT {available} (main={main}, margin={margin})"
         );
     }
+    Some(liabilities <= available)
 }
 
 /// Poll `submitted` rows until the exchange reports a terminal state.

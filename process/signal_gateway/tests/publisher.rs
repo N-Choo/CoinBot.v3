@@ -138,7 +138,8 @@ async fn publishes_over_grpc() {
     let sent = Arc::new(Mutex::new(Vec::new()));
     let endpoint = spawn_engine(TestEngine { sent: sent.clone() }).await;
 
-    let publisher = GrpcPublisher::new(&endpoint, Duration::from_secs(5)).unwrap();
+    let publisher =
+        GrpcPublisher::new(&endpoint, Duration::from_secs(5), "test-token".into()).unwrap();
     let ack = publisher.publish(sample_signal()).await.unwrap();
 
     assert!(ack.accepted);
@@ -151,7 +152,7 @@ async fn fetch_active_symbols_normalizes() {
     let sent = Arc::new(Mutex::new(Vec::new()));
     let endpoint = spawn_engine(TestEngine { sent }).await;
 
-    let symbols = fetch_active_symbols(&endpoint, Duration::from_secs(5))
+    let symbols = fetch_active_symbols(&endpoint, Duration::from_secs(5), "test-token")
         .await
         .unwrap();
 
@@ -160,7 +161,7 @@ async fn fetch_active_symbols_normalizes() {
 
 #[tokio::test]
 async fn invalid_endpoint_is_config_error() {
-    let err = fetch_active_symbols("not a url", Duration::from_secs(5))
+    let err = fetch_active_symbols("not a url", Duration::from_secs(5), "test-token")
         .await
         .unwrap_err();
 
@@ -170,7 +171,8 @@ async fn invalid_endpoint_is_config_error() {
 #[tokio::test]
 async fn publish_times_out() {
     let endpoint = spawn_engine(SlowEngine).await;
-    let publisher = GrpcPublisher::new(&endpoint, Duration::from_millis(50)).unwrap();
+    let publisher =
+        GrpcPublisher::new(&endpoint, Duration::from_millis(50), "test-token".into()).unwrap();
 
     let err = publisher.publish(sample_signal()).await.unwrap_err();
 
@@ -180,7 +182,8 @@ async fn publish_times_out() {
 #[tokio::test]
 async fn rejects_non_retryable_status() {
     let endpoint = spawn_engine(RejectingEngine).await;
-    let publisher = GrpcPublisher::new(&endpoint, Duration::from_secs(5)).unwrap();
+    let publisher =
+        GrpcPublisher::new(&endpoint, Duration::from_secs(5), "test-token".into()).unwrap();
 
     let err = publisher.publish(sample_signal()).await.unwrap_err();
 
@@ -190,7 +193,8 @@ async fn rejects_non_retryable_status() {
 #[tokio::test]
 async fn passes_duplicate_ack_through() {
     let endpoint = spawn_engine(DuplicateEngine).await;
-    let publisher = GrpcPublisher::new(&endpoint, Duration::from_secs(5)).unwrap();
+    let publisher =
+        GrpcPublisher::new(&endpoint, Duration::from_secs(5), "test-token".into()).unwrap();
 
     let ack = publisher.publish(sample_signal()).await.unwrap();
 

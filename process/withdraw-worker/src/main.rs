@@ -24,11 +24,19 @@ async fn main() -> Result<(), ProcessError> {
     let pool = sqlx::PgPool::connect(&database_url).await?;
     sqlx::migrate!("../migrations").run(&pool).await?;
 
-    let kcc = KuCoinClient::new(Credentials::new(
-        &cfg.get("KC_KEY")?,
-        &cfg.get("KC_SECRET")?,
-        &cfg.get("KC_PASSPHRASE")?,
-    ));
+    // Require withdrawal-specific keys: never fall back to the deposit/trade
+    // keys, which may carry broader exchange permissions.
+    let kc_key = cfg.get_prefixed("KC_KEY")?;
+    let kc_secret = cfg.get_prefixed("KC_SECRET")?;
+    let kc_passphrase = cfg.get_prefixed("KC_PASSPHRASE")?;
+    for other in ["DEPOSIT_KC_KEY", "TRADE_ENGINE_KC_KEY"] {
+        if std::env::var(other).is_ok_and(|value| value == kc_key) {
+            log::warn!(
+                "WITHDRAW_KC_KEY is shared with {other}; use a dedicated withdrawal-only KuCoin key"
+            );
+        }
+    }
+    let kcc = KuCoinClient::new(Credentials::new(&kc_key, &kc_secret, &kc_passphrase));
 
     let main_buffer = cfg
         .get("WITHDRAW_MAIN_BUFFER_USDT")

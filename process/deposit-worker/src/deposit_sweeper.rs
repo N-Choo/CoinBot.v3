@@ -89,6 +89,15 @@ async fn check_and_finalize(
         return Ok(false);
     }
 
+    // KuCoin only reports success after its own confirmations, but re-check the
+    // chain with the configured depth before crediting the user.
+    if let Err(e) = share::rpc::Rpc::confirm_onchain_success(&deposit.tx_hash).await {
+        if e.contains("Waiting for confirmations") {
+            return Ok(false);
+        }
+        return Err(e);
+    }
+
     // Use KuCoin's credited amount (human units): it is what actually sits in
     // the Main account, so it is what we sweep and credit.
     let raw_amount = record
@@ -108,10 +117,19 @@ async fn check_and_finalize(
     {
         let mut tx = pool.begin().await.map_err(|e| e.to_string())?;
 
-        // Create the user on their first finalized deposit, or fetch the existing one.
-        let user = User::upsert(&mut tx, &deposit.from_address)
-            .await
-            .map_err(|e| format!("Failed to upsert user: {}", e))?;
+        // Credit the authenticated owner recorded at intake, never an address
+        // re-derived from an RPC response.
+        let user = match User::find_by_uid_tx(&mut tx, deposit.user_uid).await {
+            Ok(Some(user)) => user,
+            Ok(None) => return Err("deposit owner no longer exists".to_string()),
+            Err(e) => return Err(format!("Failed to load deposit owner: {e}")),
+        };
+        if !user
+            .wallet_address
+            .eq_ignore_ascii_case(&deposit.from_address)
+        {
+            return Err("deposit sender does not match the owner".to_string());
+        }
 
         let user = match user.add_balance(&mut tx, amount).await {
             Ok(user) => user,

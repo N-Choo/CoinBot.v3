@@ -1,6 +1,6 @@
 use actix_web::{HttpResponse, Responder, web};
 use share::db::user::User;
-use share::db::withdrawals::Withdrawals;
+use share::db::withdrawals::{CreateWithdrawalError, Withdrawals};
 use share::withdraw::{self as intent, CHAIN, CHAIN_ID};
 use sqlx::PgPool;
 
@@ -96,6 +96,7 @@ impl Transaction {
         session_cache: web::Data<SessionCache>,
         pool: web::Data<PgPool>,
         grpc_deposit: web::Data<Channel>,
+        config: web::Data<crate::config::AppConfig>,
     ) -> impl Responder {
         let wallet = match authenticate(&header, &session_cache).await {
             Some(w) => w,
@@ -110,7 +111,7 @@ impl Transaction {
             }
         };
 
-        if let Err(e) = Rpc::confirm_onchain_success(&payload.tx_hash).await {
+        if let Err(e) = Rpc::confirm_onchain_success_at(&payload.tx_hash, 0).await {
             log::warn!("receipt check failed for {}: {}", payload.tx_hash, e);
             return HttpResponse::BadRequest().finish();
         }
@@ -153,15 +154,25 @@ impl Transaction {
             }
         };
 
-        let mut client = DepositServiceClient::new(grpc_deposit.get_ref().clone());
-        let resp = match client
-            .create_ticket0(TicketRequest {
+        let ticket = share::grpc_auth::with_token(
+            TicketRequest {
                 tx_hash: payload.tx_hash.clone(),
                 uid: user_uid.to_string(),
                 ticker: "USDT".into(),
-            })
-            .await
-        {
+            },
+            &config.grpc_auth_token,
+        )
+        .map_err(|e| {
+            log::error!("deposit: failed to attach service token: {e}");
+            e
+        });
+        let ticket = match ticket {
+            Ok(ticket) => ticket,
+            Err(_) => return HttpResponse::InternalServerError().finish(),
+        };
+
+        let mut client = DepositServiceClient::new(grpc_deposit.get_ref().clone());
+        let resp = match client.create_ticket0(ticket).await {
             Ok(r) => r.into_inner(),
             Err(e) => {
                 log::error!("Failed to create deposit: {}", e);
@@ -330,39 +341,11 @@ impl Transaction {
             return HttpResponse::BadRequest().body("insufficient funds");
         }
 
-        match Withdrawals::count_active_for_user(&pool, user.uid).await {
-            Ok(active) if active >= config.withdraw_max_pending => {
-                return HttpResponse::TooManyRequests().json(serde_json::json!({
-                    "code": "PENDING_LIMIT",
-                    "error": "too many pending withdrawals; wait for one to finish",
-                }));
-            }
-            Ok(_) => {}
-            Err(e) => {
-                log::error!("withdraw: pending count failed: {e}");
-                return HttpResponse::InternalServerError().finish();
-            }
-        }
-
-        match Withdrawals::count_since_for_user(&pool, user.uid, 24).await {
-            Ok(count) if count >= config.withdraw_daily_cap => {
-                return HttpResponse::TooManyRequests().json(serde_json::json!({
-                    "code": "DAILY_LIMIT",
-                    "error": "daily withdrawal limit reached",
-                }));
-            }
-            Ok(_) => {}
-            Err(e) => {
-                log::error!("withdraw: daily count failed: {e}");
-                return HttpResponse::InternalServerError().finish();
-            }
-        }
-
         let Some(expires_at) = chrono::DateTime::from_timestamp(parsed.expires_at, 0) else {
             return HttpResponse::BadRequest().body("invalid expiry");
         };
 
-        let result = Withdrawals::create_pending(
+        let result = Withdrawals::create_pending_capped(
             &pool,
             user.uid,
             &wallet,
@@ -373,6 +356,8 @@ impl Transaction {
             &payload.message,
             &payload.signature,
             expires_at,
+            config.withdraw_max_pending,
+            config.withdraw_daily_cap,
         )
         .await;
 
@@ -389,14 +374,30 @@ impl Transaction {
                     "expires_at": withdrawal.expires_at,
                 }))
             }
-            Err(sqlx::Error::Database(db)) if db.constraint() == Some("withdrawals_nonce_key") => {
+            Err(CreateWithdrawalError::Database(sqlx::Error::Database(db)))
+                if db.constraint() == Some("withdrawals_nonce_key") =>
+            {
                 HttpResponse::Conflict().json(serde_json::json!({
                     "code": "NONCE_CONFLICT",
                     "error": "nonce already used",
                 }))
             }
-            Err(sqlx::Error::RowNotFound) => HttpResponse::BadRequest().body("insufficient funds"),
-            Err(e) => {
+            Err(CreateWithdrawalError::InsufficientFunds) => {
+                HttpResponse::BadRequest().body("insufficient funds")
+            }
+            Err(CreateWithdrawalError::PendingLimit) => {
+                HttpResponse::TooManyRequests().json(serde_json::json!({
+                    "code": "PENDING_LIMIT",
+                    "error": "too many pending withdrawals; wait for one to finish",
+                }))
+            }
+            Err(CreateWithdrawalError::DailyLimit) => {
+                HttpResponse::TooManyRequests().json(serde_json::json!({
+                    "code": "DAILY_LIMIT",
+                    "error": "daily withdrawal limit reached",
+                }))
+            }
+            Err(CreateWithdrawalError::Database(e)) => {
                 log::error!("withdraw: create failed: {e}");
                 HttpResponse::InternalServerError().finish()
             }

@@ -344,6 +344,7 @@ impl Contracts {
     }
 
     /// Authenticate the request, mapping failure to a `401` response.
+    #[allow(clippy::result_large_err)]
     async fn authenticated_wallet(
         header: &actix_web::HttpRequest,
         cache: &web::Data<SessionCache>,
@@ -359,6 +360,7 @@ impl Contracts {
     ///
     /// Returns `401` when the signature is invalid or recovers a different
     /// wallet.
+    #[allow(clippy::result_large_err)]
     fn verify_signature(
         signature: &str,
         message: &str,

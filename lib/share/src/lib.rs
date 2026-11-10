@@ -22,6 +22,7 @@ pub mod config;
 pub mod db;
 pub mod erc20;
 pub mod error;
+pub mod grpc_auth;
 pub mod logger;
 pub mod models;
 pub mod rpc;

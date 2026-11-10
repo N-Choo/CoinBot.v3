@@ -12,7 +12,7 @@ use crate::config::AppConfig;
 use crate::kucoin_quote::{WithdrawQuote, WithdrawQuoteCache};
 use crate::routes::api_routes;
 
-fn config() -> AppConfig {
+pub(crate) fn config() -> AppConfig {
     AppConfig {
         ip: "127.0.0.1".into(),
         port: 8080,
@@ -25,6 +25,7 @@ fn config() -> AppConfig {
         allowed_origin: "*".into(),
         withdraw_max_pending: 3,
         withdraw_daily_cap: 20,
+        grpc_auth_token: "test-token".into(),
     }
 }
 

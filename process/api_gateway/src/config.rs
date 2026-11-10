@@ -27,6 +27,18 @@ pub struct AppConfig {
     pub withdraw_max_pending: i64,
     /// Maximum withdrawals a user may create in 24 hours.
     pub withdraw_daily_cap: i64,
+    /// Shared token required on internal gRPC calls.
+    pub grpc_auth_token: String,
+}
+
+/// Reject wildcard CORS origins; credentials make `*` unsafe.
+fn validate_allowed_origin(origin: &str) -> Result<(), ProcessError> {
+    if origin.trim() == "*" {
+        return Err(ProcessError::InvalidConfig(
+            "ALLOWED_ORIGIN must be an explicit origin; wildcards are not allowed".into(),
+        ));
+    }
+    Ok(())
 }
 
 impl AppConfig {
@@ -42,6 +54,8 @@ impl AppConfig {
         let cfg = ProcessConfig::new("api_gateway");
 
         let redis_base = cfg.get("REDIS_URL")?.trim_end_matches('/').to_owned();
+        let allowed_origin = cfg.get("ALLOWED_ORIGIN")?;
+        validate_allowed_origin(&allowed_origin)?;
 
         Ok(Self {
             ip: cfg.get("HOST")?,
@@ -52,20 +66,20 @@ impl AppConfig {
             session_redis_url: format!("{redis_base}/0"),
             nonce_redis_url: format!("{redis_base}/1"),
             grpc_deposit: cfg.get("GRPC_DEPOSIT_ENDPOINT")?,
-            allowed_origin: cfg.get("ALLOWED_ORIGIN")?,
+            allowed_origin,
             withdraw_max_pending: cfg.get_or("WITHDRAW_MAX_PENDING", 3i64),
             withdraw_daily_cap: cfg.get_or("WITHDRAW_DAILY_CAP", 20i64),
+            grpc_auth_token: cfg.get("GRPC_AUTH_TOKEN")?,
         })
     }
 
     /// Build the CORS policy applied to every response.
     ///
-    /// Allows the configured origin, `GET`/`POST`/`OPTIONS`, credentials, and
-    /// the authorization/accept/content-type headers. A configured origin of
-    /// `*` allows any origin (the request origin is echoed back, which is
-    /// required since credentials are supported).
+    /// Allows exactly the configured origin, `GET`/`POST`/`OPTIONS`,
+    /// credentials, and the authorization/accept/content-type headers.
+    /// Wildcards are rejected at startup because credentials are supported.
     pub fn get_cors(&self) -> Cors {
-        let cors = Cors::default()
+        Cors::default()
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
             .allowed_headers(vec![
                 http::header::AUTHORIZATION,
@@ -73,13 +87,8 @@ impl AppConfig {
                 http::header::CONTENT_TYPE,
             ])
             .supports_credentials()
-            .max_age(3600);
-
-        if self.allowed_origin.trim() == "*" {
-            cors.allow_any_origin()
-        } else {
-            cors.allowed_origin(&self.allowed_origin)
-        }
+            .max_age(3600)
+            .allowed_origin(&self.allowed_origin)
     }
 }
 
@@ -102,6 +111,7 @@ mod tests {
             allowed_origin: origin.to_string(),
             withdraw_max_pending: 3,
             withdraw_daily_cap: 20,
+            grpc_auth_token: "test-token".into(),
         }
     }
 
@@ -113,24 +123,10 @@ mod tests {
             .to_request()
     }
 
-    /// A `*` origin must not error the middleware and should echo the request origin.
     #[actix_web::test]
-    async fn wildcard_origin_allows_any_and_reflects() {
-        let app = test::init_service(
-            App::new()
-                .wrap(config_with_origin("*").get_cors())
-                .route("/", web::get().to(|| async { "ok" })),
-        )
-        .await;
-
-        let resp = test::call_service(&app, preflight("http://127.0.0.1:5173")).await;
-
-        assert_eq!(resp.status(), http::StatusCode::OK);
-        let allow_origin = resp
-            .headers()
-            .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
-            .expect("wildcard origin must echo Access-Control-Allow-Origin");
-        assert_eq!(allow_origin.to_str().unwrap(), "http://127.0.0.1:5173");
+    async fn rejects_a_wildcard_origin() {
+        assert!(validate_allowed_origin("*").is_err());
+        assert!(validate_allowed_origin("http://localhost:5173").is_ok());
     }
 
     /// A non-wildcard origin only allows that exact origin.

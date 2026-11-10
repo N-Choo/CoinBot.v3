@@ -4,7 +4,7 @@ use actix_web::{
     middleware::{Logger, NormalizePath},
     web,
 };
-use api_gateway::{config::AppConfig, routes::api_routes};
+use api_gateway::{config::AppConfig, rate_limit::ClientIpKeyExtractor, routes::api_routes};
 use dotenvy::dotenv;
 use share::ProcessError;
 use share::logger::init_logger;
@@ -24,6 +24,7 @@ async fn main() -> Result<(), ProcessError> {
     let config_data = web::Data::new(config.clone());
 
     let governor = GovernorConfigBuilder::default()
+        .key_extractor(ClientIpKeyExtractor)
         .milliseconds_per_request(20)
         .burst_size(100)
         .finish()

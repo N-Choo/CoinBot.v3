@@ -89,7 +89,9 @@ impl Default for Fakes {
 }
 
 fn config(dir: &std::path::Path) -> Config {
-    let mut cfg = Config::from_lookup(|_| None).unwrap();
+    let mut cfg =
+        Config::from_lookup(|key| (key == "GRPC_AUTH_TOKEN").then(|| "test-token".to_string()))
+            .unwrap();
     cfg.state_path = dir.join("state.json");
     cfg.audit_path = dir.join("audit.jsonl");
     cfg.price_check = PriceCheck::Strict;

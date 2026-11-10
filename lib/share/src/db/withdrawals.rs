@@ -44,14 +44,29 @@ pub struct Withdrawal {
     pub updated_at: DateTime<Utc>,
 }
 
+/// Failure modes for a capped withdrawal creation.
+#[derive(Debug)]
+pub enum CreateWithdrawalError {
+    Database(sqlx::Error),
+    InsufficientFunds,
+    PendingLimit,
+    DailyLimit,
+}
+
+impl From<sqlx::Error> for CreateWithdrawalError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
+}
+
 /// Persistence operations for withdrawals.
 pub struct Withdrawals;
 
 impl Withdrawals {
     /// Lock `total` from `wallet` and insert a `pending` withdrawal atomically.
     ///
-    /// Fails with `RowNotFound` when the available balance is insufficient, or
-    /// a unique violation on `nonce` when the signature was already used.
+    /// Uncapped variant kept for tests and internal callers; the API uses
+    /// [`Self::create_pending_capped`].
     #[allow(clippy::too_many_arguments)]
     pub async fn create_pending(
         pool: &PgPool,
@@ -65,6 +80,67 @@ impl Withdrawals {
         signature: &str,
         expires_at: DateTime<Utc>,
     ) -> Result<Withdrawal, sqlx::Error> {
+        match Self::create_pending_inner(
+            pool, user_uid, wallet, amount, fee, total, nonce, message, signature, expires_at, None,
+        )
+        .await
+        {
+            Ok(withdrawal) => Ok(withdrawal),
+            Err(CreateWithdrawalError::Database(error)) => Err(error),
+            Err(CreateWithdrawalError::InsufficientFunds) => Err(sqlx::Error::RowNotFound),
+            Err(CreateWithdrawalError::PendingLimit | CreateWithdrawalError::DailyLimit) => {
+                Err(sqlx::Error::Protocol("withdrawal limit".into()))
+            }
+        }
+    }
+
+    /// Capped variant: checks pending/daily limits in the same transaction that
+    /// locks the user row, so concurrent requests cannot bypass them.
+    #[allow(clippy::too_many_arguments)]
+    pub async fn create_pending_capped(
+        pool: &PgPool,
+        user_uid: Uuid,
+        wallet: &str,
+        amount: Decimal,
+        fee: Decimal,
+        total: Decimal,
+        nonce: &str,
+        message: &str,
+        signature: &str,
+        expires_at: DateTime<Utc>,
+        max_pending: i64,
+        daily_cap: i64,
+    ) -> Result<Withdrawal, CreateWithdrawalError> {
+        Self::create_pending_inner(
+            pool,
+            user_uid,
+            wallet,
+            amount,
+            fee,
+            total,
+            nonce,
+            message,
+            signature,
+            expires_at,
+            Some((max_pending, daily_cap)),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn create_pending_inner(
+        pool: &PgPool,
+        user_uid: Uuid,
+        wallet: &str,
+        amount: Decimal,
+        fee: Decimal,
+        total: Decimal,
+        nonce: &str,
+        message: &str,
+        signature: &str,
+        expires_at: DateTime<Utc>,
+        caps: Option<(i64, i64)>,
+    ) -> Result<Withdrawal, CreateWithdrawalError> {
         let mut tx = pool.begin().await?;
 
         let user = sqlx::query_as::<_, User>(
@@ -77,7 +153,37 @@ impl Withdrawals {
         .bind(total)
         .bind(wallet)
         .fetch_one(&mut *tx)
-        .await?;
+        .await
+        .map_err(|error| match error {
+            sqlx::Error::RowNotFound => CreateWithdrawalError::InsufficientFunds,
+            other => CreateWithdrawalError::Database(other),
+        })?;
+
+        if let Some((max_pending, daily_cap)) = caps {
+            let active: i64 = sqlx::query_scalar(
+                r#"SELECT COUNT(*) FROM withdrawals
+                   WHERE user_uid = $1
+                     AND status IN ('pending', 'processing', 'submitted')"#,
+            )
+            .bind(user_uid)
+            .fetch_one(&mut *tx)
+            .await?;
+            if active >= max_pending {
+                return Err(CreateWithdrawalError::PendingLimit);
+            }
+
+            let recent: i64 = sqlx::query_scalar(
+                r#"SELECT COUNT(*) FROM withdrawals
+                   WHERE user_uid = $1
+                     AND created_at > NOW() - INTERVAL '24 hours'"#,
+            )
+            .bind(user_uid)
+            .fetch_one(&mut *tx)
+            .await?;
+            if recent >= daily_cap {
+                return Err(CreateWithdrawalError::DailyLimit);
+            }
+        }
 
         // v1 withdraws only to the authenticated wallet, so `wallet` is the
         // canonical destination. This keeps refunds/settlement independent of

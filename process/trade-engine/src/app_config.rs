@@ -9,6 +9,8 @@ pub struct AppConfig {
     pub kc_passphrase: String,
     /// Bind address for the engine's `EngineService` gRPC server (signal-gateway is the client).
     pub grpc_addr: String,
+    /// Shared token required on internal gRPC calls.
+    pub grpc_auth_token: String,
 }
 
 impl std::fmt::Debug for AppConfig {
@@ -34,6 +36,7 @@ impl AppConfig {
             kc_secret: cfg.get("KC_SECRET")?,
             kc_passphrase: cfg.get("KC_PASSPHRASE")?,
             grpc_addr: cfg.get("GRPC_ADDR")?,
+            grpc_auth_token: cfg.get("GRPC_AUTH_TOKEN")?,
         })
     }
 }

@@ -35,6 +35,7 @@ async fn main() -> Result<(), ProcessError> {
     let publisher = Arc::new(GrpcPublisher::new(
         config.grpc_endpoint.as_str(),
         config.grpc_timeout,
+        config.grpc_auth_token.clone(),
     )?);
     let price = Arc::new(KuCoinPrice::new(
         config.kucoin_base_url.as_str(),
@@ -126,6 +127,7 @@ async fn run_once(gateway: &mut Gateway, config: &Config, candle: chrono::DateTi
         config.grpc_endpoint.as_str(),
         config.grpc_timeout,
         3,
+        config.grpc_auth_token.as_str(),
     )
     .await
     {

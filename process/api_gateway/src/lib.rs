@@ -17,6 +17,7 @@ pub mod auth;
 pub mod config;
 pub mod constants;
 pub mod kucoin_quote;
+pub mod rate_limit;
 pub mod routes;
 pub mod state;
 
