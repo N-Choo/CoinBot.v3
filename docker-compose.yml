@@ -79,6 +79,48 @@ services:
     profiles:
       - prod
 
+  # ── Withdraw Worker ────────────────────────
+
+  withdraw-worker:
+    profiles:
+      - dev
+    build:
+      context: .
+      dockerfile: process/withdraw-worker/Dockerfile
+      target: dev-builder
+    command: cargo run -p withdraw-worker
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+
+  withdraw-worker-prod:
+    image: ghcr.io/n-choo/coinbot-withdraw-worker:latest
+    build:
+      context: .
+      dockerfile: process/withdraw-worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    profiles:
+      - prod
+
   # ── API Gateway ────────────────────────────
 
   api_gateway:

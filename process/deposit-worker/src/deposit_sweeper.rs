@@ -113,7 +113,22 @@ async fn check_and_finalize(
             .await
             .map_err(|e| format!("Failed to upsert user: {}", e))?;
 
-        if let Err(e) = user.add_balance(&mut tx, amount).await {
+        let user = match user.add_balance(&mut tx, amount).await {
+            Ok(user) => user,
+            Err(e) => return Err(e.to_string()),
+        };
+        if let Err(e) = share::db::ledger::record(
+            &mut tx,
+            user.uid,
+            share::db::ledger::LedgerKind::Deposit,
+            amount,
+            rust_decimal::Decimal::ZERO,
+            &user,
+            "deposit",
+            Some(deposit.id),
+        )
+        .await
+        {
             return Err(e.to_string());
         }
 

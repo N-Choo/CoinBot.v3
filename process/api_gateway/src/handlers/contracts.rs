@@ -118,15 +118,16 @@ impl Contracts {
             }
         };
 
-        if let Err(e) = user.lock_balance(&mut tx, settings.init_fund).await {
-            return match e {
-                sqlx::Error::RowNotFound => HttpResponse::BadRequest().body("Insufficient funds"),
-                other => {
-                    log::error!("lock_balance failed for {}: {}", wallet, other);
-                    HttpResponse::InternalServerError().finish()
-                }
-            };
-        }
+        let locked = match user.lock_balance(&mut tx, settings.init_fund).await {
+            Ok(user) => user,
+            Err(sqlx::Error::RowNotFound) => {
+                return HttpResponse::BadRequest().body("Insufficient funds");
+            }
+            Err(other) => {
+                log::error!("lock_balance failed for {}: {}", wallet, other);
+                return HttpResponse::InternalServerError().finish();
+            }
+        };
 
         nonce_cache.invalidate(&payload.nonce).await;
 
@@ -151,6 +152,35 @@ impl Contracts {
                 return HttpResponse::Conflict().body("Nonce already used");
             }
             log::error!("Failed to create contract: {}", e);
+            return HttpResponse::InternalServerError().finish();
+        }
+
+        let contract_id: uuid::Uuid =
+            match sqlx::query_scalar("SELECT id FROM contracts WHERE nonce = $1")
+                .bind(&payload.nonce)
+                .fetch_one(&mut *tx)
+                .await
+            {
+                Ok(id) => id,
+                Err(e) => {
+                    log::error!("Failed to read contract id for {}: {}", wallet, e);
+                    return HttpResponse::InternalServerError().finish();
+                }
+            };
+
+        if let Err(e) = share::db::ledger::record(
+            &mut tx,
+            locked.uid,
+            share::db::ledger::LedgerKind::ContractLock,
+            -settings.init_fund,
+            settings.init_fund,
+            &locked,
+            "contract",
+            Some(contract_id),
+        )
+        .await
+        {
+            log::error!("ledger record failed for {}: {}", wallet, e);
             return HttpResponse::InternalServerError().finish();
         }
 

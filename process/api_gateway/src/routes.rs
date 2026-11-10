@@ -32,10 +32,20 @@ fn user_routes() -> impl HttpServiceFactory {
         .route("/stats", web::get().to(Stats::user))
 }
 
-/// Routes under `/api/transactions`: deposit intake and deposit listing.
+/// Routes under `/api/transactions`: deposits and withdrawals.
 fn transaction_routes() -> impl HttpServiceFactory {
     web::scope("/transactions")
         .route("/deposit", web::post().to(Transaction::deposit))
+        .route(
+            "/withdraw/quote",
+            web::get().to(Transaction::withdraw_quote),
+        )
+        .route(
+            "/withdraw/nonce",
+            web::get().to(Transaction::withdraw_nonce),
+        )
+        .route("/withdraw", web::post().to(Transaction::withdraw))
+        .route("/withdrawals", web::get().to(Transaction::withdrawals))
         .route("", web::get().to(Transaction::list))
 }
 

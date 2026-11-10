@@ -58,6 +58,14 @@ impl NonceCache {
     pub async fn insert(&self, k: String, v: String) {
         self.cache.set(&k, &v, Self::TTL).await
     }
+
+    /// Store `v` under key `k` with an explicit TTL.
+    ///
+    /// Withdrawal nonces use a slightly longer TTL than the signed intent so a
+    /// user who pauses before signing does not lose the nonce first.
+    pub async fn insert_with_ttl(&self, k: String, v: String, ttl_secs: u64) {
+        self.cache.set(&k, &v, ttl_secs).await
+    }
     /// Remove a nonce (single-use).
     pub async fn invalidate(&self, k: &str) {
         self.cache.del(k).await

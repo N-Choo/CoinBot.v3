@@ -23,6 +23,10 @@ pub struct AppConfig {
     pub grpc_deposit: String,
     /// Origin permitted by CORS.
     pub allowed_origin: String,
+    /// Maximum non-terminal withdrawals a user may have queued.
+    pub withdraw_max_pending: i64,
+    /// Maximum withdrawals a user may create in 24 hours.
+    pub withdraw_daily_cap: i64,
 }
 
 impl AppConfig {
@@ -49,6 +53,8 @@ impl AppConfig {
             nonce_redis_url: format!("{redis_base}/1"),
             grpc_deposit: cfg.get("GRPC_DEPOSIT_ENDPOINT")?,
             allowed_origin: cfg.get("ALLOWED_ORIGIN")?,
+            withdraw_max_pending: cfg.get_or("WITHDRAW_MAX_PENDING", 3i64),
+            withdraw_daily_cap: cfg.get_or("WITHDRAW_DAILY_CAP", 20i64),
         })
     }
 
@@ -94,6 +100,8 @@ mod tests {
             nonce_redis_url: String::new(),
             grpc_deposit: String::new(),
             allowed_origin: origin.to_string(),
+            withdraw_max_pending: 3,
+            withdraw_daily_cap: 20,
         }
     }
 

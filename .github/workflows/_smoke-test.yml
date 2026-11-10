@@ -29,7 +29,7 @@ jobs:
           exit 1
       - name: Verify all services are running
         run: |
-          expected="postgres redis api_gateway-prod deposit-worker-prod trade-engine-prod frontend-prod"
+          expected="postgres redis api_gateway-prod deposit-worker-prod withdraw-worker-prod trade-engine-prod frontend-prod"
           running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod ps --status running --services | sort)
           echo "$running"

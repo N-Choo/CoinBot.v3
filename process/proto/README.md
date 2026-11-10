@@ -153,12 +153,13 @@ both deposit and withdrawal logic.
 | Process | Responsibility | Cannot do |
 |---|---|---|
 | `deposit-worker` | Record deposits via gRPC | Process withdrawals |
-| `api_gateway` | Auth, routing | Modify balances |
+| `withdraw-worker` | Execute signed withdrawals from the DB queue | Accept deposits |
+| `api_gateway` | Auth, routing, signed intent intake | Execute exchange withdrawals |
 
 Enforced by:
 
 1. **Crate boundaries** — services depend only on the shared `share` crate, never on each other
-2. **Schema ownership** — each service owns its own tables (`deposits` vs `users`/`contracts`)
+2. **Schema ownership** — each service owns its own tables (`deposits`, `withdrawals`, `users`/`contracts`)
 3. **gRPC contracts** — services only expose what the proto defines
 
 ## Ethical Walls

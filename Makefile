@@ -1,4 +1,4 @@
-PACKAGES = api-gateway share deposit trade-engine signal-gateway
+PACKAGES = api-gateway share deposit trade-engine signal-gateway withdraw-worker
 
 .PHONY: help ci ci-test dev prod seed seed-clean
 
@@ -69,10 +69,10 @@ frontend-ci: frontend-install
 
 dev:
 	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine opencode signal-gateway frontend
+		docker compose up api_gateway deposit-worker withdraw-worker trade-engine opencode signal-gateway frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod withdraw-worker-prod
 
 # Pull pre-built images from ghcr (built by CI on main) and (re)start; never builds.
 prod:

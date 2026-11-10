@@ -35,6 +35,7 @@ flowchart TB
     subgraph rust["Rust services"]
         GW["api_gateway"]
         DW["deposit-worker"]
+        WW["withdraw-worker"]
         TE["trade-engine<br/>(gRPC server: EngineService)"]
         SG["signal-gateway"]
     end
@@ -52,6 +53,11 @@ flowchart TB
     DW -->|"sweep"| KC
     DW -->|"upsert user + credit balance"| DB
 
+    GW -->|"signed withdrawal -> queue row"| DB
+    WW -->|"pending withdrawals"| DB
+    WW -->|"transfer + withdraw"| KC
+    WW -->|"settle ledger"| DB
+
     SG -->|"gRPC GetActiveSymbols (pull)"| TE
     SG -->|"gRPC Publish(Signal) (push)"| TE
     SG -->|"HTTP trade-agent"| OC
@@ -62,13 +68,14 @@ flowchart TB
     TE -->|"load + verify contracts"| DB
     TE -->|"execute + reconcile orders"| KC
 
-    class UI,GW,DW,TE,SG,OC,DB,RD,ETH,KC plain;
+    class UI,GW,DW,WW,TE,SG,OC,DB,RD,ETH,KC plain;
 ```
 
 | Process          | Role                                                                                                                                                                                                                                                                                                                                | Docs                                       |
 | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------ |
-| `api_gateway`    | HTTP API — auth, contract signing, deposit intake                                                                                                                                                                                                                                                                                   | [README](process/api_gateway/README.md)    |
+| `api_gateway`    | HTTP API — auth, contract signing, deposit intake, and signed withdrawal intake                                                                                                                                                                                                                                                      | [README](process/api_gateway/README.md)    |
 | `deposit-worker` | gRPC ticket + background deposit sweeper                                                                                                                                                                                                                                                                                            | [README](process/deposit-worker/README.md) |
+| `withdraw-worker`| Executes signed USDT-ERC20 withdrawals: re-verifies the stored intent, moves `MarginV2 -> Main`, calls KuCoin with `remark` idempotency, reconciles history, and settles the ledger.                                                                                                                                                    | [README](process/withdraw-worker/README.md) |
 | `trade-engine`   | Turns `signal-gateway` signals into KuCoin **cross-margin** orders, reconciles them against the exchange, and exits positions on TP/SL when ATR is enabled or on an opposite target-side signal. Also serves the gRPC `EngineService` that `signal-gateway` calls. Sole writer of order rows and contract funds (via its `ledger`). | [README](process/trade-engine/README.md)   |
 | `signal-gateway` | Runs 6x/day shortly after each 4h UTC candle close. Pulls active symbols sequentially with a round-robin start, asks the `opencode` trade-agent for a prediction per symbol, validates strict JSON and the entry price against KuCoin, then publishes to `trade-engine` over gRPC.                                                  | [README](process/signal_gateway/README.md) |
 | `frontend`       | React SPA                                                                                                                                                                                                                                                                                                                           | [README](react/README.md)                  |
@@ -81,6 +88,7 @@ On every push, the `changes` job detects which services changed. Tests always ru
 | -------------------------------------------------------------------------------------------------------------- | ------------------------ |
 | `process/api_gateway/**`                                                                                       | `coinbot-api_gateway`    |
 | `process/deposit-worker/**`                                                                                    | `coinbot-worker`         |
+| `process/withdraw-worker/**`                                                                                   | `coinbot-withdraw-worker`|
 | `process/trade-engine/**`                                                                                      | `coinbot-trade_engine`   |
 | `process/signal_gateway/**`                                                                                    | `coinbot-signal-gateway` |
 | `process/opencode/**`                                                                                          | `coinbot-opencode`       |

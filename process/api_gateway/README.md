@@ -1,8 +1,8 @@
 # API Gateway
 
 Actix-Web REST surface for CoinBot.v3. It is the **only HTTP entry point** to the
-platform: wallet authentication, contract signing, on-chain deposit intake, and read
-endpoints for balances, contracts, and trade orders.
+platform: wallet authentication, contract signing, on-chain deposit intake, signed
+withdrawal intake, and read endpoints for balances, contracts, and trade orders.
 
 - **Base URL** — `/api` (dev: `http://localhost:8081`)
 - **Auth** — an HttpOnly `session_token` cookie issued on login; protected routes
@@ -43,6 +43,10 @@ Ethereum RPC to verify on-chain deposits.
 | GET | `/api/contracts/{id}/orders` | session | The caller's orders for one contract |
 | POST | `/api/transactions/deposit` | session | Submit an on-chain USDT deposit |
 | GET | `/api/transactions` | session | The caller's deposits |
+| GET | `/api/transactions/withdraw/quote` | session | Live USDT-ERC20 fee and limits |
+| GET | `/api/transactions/withdraw/nonce` | session | One-time withdrawal-signing nonce |
+| POST | `/api/transactions/withdraw` | session | Verify a signed withdrawal and queue it |
+| GET | `/api/transactions/withdrawals` | session | The caller's withdrawals |
 
 ## Authentication flow
 
@@ -187,6 +191,58 @@ The user's deposits, newest first.
 
 - **200** array · **401** · **500**
 
+## Withdrawals
+
+USDT on Ethereum ERC20 (`chain = "eth"`) only. The user signs an EIP-712
+`Withdrawal` struct in the `CoinBot` / version `1` domain on chain id `1`; the
+gateway verifies it, locks `amount + fee`, and queues a `pending` row. Execution
+is asynchronous in `withdraw-worker`.
+
+### `GET /api/transactions/withdraw/quote`
+
+Live values from the public KuCoin currency endpoint (cached ~60s).
+
+```json
+{
+  "destination": "0x…",
+  "currency": "USDT",
+  "chain": "eth",
+  "chain_name": "ERC20",
+  "fee": "5.5",
+  "min": "30",
+  "precision": 6,
+  "available_balance": "812.40",
+  "max_withdrawable": "806.90"
+}
+```
+
+- **200** · **401** · **503** KuCoin unreachable / chain disabled
+
+### `GET /api/transactions/withdraw/nonce`
+
+One-time nonce bound to the session wallet (5-minute Redis TTL).
+
+- **200** — `{ "nonce": "…" }` · **401** · **500**
+
+### `POST /api/transactions/withdraw`
+
+Body `{ nonce, message, signature }`, where `message` is the JSON of the signed
+intent and `signature` is the EIP-712 signature.
+
+- **200** — `{ id, status: "pending", amount, fee, total, destination, expires_at }`
+- **400** malformed/expired intent · destination ≠ session wallet · below minimum · insufficient funds
+- **401** no session · bad signature
+- **409** nonce reused/expired · fee changed
+- **429** too many pending withdrawals · daily cap reached
+- **503** quote unavailable
+
+### `GET /api/transactions/withdrawals`
+
+The caller's withdrawals, newest first (max 100), including `status`,
+`tx_hash`, and `failure_reason` for expired/failed rows.
+
+- **200** array · **401** · **500**
+
 ---
 
 ## Layout
@@ -200,11 +256,12 @@ src/
   auth/
     cache.rs     Redis session + nonce caches
     session.rs   authenticate() — resolve the session cookie to a wallet
+  kucoin_quote.rs public USDT-ERC20 quote + cache
   handlers/
     auth.rs      challenge, login, logout, verify
     config.rs    GET /api/config
     contracts.rs nonce, sign, me, {id}/orders
-    transaction.rs deposit, list
+    transaction.rs deposits + withdrawals
     stats.rs     /api/stats, /api/user/stats
   models/        request/response DTOs
   tests/         route/integration tests

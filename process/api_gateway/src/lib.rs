@@ -7,6 +7,7 @@
 //!
 //! - [`config`] — environment-driven [`config::AppConfig`].
 //! - [`constants`] — platform wallet and USDT contract addresses.
+//! - [`kucoin_quote`] — public withdrawal quote and its cache.
 //! - [`auth`] — session/nonce caches and request authentication.
 //! - [`routes`] — the `/api` route table.
 //! - [`state`] — shared [`state::AppState`] (DB pool, caches, gRPC channel).
@@ -15,6 +16,7 @@
 pub mod auth;
 pub mod config;
 pub mod constants;
+pub mod kucoin_quote;
 pub mod routes;
 pub mod state;
 

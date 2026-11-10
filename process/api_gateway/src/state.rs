@@ -4,6 +4,7 @@ use tonic::transport::Channel;
 
 use crate::auth::{NonceCache, SessionCache};
 use crate::config::AppConfig;
+use crate::kucoin_quote::WithdrawQuoteCache;
 
 /// Shared, cloneable application state handed to handlers via `web::Data`.
 #[derive(Clone)]
@@ -16,6 +17,10 @@ pub struct AppState {
     pub session_cache: SessionCache,
     /// Lazy gRPC channel to the deposit worker.
     pub grpc_deposit: Channel,
+    /// Cache for the public KuCoin withdrawal quote.
+    pub quote_cache: WithdrawQuoteCache,
+    /// Shared HTTP client for public KuCoin calls.
+    pub http: reqwest::Client,
 }
 
 impl AppState {
@@ -40,6 +45,11 @@ impl AppState {
             nonce_cache,
             session_cache,
             grpc_deposit,
+            quote_cache: WithdrawQuoteCache::new(),
+            http: reqwest::Client::builder()
+                .timeout(std::time::Duration::from_secs(10))
+                .build()
+                .unwrap_or_else(|_| reqwest::Client::new()),
         })
     }
 }
