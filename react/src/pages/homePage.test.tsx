@@ -49,9 +49,19 @@ describe('CoinBot (homePage)', () => {
 
   test('renders feature cards', () => {
     render(<Wrapper><CoinBot /></Wrapper>)
-    expect(screen.getByText('Wallet Accounts')).toBeInTheDocument()
-    expect(screen.getByText('Trading Service')).toBeInTheDocument()
-    expect(screen.getByText('Automated Deposits')).toBeInTheDocument()
+    expect(screen.getByText('Wallet-Native Account')).toBeInTheDocument()
+    expect(screen.getByText('Defined-Risk Contracts')).toBeInTheDocument()
+    expect(screen.getByText('Automated Execution')).toBeInTheDocument()
+    expect(screen.getByText('Signal Engine')).toBeInTheDocument()
+    expect(screen.getByText('Transparent Ledger')).toBeInTheDocument()
+    expect(screen.getByText('Withdraw Anytime')).toBeInTheDocument()
+  })
+
+  test('renders safeguards', () => {
+    render(<Wrapper><CoinBot /></Wrapper>)
+    expect(screen.getByText('Risk controls, not promises.')).toBeInTheDocument()
+    expect(screen.getByText('Max loss, fixed upfront')).toBeInTheDocument()
+    expect(screen.getByText('5% on net profit only')).toBeInTheDocument()
   })
 
   test('renders CTA buttons', () => {

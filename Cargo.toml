@@ -6,6 +6,7 @@ members = [
     "process/deposit-worker",
     "process/trade-engine",
     "process/signal_gateway",
+    "process/withdraw-worker",
 ]
 # The forked kucoin crate lives here as its own repo/workspace; keep cargo from
 # treating it as a member of this workspace.

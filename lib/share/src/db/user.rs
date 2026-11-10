@@ -18,6 +18,25 @@ pub struct User {
 }
 
 impl User {
+    /// Fetch a user by uid, or `None` if it does not exist.
+    pub async fn find_by_uid(pool: &PgPool, uid: Uuid) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as::<_, Self>("SELECT * FROM users WHERE uid = $1")
+            .bind(uid)
+            .fetch_optional(pool)
+            .await
+    }
+
+    /// Fetch a user by uid inside an existing transaction.
+    pub async fn find_by_uid_tx(
+        tx: &mut Transaction<'_, sqlx::Postgres>,
+        uid: Uuid,
+    ) -> Result<Option<Self>, sqlx::Error> {
+        sqlx::query_as::<_, Self>("SELECT * FROM users WHERE uid = $1")
+            .bind(uid)
+            .fetch_optional(&mut **tx)
+            .await
+    }
+
     /// Fetch a user by wallet address, or `None` if not registered.
     pub async fn find_by_wallet(pool: &PgPool, wallet: &str) -> Result<Option<Self>, sqlx::Error> {
         sqlx::query_as::<_, Self>("SELECT * FROM users WHERE wallet_address = $1")

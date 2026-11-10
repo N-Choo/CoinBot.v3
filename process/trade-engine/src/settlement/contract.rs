@@ -142,9 +142,21 @@ pub async fn finalize(pool: &PgPool, contract_id: Uuid) -> Result<(), String> {
     let wallet = User::wallet_for_uid_tx(&mut tx, c.user_uid)
         .await
         .map_err(|e| e.to_string())?;
-    User::release_locked_and_credit(&mut tx, &wallet, c.init_fund, payout.payout)
+    let user = User::release_locked_and_credit(&mut tx, &wallet, c.init_fund, payout.payout)
         .await
         .map_err(|e| format!("release locked failed: {e}"))?;
+    share::db::ledger::record(
+        &mut tx,
+        user.uid,
+        share::db::ledger::LedgerKind::ContractPayout,
+        payout.payout,
+        -c.init_fund,
+        &user,
+        "contract",
+        Some(c.id),
+    )
+    .await
+    .map_err(|e| format!("ledger record failed: {e}"))?;
     let target = c.settlement_target.as_deref().unwrap_or("cancelled");
     Contracts::finalize(&mut tx, c.id, target, payout.platform_fee, payout.payout)
         .await
@@ -247,6 +259,11 @@ mod tests {
             .unwrap();
         sqlx::query("DELETE FROM contracts WHERE id=$1")
             .bind(contract.id)
+            .execute(&pool)
+            .await
+            .unwrap();
+        sqlx::query("DELETE FROM ledger_entries WHERE user_uid=$1")
+            .bind(user.uid)
             .execute(&pool)
             .await
             .unwrap();

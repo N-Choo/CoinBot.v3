@@ -1,0 +1,14 @@
+# Dev-only overrides: publish infrastructure on loopback so host tools
+# (`make test`, `make seed`, psql) can reach it without exposing it to the LAN.
+#
+# Production (`make prod`) uses docker-compose.yml only and publishes no
+# database or Redis ports at all.
+
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:5432:5432"
+
+  redis:
+    ports:
+      - "127.0.0.1:6379:6379"

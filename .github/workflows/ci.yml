@@ -50,6 +50,14 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+            withdraw_worker:
+              - 'process/withdraw-worker/**'
+              - 'lib/share/**'
+              - 'process/proto/**'
+              - 'process/migrations/**'
+              - 'Cargo.toml'
+              - 'Cargo.lock'
+              - 'rust-toolchain.toml'
             trade_engine:
               - 'process/trade-engine/**'
               - 'lib/share/**'
@@ -76,6 +84,7 @@ jobs:
           BUILD_ALL: ${{ inputs.build_all }}
           API_GATEWAY: ${{ steps.filter.outputs.api_gateway }}
           DEPOSIT_WORKER: ${{ steps.filter.outputs.deposit_worker }}
+          WITHDRAW_WORKER: ${{ steps.filter.outputs.withdraw_worker }}
           TRADE_ENGINE: ${{ steps.filter.outputs.trade_engine }}
           SIGNAL_GATEWAY: ${{ steps.filter.outputs.signal_gateway }}
           OPENCODE: ${{ steps.filter.outputs.opencode }}
@@ -91,6 +100,9 @@ jobs:
           fi
           if changed "$DEPOSIT_WORKER"; then
             add '{"name":"deposit-worker","context":".","file":"process/deposit-worker/Dockerfile","image":"coinbot-worker"}'
+          fi
+          if changed "$WITHDRAW_WORKER"; then
+            add '{"name":"withdraw-worker","context":".","file":"process/withdraw-worker/Dockerfile","image":"coinbot-withdraw-worker"}'
           fi
           if changed "$TRADE_ENGINE"; then
             add '{"name":"trade-engine","context":".","file":"process/trade-engine/Dockerfile","image":"coinbot-trade_engine"}'

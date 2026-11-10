@@ -13,10 +13,10 @@ services:
     image: postgres:16-alpine
     environment:
       - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-postgres}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
       - POSTGRES_DB=${POSTGRES_DB:-coinbot}
-    ports:
-      - "5432:5432"
+    # No host port: only containers on app-network can reach PostgreSQL.
+    # `make dev` adds a 127.0.0.1-only mapping via docker-compose.dev.yml.
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -30,8 +30,18 @@ services:
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    environment:
+      - REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
+    # No host port: only containers on app-network can reach Redis.
+    # `make dev` adds a 127.0.0.1-only mapping via docker-compose.dev.yml.
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep -q PONG"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
     restart: unless-stopped
     networks:
       - app-network
@@ -53,7 +63,8 @@ services:
       - .env
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       - postgres
     networks:
@@ -69,7 +80,52 @@ services:
     environment:
       - GRPC_ADDR=0.0.0.0:50051
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - app-network
+    profiles:
+      - prod
+
+  # ── Withdraw Worker ────────────────────────
+
+  withdraw-worker:
+    profiles:
+      - dev
+    build:
+      context: .
+      dockerfile: process/withdraw-worker/Dockerfile
+      target: dev-builder
+    command: cargo run -p withdraw-worker
+    volumes:
+      - .:/app
+      - /app/target
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
+    depends_on:
+      - postgres
+    networks:
+      - app-network
+
+  withdraw-worker-prod:
+    image: ghcr.io/n-choo/coinbot-withdraw-worker:latest
+    build:
+      context: .
+      dockerfile: process/withdraw-worker/Dockerfile
+    env_file:
+      - .env
+    environment:
+      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -99,10 +155,13 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
+      - "REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379"
       - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
     depends_on:
       - postgres
+      - redis
       - deposit-worker
     networks:
       - app-network
@@ -119,9 +178,13 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
+      - "REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379"
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       deposit-worker-prod:
         condition: service_started
@@ -184,7 +247,8 @@ services:
       - .env
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - DATABASE_URL=postgres://postgres:postgres@postgres:5432/coinbot
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       - postgres
       - redis
@@ -201,7 +265,8 @@ services:
       - .env
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -231,7 +296,8 @@ services:
     environment:
       - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
       - OPENCODE_BASE_URL=http://opencode:4096
-      - OPENCODE_PASSWORD=${OPENCODE_PASSWORD:-}
+      - "OPENCODE_PASSWORD=${OPENCODE_PASSWORD:?set OPENCODE_PASSWORD in .env}"
+      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
       - OPENCODE_AGENT=trade-agent
       - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}
       - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
@@ -246,6 +312,7 @@ services:
       - opencode
     networks:
       - app-network
+      - ai-network
 
   # ── opencode sandbox (AI agent server) ─────
   # Isolated network namespace: host-localhost unreachable from inside,
@@ -262,11 +329,13 @@ services:
     env_file:
       - path: process/opencode/.env
         required: false
+    environment:
+      - "OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD in .env}"
     volumes:
       - opencode_data:/root/.local/share/opencode
       - ./.opencode:/app/.opencode:ro
     networks:
-      - app-network
+      - ai-network
     profiles:
       - tools
       - dev
@@ -274,7 +343,12 @@ services:
 networks:
   app-network:
     driver: bridge
+  # Only signal-gateway and opencode join this network. The AI sandbox has no
+  # route to Postgres, Redis, the API gateway, deposit-worker, or trade-engine.
+  ai-network:
+    driver: bridge
 
 volumes:
   postgres_data:
+  redis_data:
   opencode_data:

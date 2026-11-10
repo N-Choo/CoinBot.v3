@@ -52,6 +52,15 @@ impl ProcessConfig {
         }
     }
 
+    /// Get a variable from the process prefix only, without falling back.
+    ///
+    /// Use for secrets that must not be shared accidentally between services,
+    /// such as the withdrawal exchange key.
+    pub fn get_prefixed(&self, key: &str) -> Result<String, ProcessError> {
+        let prefixed = format!("{}_{}", self.prefix, key);
+        std::env::var(&prefixed).map_err(|_| ProcessError::MissingEnv(prefixed))
+    }
+
     /// Get a parsed value with a default fallback.
     pub fn get_or<T: std::str::FromStr>(&self, key: &str, default: T) -> T {
         self.get(key)
@@ -120,6 +129,17 @@ mod tests {
         assert_eq!(result.unwrap(), "postgres://prefixed");
         std::env::remove_var("DATABASE_URL");
         std::env::remove_var("TEST_DATABASE_URL");
+    }
+
+    #[test]
+    fn get_prefixed_does_not_fall_back() {
+        let _lock = ENV_LOCK.lock();
+        std::env::set_var("WITHDRAW_KC_KEY", "prefixed");
+        std::env::set_var("KC_KEY", "shared");
+        let cfg = ProcessConfig::new("withdraw");
+        assert_eq!(cfg.get_prefixed("KC_KEY").unwrap(), "prefixed");
+        std::env::remove_var("WITHDRAW_KC_KEY");
+        std::env::remove_var("KC_KEY");
     }
 
     #[test]

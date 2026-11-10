@@ -24,10 +24,13 @@ pub fn normalize_symbols(raw: Vec<String>) -> Vec<String> {
 pub async fn fetch_active_symbols(
     endpoint: &str,
     timeout: Duration,
+    token: &str,
 ) -> Result<Vec<String>, ProcessError> {
     let channel = lazy_channel(endpoint, timeout)?;
     let mut client = EngineServiceClient::new(channel);
-    let response = tokio::time::timeout(timeout, client.get_active_symbols(Empty {}))
+    let request = share::grpc_auth::with_token(Empty {}, token)
+        .map_err(|status| ProcessError::Internal(status.to_string()))?;
+    let response = tokio::time::timeout(timeout, client.get_active_symbols(request))
         .await
         .map_err(|_| ProcessError::Network("GetActiveSymbols timed out".into()))?
         .map_err(|status| status_error("GetActiveSymbols", status))?;
@@ -44,11 +47,12 @@ pub async fn fetch_active_symbols_with_retry(
     endpoint: &str,
     timeout: Duration,
     attempts: usize,
+    token: &str,
 ) -> Result<Vec<String>, ProcessError> {
     let attempts = attempts.max(1);
     let mut last_error = None;
     for attempt in 0..attempts {
-        match fetch_active_symbols(endpoint, timeout).await {
+        match fetch_active_symbols(endpoint, timeout, token).await {
             Ok(symbols) => return Ok(symbols),
             Err(e @ ProcessError::Network(_)) => {
                 last_error = Some(e);

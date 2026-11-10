@@ -23,6 +23,7 @@ tokio.workspace = true
 actix-governor.workspace = true
 rust_decimal.workspace = true
 tonic = "0.12"
+reqwest = { version = "0.12", features = ["json"] }
 
 [dev-dependencies]
 actix-http.workspace = true

@@ -25,6 +25,8 @@ pub struct Config {
     pub opencode_timeout: Duration,
     pub grpc_endpoint: String,
     pub grpc_timeout: Duration,
+    /// Shared token required on internal gRPC calls.
+    pub grpc_auth_token: String,
     pub state_path: PathBuf,
     pub audit_path: PathBuf,
     pub min_confidence: f64,
@@ -153,6 +155,8 @@ impl Config {
             opencode_timeout: Duration::from_secs(parse_u64("OPENCODE_TIMEOUT_SECS", 180)?),
             grpc_endpoint: value_or("GRPC_TRADE_ENGINE_ENDPOINT", "http://127.0.0.1:50051"),
             grpc_timeout: Duration::from_secs(parse_u64("GRPC_TIMEOUT_SECS", 10)?),
+            grpc_auth_token: value("GRPC_AUTH_TOKEN")
+                .ok_or_else(|| ProcessError::MissingEnv("GRPC_AUTH_TOKEN".into()))?,
             state_path: PathBuf::from(value_or(
                 "SIGNAL_GATEWAY_STATE_PATH",
                 "./state/signal_gateway.json",
@@ -176,12 +180,19 @@ mod tests {
     use super::*;
     use std::collections::HashMap;
 
+    fn lookup(map: &HashMap<String, String>) -> Result<Config, ProcessError> {
+        let mut map = map.clone();
+        map.entry("GRPC_AUTH_TOKEN".to_string())
+            .or_insert_with(|| "test-token".to_string());
+        Config::from_lookup(|key| map.get(key).cloned())
+    }
+
     fn config(vars: &[(&str, &str)]) -> Config {
         let map: HashMap<String, String> = vars
             .iter()
             .map(|(k, v)| (k.to_string(), v.to_string()))
             .collect();
-        Config::from_lookup(|key| map.get(key).cloned()).unwrap()
+        lookup(&map).unwrap()
     }
 
     #[test]
@@ -226,7 +237,7 @@ mod tests {
             "SIGNAL_GATEWAY_MIN_CONFIDENCE".to_string(),
             "1.5".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("MIN_CONFIDENCE"));
     }
 
@@ -236,7 +247,7 @@ mod tests {
             "SIGNAL_GATEWAY_PRICE_CHECK".to_string(),
             "sometimes".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("PRICE_CHECK"));
     }
 
@@ -246,7 +257,7 @@ mod tests {
             "SIGNAL_GATEWAY_MAX_ENTRY_DRIFT_PCT".to_string(),
             "0".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("MAX_ENTRY_DRIFT_PCT"));
     }
 
@@ -256,7 +267,7 @@ mod tests {
             "SIGNAL_GATEWAY_SIGNAL_TTL_SECS".to_string(),
             "0".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("SIGNAL_TTL"));
     }
 
@@ -266,7 +277,7 @@ mod tests {
             "SIGNAL_GATEWAY_DELETE_SESSIONS".to_string(),
             "yes".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("DELETE_SESSIONS"));
     }
 
@@ -276,7 +287,7 @@ mod tests {
             "SIGNAL_GATEWAY_CYCLE_DELAY_SECS".to_string(),
             "soon".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("CYCLE_DELAY"));
     }
 
@@ -286,7 +297,7 @@ mod tests {
             "SIGNAL_GATEWAY_CYCLE_DELAY_SECS".to_string(),
             "9300000000000000".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("SIGNAL_GATEWAY_CYCLE_DELAY_SECS"));
         assert!(err.to_string().contains("out of range"));
     }
@@ -297,7 +308,7 @@ mod tests {
             "SIGNAL_GATEWAY_SIGNAL_TTL_SECS".to_string(),
             "9300000000000000".to_string(),
         )]);
-        let err = Config::from_lookup(|key| map.get(key).cloned()).unwrap_err();
+        let err = lookup(&map).unwrap_err();
         assert!(err.to_string().contains("SIGNAL_GATEWAY_SIGNAL_TTL_SECS"));
         assert!(err.to_string().contains("out of range"));
     }

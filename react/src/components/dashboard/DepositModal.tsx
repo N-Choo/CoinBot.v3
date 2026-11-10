@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { createPortal } from 'react-dom'
 import axios from 'axios'
-import { sendUSDT, getBalance } from '../../services/transaction'
+import { sendUSDT, getBalance, walletErrorMessage } from '../../services/transaction'
 
 interface DepositModalProps {
   onClose: () => void
@@ -33,13 +33,7 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
       onDepositComplete?.()
       onClose()
     } catch (err: unknown) {
-      let msg = 'Transaction failed'
-      if (err instanceof Error) msg = err.message
-      if (err && typeof err === 'object' && 'response' in err) {
-        const resp = (err as { response: { data: { error?: string } } }).response
-        if (resp?.data?.error) msg = resp.data.error
-      }
-      setError(msg)
+      setError(walletErrorMessage(err))
     } finally {
       setLoading(false)
     }
@@ -63,9 +57,10 @@ export default function DepositModal({ onClose, onDepositComplete }: DepositModa
         </div>
 
         <form onSubmit={submit}>
-          <label className="block text-[10px] text-text-muted mb-1.5 font-semibold uppercase tracking-[0.3px]">Amount (USDT)</label>
+          <label htmlFor="deposit-amount" className="block text-[10px] text-text-muted mb-1.5 font-semibold uppercase tracking-[0.3px]">Amount (USDT)</label>
           <div className="relative mb-4">
             <input
+              id="deposit-amount"
               autoFocus required type="number" placeholder="0.00"
               value={amount} onChange={e => setAmount(e.target.value)}
               className="w-full bg-[rgba(255,255,255,0.03)] border border-border-light rounded px-3 py-2.5 pr-[50px] text-text-main text-sm outline-none font-mono"

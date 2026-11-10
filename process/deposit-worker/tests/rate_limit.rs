@@ -9,7 +9,10 @@ use share::TicketRequest;
 #[tokio::test]
 async fn rejects_when_queue_full() {
     let (tx, mut _rx) = mpsc::channel::<DepositTask>(1);
-    let server = DepositServer { tx: tx.clone() };
+    let server = DepositServer {
+        tx: tx.clone(),
+        token: "test-token".into(),
+    };
 
     // Pre-fill the only slot
     let (reply1, _) = oneshot::channel();
@@ -21,7 +24,30 @@ async fn rejects_when_queue_full() {
     })
     .unwrap();
 
-    let result: Result<_, _> = server
+    let request = share::grpc_auth::with_token(
+        TicketRequest {
+            tx_hash: "0xdef".into(),
+            uid: "u2".into(),
+            ticker: "ETH".into(),
+        },
+        "test-token",
+    )
+    .unwrap();
+    let result: Result<_, _> = server.create_ticket0(request).await;
+
+    assert!(result.is_err());
+    assert!(result.unwrap_err().message().contains("too many"));
+}
+
+#[tokio::test]
+async fn rejects_a_missing_token() {
+    let (tx, _rx) = mpsc::channel::<DepositTask>(1);
+    let server = DepositServer {
+        tx,
+        token: "test-token".into(),
+    };
+
+    let result = server
         .create_ticket0(Request::new(TicketRequest {
             tx_hash: "0xdef".into(),
             uid: "u2".into(),
@@ -29,6 +55,5 @@ async fn rejects_when_queue_full() {
         }))
         .await;
 
-    assert!(result.is_err());
-    assert!(result.unwrap_err().message().contains("too many"));
+    assert_eq!(result.unwrap_err().code(), tonic::Code::Unauthenticated);
 }

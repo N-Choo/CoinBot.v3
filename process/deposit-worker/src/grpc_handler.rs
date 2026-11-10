@@ -7,6 +7,7 @@ use share::{TicketRequest, TicketResponse};
 
 pub struct DepositServer {
     pub tx: mpsc::Sender<DepositTask>,
+    pub token: String,
 }
 
 #[tonic::async_trait]
@@ -15,6 +16,7 @@ impl DepositService for DepositServer {
         &self,
         req: Request<TicketRequest>,
     ) -> Result<Response<TicketResponse>, Status> {
+        share::grpc_auth::check(&req, &self.token)?;
         let req = req.into_inner();
         log::info!("create_ticket0: tx={} ticker={}", req.tx_hash, req.ticker);
 

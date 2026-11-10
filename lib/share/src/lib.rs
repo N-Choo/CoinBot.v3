@@ -12,6 +12,7 @@
 //! - [`logger`] — logging initialisation.
 //! - [`models`] — domain models (trade signals).
 //! - [`rpc`] — Ethereum JSON-RPC helpers.
+//! - [`withdraw`] — signed withdrawal intent parsing and validation.
 //!
 //! Generated protobuf/gRPC types for the `wallet` and `EngineService`
 //! (`analyzer.proto`) are re-exported at the crate root.
@@ -21,9 +22,11 @@ pub mod config;
 pub mod db;
 pub mod erc20;
 pub mod error;
+pub mod grpc_auth;
 pub mod logger;
 pub mod models;
 pub mod rpc;
+pub mod withdraw;
 
 #[allow(clippy::result_large_err)]
 mod wallet {

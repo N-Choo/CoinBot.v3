@@ -1,4 +1,5 @@
-PACKAGES = api-gateway share deposit trade-engine signal-gateway
+PACKAGES = api-gateway share deposit trade-engine signal-gateway withdraw-worker
+COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
 
 .PHONY: help ci ci-test dev prod seed seed-clean
 
@@ -28,21 +29,26 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
 
 test:
-	@[ -f .env ] || cp .env.ci .env; \
+	@[ -f .env ] || cp .env.ci.example .env; \
 	 pg_user=$$(sed -n 's/^POSTGRES_USER=//p' .env | tail -1 | tr -d '"'); \
 	 pg_password=$$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | tail -1 | tr -d '"'); \
 	 pg_db=$$(sed -n 's/^POSTGRES_DB=//p' .env | tail -1 | tr -d '"'); \
+	 redis_password=$$(sed -n 's/^REDIS_PASSWORD=//p' .env | tail -1 | tr -d '"'); \
+	 [ -n "$$pg_password" ] || { echo "POSTGRES_PASSWORD missing from .env"; exit 1; }; \
+	 [ -n "$$redis_password" ] || { echo "REDIS_PASSWORD missing from .env"; exit 1; }; \
 	 pulled=0; \
 	 for attempt in 1 2 3; do \
-	   if docker compose pull postgres redis; then pulled=1; break; fi; \
+	   if $(COMPOSE_DEV) pull postgres redis; then pulled=1; break; fi; \
 	   echo "compose pull failed (attempt $$attempt), retrying"; sleep 5; \
 	 done; \
 	 [ "$$pulled" = 1 ] || exit 1; \
-	 docker compose up -d postgres redis && \
+	 $(COMPOSE_DEV) up -d postgres redis && \
 		sleep 2 && \
-		DATABASE_URL="postgres://$${pg_user:-postgres}:$${pg_password:-postgres}@127.0.0.1:5432/$${pg_db:-coinbot}" cargo test $(addprefix -p ,$(PACKAGES)); \
+		REDIS_URL="redis://:$$redis_password@127.0.0.1:6379" \
+		DATABASE_URL="postgres://$${pg_user:-postgres}:$$pg_password@127.0.0.1:5432/$${pg_db:-coinbot}" \
+		cargo test $(addprefix -p ,$(PACKAGES)); \
 		rst=$$?; \
-		docker compose stop redis postgres; \
+		$(COMPOSE_DEV) stop redis postgres; \
 		exit $$rst
 
 frontend-install:
@@ -68,11 +74,11 @@ frontend-ci: frontend-install
 # --- Public lifecycle targets ---
 
 dev:
-	docker compose up -d postgres redis && \
-		docker compose up api_gateway deposit-worker trade-engine opencode signal-gateway frontend
+	$(COMPOSE_DEV) up -d postgres redis && \
+		$(COMPOSE_DEV) up api_gateway deposit-worker withdraw-worker trade-engine opencode signal-gateway frontend
 
 prod-build:
-	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod
+	docker compose build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod withdraw-worker-prod
 
 # Pull pre-built images from ghcr (built by CI on main) and (re)start; never builds.
 prod:

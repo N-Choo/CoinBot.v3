@@ -40,7 +40,8 @@ async fn main() -> Result<(), ProcessError> {
         .set_serving::<DepositServiceServer<DepositServer>>()
         .await;
 
-    let service = DepositServiceServer::new(DepositServer { tx });
+    let token = cfg.get("GRPC_AUTH_TOKEN")?;
+    let service = DepositServiceServer::new(DepositServer { tx, token });
 
     log::info!("Deposit service on {}", addr);
     Server::builder()

@@ -23,14 +23,16 @@ pub trait SignalPublisher: Send + Sync {
 pub struct GrpcPublisher {
     client: EngineServiceClient<Channel>,
     timeout: Duration,
+    token: String,
 }
 
 impl GrpcPublisher {
     /// Lazy channel: startup does not require `trade-engine` to be reachable.
-    pub fn new(endpoint: &str, timeout: Duration) -> Result<Self, ProcessError> {
+    pub fn new(endpoint: &str, timeout: Duration, token: String) -> Result<Self, ProcessError> {
         Ok(Self {
             client: EngineServiceClient::new(lazy_channel(endpoint, timeout)?),
             timeout,
+            token,
         })
     }
 }
@@ -40,7 +42,9 @@ impl SignalPublisher for GrpcPublisher {
     /// Publish with a timeout and map gRPC errors.
     async fn publish(&self, signal: ProtoSignal) -> Result<Ack, ProcessError> {
         let mut client = self.client.clone();
-        let ack = tokio::time::timeout(self.timeout, client.publish(signal))
+        let request = share::grpc_auth::with_token(signal, &self.token)
+            .map_err(|status| ProcessError::Internal(status.to_string()))?;
+        let ack = tokio::time::timeout(self.timeout, client.publish(request))
             .await
             .map_err(|_| ProcessError::Network("Publish timed out".into()))?
             .map_err(|status| status_error("Publish", status))?

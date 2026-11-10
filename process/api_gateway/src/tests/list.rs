@@ -113,6 +113,7 @@ async fn test_deposit_unauthorized() {
             .app_data(web::Data::new(session_cache))
             .app_data(web::Data::new(nonce_cache))
             .app_data(web::Data::new(channel))
+            .app_data(web::Data::new(crate::tests::withdraw::config()))
             .configure(api_routes),
     )
     .await;

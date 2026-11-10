@@ -21,14 +21,16 @@ pub struct EngineServer {
     db: Pool<Postgres>,
     kcc: KuCoinClient,
     seen: Arc<Mutex<HashSet<String>>>,
+    token: String,
 }
 
 impl EngineServer {
-    pub fn new(db: Pool<Postgres>, kcc: KuCoinClient) -> Self {
+    pub fn new(db: Pool<Postgres>, kcc: KuCoinClient, token: String) -> Self {
         Self {
             db,
             kcc,
             seen: Arc::new(Mutex::new(HashSet::new())),
+            token,
         }
     }
 }
@@ -37,8 +39,10 @@ impl EngineServer {
 impl EngineService for EngineServer {
     async fn get_active_symbols(
         &self,
-        _request: Request<Empty>,
+        request: Request<Empty>,
     ) -> Result<Response<Symbols>, Status> {
+        share::grpc_auth::check(&request, &self.token)?;
+
         let tickers = ContractFilter::new()
             .with_status(ContractStatus::Active)
             .execute_tickers(&self.db)
@@ -49,6 +53,7 @@ impl EngineService for EngineServer {
     }
 
     async fn publish(&self, request: Request<ProtoSignal>) -> Result<Response<Ack>, Status> {
+        share::grpc_auth::check(&request, &self.token)?;
         let signal = request.into_inner();
         log::info!(
             "EngineService.Publish: {} {} seq={} id={}",

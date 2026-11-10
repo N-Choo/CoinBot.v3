@@ -138,7 +138,9 @@ async fn build_gateway(
     engine_endpoint: &str,
     dir: &std::path::Path,
 ) -> Gateway {
-    let mut config = Config::from_lookup(|_| None).unwrap();
+    let mut config =
+        Config::from_lookup(|key| (key == "GRPC_AUTH_TOKEN").then(|| "test-token".to_string()))
+            .unwrap();
     config.state_path = dir.join("state.json");
     config.audit_path = dir.join("audit.jsonl");
     config.opencode_base_url = opencode.uri();
@@ -162,7 +164,12 @@ async fn build_gateway(
         .unwrap(),
     );
     let publisher = Arc::new(
-        GrpcPublisher::new(config.grpc_endpoint.as_str(), Duration::from_secs(5)).unwrap(),
+        GrpcPublisher::new(
+            config.grpc_endpoint.as_str(),
+            Duration::from_secs(5),
+            "test-token".into(),
+        )
+        .unwrap(),
     );
     let price = Arc::new(
         KuCoinPrice::new(config.kucoin_base_url.as_str(), Duration::from_secs(5)).unwrap(),
