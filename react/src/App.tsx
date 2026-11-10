@@ -9,6 +9,8 @@ import Landing from './pages/homePage'
 
 const Trading = lazy(() => import('./pages/tradingPage'))
 const Dashboard = lazy(() => import('./pages/dashboard'))
+const HowToPage = lazy(() => import('./pages/howToPage'))
+const PolicyPage = lazy(() => import('./pages/policyPage'))
 
 function PageLoader() {
   return (
@@ -22,6 +24,8 @@ export const PATHS = {
   HOME: '/',
   TRADE: '/trading',
   DASHBOARD: '/dashboard',
+  HOW_TO: '/how-to/:slug',
+  POLICY: '/policy',
 } as const
 
 export default function AppRoutes() {
@@ -46,6 +50,8 @@ export default function AppRoutes() {
           <Route path={PATHS.HOME} element={<Landing />} />
           <Route path={PATHS.TRADE} element={<AuthGuard><ContractsProvider><Trading /></ContractsProvider></AuthGuard>} />
           <Route path={PATHS.DASHBOARD} element={<AuthGuard><ContractsProvider><Dashboard /></ContractsProvider></AuthGuard>} />
+          <Route path={PATHS.HOW_TO} element={<HowToPage />} />
+          <Route path={PATHS.POLICY} element={<PolicyPage />} />
         </Routes>
       </Suspense>
     </AuthProvider>
