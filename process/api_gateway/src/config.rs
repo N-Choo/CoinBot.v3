@@ -21,7 +21,7 @@ pub struct AppConfig {
     pub nonce_redis_url: String,
     /// gRPC endpoint of the deposit worker.
     pub grpc_deposit: String,
-    /// Origin permitted by CORS.
+    /// Comma-separated origins permitted by CORS.
     pub allowed_origin: String,
     /// Maximum non-terminal withdrawals a user may have queued.
     pub withdraw_max_pending: i64,
@@ -31,13 +31,41 @@ pub struct AppConfig {
     pub grpc_auth_token: String,
 }
 
-/// Reject wildcard CORS origins; credentials make `*` unsafe.
-fn validate_allowed_origin(origin: &str) -> Result<(), ProcessError> {
-    if origin.trim() == "*" {
+/// Split, trim, and drop empty entries from `ALLOWED_ORIGIN`.
+fn allowed_origins(raw: &str) -> Vec<&str> {
+    raw.split(',')
+        .map(str::trim)
+        .filter(|origin| !origin.is_empty())
+        .collect()
+}
+
+/// Validate every configured CORS origin.
+fn validate_allowed_origins(raw: &str) -> Result<(), ProcessError> {
+    let origins = allowed_origins(raw);
+    if origins.is_empty() {
         return Err(ProcessError::InvalidConfig(
-            "ALLOWED_ORIGIN must be an explicit origin; wildcards are not allowed".into(),
+            "ALLOWED_ORIGIN must contain at least one origin".into(),
         ));
     }
+
+    for origin in origins {
+        if origin == "*" {
+            return Err(ProcessError::InvalidConfig(
+                "ALLOWED_ORIGIN must list explicit origins; wildcards are not allowed".into(),
+            ));
+        }
+        if !origin.starts_with("http://") && !origin.starts_with("https://") {
+            return Err(ProcessError::InvalidConfig(format!(
+                "ALLOWED_ORIGIN entries must start with http:// or https:// (got {origin})"
+            )));
+        }
+        if origin.ends_with('/') {
+            return Err(ProcessError::InvalidConfig(format!(
+                "ALLOWED_ORIGIN entries must not end with '/' (got {origin})"
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -55,7 +83,7 @@ impl AppConfig {
 
         let redis_base = cfg.get("REDIS_URL")?.trim_end_matches('/').to_owned();
         let allowed_origin = cfg.get("ALLOWED_ORIGIN")?;
-        validate_allowed_origin(&allowed_origin)?;
+        validate_allowed_origins(&allowed_origin)?;
 
         Ok(Self {
             ip: cfg.get("HOST")?,
@@ -75,10 +103,16 @@ impl AppConfig {
 
     /// Build the CORS policy applied to every response.
     ///
-    /// Allows exactly the configured origin, `GET`/`POST`/`OPTIONS`,
-    /// credentials, and the authorization/accept/content-type headers.
-    /// Wildcards are rejected at startup because credentials are supported.
+    /// `ALLOWED_ORIGIN` is a comma-separated list of exact origins. Each entry
+    /// must include a scheme and must not have a trailing slash. `GET`/`POST`/
+    /// `OPTIONS`, credentials, and the authorization/accept/content-type headers
+    /// are allowed. Wildcards are rejected at startup.
     pub fn get_cors(&self) -> Cors {
+        let origins: Vec<String> = allowed_origins(&self.allowed_origin)
+            .into_iter()
+            .map(str::to_string)
+            .collect();
+
         Cors::default()
             .allowed_methods(vec!["GET", "POST", "OPTIONS"])
             .allowed_headers(vec![
@@ -88,7 +122,11 @@ impl AppConfig {
             ])
             .supports_credentials()
             .max_age(3600)
-            .allowed_origin(&self.allowed_origin)
+            .allowed_origin_fn(move |origin, _| {
+                origins
+                    .iter()
+                    .any(|allowed| origin.as_bytes() == allowed.as_bytes())
+            })
     }
 }
 
@@ -124,9 +162,46 @@ mod tests {
     }
 
     #[actix_web::test]
-    async fn rejects_a_wildcard_origin() {
-        assert!(validate_allowed_origin("*").is_err());
-        assert!(validate_allowed_origin("http://localhost:5173").is_ok());
+    async fn validates_comma_separated_origins() {
+        assert!(validate_allowed_origins("*").is_err());
+        assert!(validate_allowed_origins("").is_err());
+        assert!(validate_allowed_origins("localhost:5173").is_err());
+        assert!(validate_allowed_origins("https://coinbot.no/").is_err());
+        assert!(validate_allowed_origins("http://localhost:5173").is_ok());
+        assert!(
+            validate_allowed_origins(
+                "http://localhost:5173, https://coinbot.no,https://www.coinbot.no"
+            )
+            .is_ok()
+        );
+    }
+
+    /// A comma-separated list allows each listed origin and rejects others.
+    #[actix_web::test]
+    async fn multiple_origins_are_allowed() {
+        let app = test::init_service(
+            App::new()
+                .wrap(config_with_origin("http://example.com,https://coinbot.no").get_cors())
+                .route("/", web::get().to(|| async { "ok" })),
+        )
+        .await;
+
+        let allowed = test::call_service(&app, preflight("https://coinbot.no")).await;
+        assert_eq!(allowed.status(), http::StatusCode::OK);
+        assert!(
+            allowed
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_some()
+        );
+
+        let denied = test::call_service(&app, preflight("https://evil.com")).await;
+        assert!(
+            denied
+                .headers()
+                .get(header::ACCESS_CONTROL_ALLOW_ORIGIN)
+                .is_none()
+        );
     }
 
     /// A non-wildcard origin only allows that exact origin.

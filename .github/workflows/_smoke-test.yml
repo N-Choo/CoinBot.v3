@@ -13,8 +13,8 @@ jobs:
         run: make prod-build
       - name: Start services
         run: |
-          cp .env.ci.example .env
-          docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+          docker compose --env-file .env.ci.example \
+            -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod up -d
       - name: Wait for api_gateway
         run: |
@@ -30,7 +30,8 @@ jobs:
       - name: Verify all services are running
         run: |
           expected="postgres redis api_gateway-prod deposit-worker-prod withdraw-worker-prod trade-engine-prod frontend-prod"
-          running=$(docker compose -f docker-compose.yml -f docker-compose.ci.yml \
+          running=$(docker compose --env-file .env.ci.example \
+            -f docker-compose.yml -f docker-compose.ci.yml \
             --profile prod ps --status running --services | sort)
           echo "$running"
           missing=0
@@ -38,14 +39,17 @@ jobs:
             echo "$running" | grep -qx "$svc" || { echo "ERROR: $svc is not running"; missing=1; }
           done
           if [ "$missing" -ne 0 ]; then
-            docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
+            docker compose --env-file .env.ci.example \
+              -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
             exit 1
           fi
       - name: Run smoke tests
         run: BASE_URL=http://localhost:8080 make test-api
       - name: Collect logs on failure
         if: failure()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
+        run: docker compose --env-file .env.ci.example \
+          -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
       - name: Cleanup
         if: always()
-        run: docker compose -f docker-compose.yml -f docker-compose.ci.yml down
+        run: docker compose --env-file .env.ci.example \
+          -f docker-compose.yml -f docker-compose.ci.yml down --remove-orphans
