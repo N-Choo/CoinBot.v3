@@ -39,3 +39,5 @@ jobs:
             ghcr.io/${{ steps.registry.outputs.owner }}/${{ matrix.image }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
+          # Force a clean trade-engine build; its cached layer produced a broken binary.
+          no-cache: ${{ matrix.name == 'trade-engine' }}

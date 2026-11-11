@@ -16,6 +16,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --recipe-path recipe.json --release
 COPY . .
 RUN cargo build -p trade-engine --release
+RUN ls -lh /app/target/release/trade-engine && test "$(stat -c %s /app/target/release/trade-engine)" -gt 1000000
 
 FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /app/target/release/trade-engine /
