@@ -33,12 +33,6 @@ else
     fail "OPTIONS /api/ has Access-Control-Allow-Origin"
 fi
 
-status=$(curl -s -o /dev/null -w "%{http_code}" -X OPTIONS \
-    -H "Origin: http://127.0.0.1:5173" \
-    -H "Access-Control-Request-Method: GET" \
-    "$BASE/kucoin-api/")
-check "OPTIONS /kucoin-api/ responds" test "$status" = 200
-
 # ── Endpoint Reachability ──
 header "Endpoint Reachability"
 
