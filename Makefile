@@ -30,7 +30,7 @@ clippy:
 	cargo clippy $(addprefix -p ,$(PACKAGES)) --no-deps -- -D warnings
 
 test:
-	@[ -f .env ] || cp .env.ci.example .env; \
+	@[ -f .env ] || cp .env.ci .env; \
 	 pg_user=$$(sed -n 's/^POSTGRES_USER=//p' .env | tail -1 | tr -d '"'); \
 	 pg_password=$$(sed -n 's/^POSTGRES_PASSWORD=//p' .env | tail -1 | tr -d '"'); \
 	 pg_db=$$(sed -n 's/^POSTGRES_DB=//p' .env | tail -1 | tr -d '"'); \
