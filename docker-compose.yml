@@ -5,9 +5,9 @@
 # make dev   → starts all dev services
 # prod services run via the prod profile / deployed images
 #
-# All container env comes from .env files via `env_file`; do not add
-# `environment:` blocks here. Service-specific overrides live in
-# process/<service>/.env.
+# All container env comes from the root .env via `env_file`; do not add
+# `environment:` blocks here. The opencode sandbox uses process/opencode/.env
+# so DB/exchange secrets never reach it.
 # ──────────────────────────────────────────────
 
 services:
@@ -80,7 +80,9 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - deposit-worker
     profiles:
       - prod
 
@@ -151,7 +153,6 @@ services:
       dockerfile: process/api_gateway/Dockerfile
     env_file:
       - .env
-      - process/api_gateway/.env
     ports:
       - "8080:8080"
     depends_on:
@@ -181,7 +182,7 @@ services:
       - ./react:/app:Z
       - /app/node_modules
     env_file:
-      - react/.env
+      - .env
     depends_on:
       - api_gateway
     networks:
@@ -239,7 +240,9 @@ services:
         condition: service_started
     restart: unless-stopped
     networks:
-      - app-network
+      app-network:
+        aliases:
+          - trade-engine
     profiles:
       - prod
 
@@ -272,7 +275,6 @@ services:
       dockerfile: process/signal_gateway/Dockerfile
     env_file:
       - .env
-      - process/signal_gateway/.env
     volumes:
       - signal_gateway_state:/app/state
     depends_on:

@@ -12,9 +12,5 @@ __pycache__/
 .worktrees/
 process/analyzer/out/
 **/.env
-# non-secret compose overrides, tracked on purpose
-!process/api_gateway/.env
-!process/signal_gateway/.env
-!react/.env
 .env.ci
 state/
