@@ -4,6 +4,10 @@
 #
 # make dev   → starts all dev services
 # prod services run via the prod profile / deployed images
+#
+# All container env comes from .env files via `env_file`; do not add
+# `environment:` blocks here. Service-specific overrides live in
+# process/<service>/.env.
 # ──────────────────────────────────────────────
 
 services:
@@ -11,10 +15,8 @@ services:
 
   postgres:
     image: postgres:16-alpine
-    environment:
-      - POSTGRES_USER=${POSTGRES_USER:-postgres}
-      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
-      - POSTGRES_DB=${POSTGRES_DB:-coinbot}
+    env_file:
+      - .env
     # No host port: only containers on app-network can reach PostgreSQL.
     # `make dev` adds a 127.0.0.1-only mapping via docker-compose.dev.yml.
     volumes:
@@ -30,8 +32,8 @@ services:
 
   redis:
     image: redis:7-alpine
-    environment:
-      - REDIS_PASSWORD=${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+    env_file:
+      - .env
     command: ["sh", "-c", "redis-server --requirepass \"$$REDIS_PASSWORD\" --appendonly yes"]
     # No host port: only containers on app-network can reach Redis.
     # `make dev` adds a 127.0.0.1-only mapping via docker-compose.dev.yml.
@@ -61,10 +63,6 @@ services:
       - /app/target
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       - postgres
     networks:
@@ -77,11 +75,6 @@ services:
       dockerfile: process/deposit-worker/Dockerfile
     env_file:
       - .env
-    environment:
-      - GRPC_ADDR=0.0.0.0:50051
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -106,10 +99,6 @@ services:
       - /app/target
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       - postgres
     networks:
@@ -122,10 +111,6 @@ services:
       dockerfile: process/withdraw-worker/Dockerfile
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -152,13 +137,6 @@ services:
     volumes:
       - .:/app
       - /app/target
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker:50051
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
-      - "REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379"
-      - API_GATEWAY_ALLOWED_ORIGIN=http://localhost:5173
     depends_on:
       - postgres
       - redis
@@ -173,14 +151,9 @@ services:
       dockerfile: process/api_gateway/Dockerfile
     env_file:
       - .env
+      - process/api_gateway/.env
     ports:
       - "8080:8080"
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - GRPC_DEPOSIT_ENDPOINT=http://deposit-worker-prod:50051
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
-      - "REDIS_URL=redis://:${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}@redis:6379"
     depends_on:
       postgres:
         condition: service_healthy
@@ -207,12 +180,12 @@ services:
     volumes:
       - ./react:/app:Z
       - /app/node_modules
+    env_file:
+      - react/.env
     depends_on:
       - api_gateway
     networks:
       - app-network
-    environment:
-      - VITE_BACKEND_URL=http://api_gateway:8080
 
   frontend-prod:
     image: ghcr.io/n-choo/coinbot-frontend:latest
@@ -245,10 +218,6 @@ services:
       - /app/target
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       - postgres
       - redis
@@ -263,10 +232,6 @@ services:
       dockerfile: process/trade-engine/Dockerfile
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - "DATABASE_URL=postgres://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-coinbot}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
     depends_on:
       postgres:
         condition: service_healthy
@@ -293,20 +258,6 @@ services:
       - /app/target
     env_file:
       - .env
-    environment:
-      - RUST_LOG=${RUST_LOG:-info,sqlx=warn,hyper=warn,reqwest=warn,h2=warn,rustls=warn,tonic=warn}
-      - OPENCODE_BASE_URL=http://opencode:4096
-      - "OPENCODE_PASSWORD=${OPENCODE_PASSWORD:?set OPENCODE_PASSWORD in .env}"
-      - "GRPC_AUTH_TOKEN=${GRPC_AUTH_TOKEN:?set GRPC_AUTH_TOKEN in .env}"
-      - OPENCODE_AGENT=trade-agent
-      - OPENCODE_MODEL=${OPENCODE_MODEL:-opencode-go/deepseek-v4.1-flash}
-      - GRPC_TRADE_ENGINE_ENDPOINT=http://trade-engine:50051
-      - SIGNAL_GATEWAY_RUN_ON_START=${SIGNAL_GATEWAY_RUN_ON_START:-false}
-      - SIGNAL_GATEWAY_DELETE_SESSIONS=${SIGNAL_GATEWAY_DELETE_SESSIONS:-true}
-      - SIGNAL_GATEWAY_PRICE_CHECK=${SIGNAL_GATEWAY_PRICE_CHECK:-strict}
-      - SIGNAL_GATEWAY_RESET_STATE=${SIGNAL_GATEWAY_RESET_STATE:-false}
-      - SIGNAL_GATEWAY_STATE_PATH=./state/signal_gateway.json
-      - SIGNAL_GATEWAY_AUDIT_PATH=./state/audit.jsonl
     depends_on:
       - trade-engine
       - opencode
@@ -314,10 +265,33 @@ services:
       - app-network
       - ai-network
 
+  signal-gateway-prod:
+    image: ghcr.io/n-choo/coinbot-signal-gateway:latest
+    build:
+      context: .
+      dockerfile: process/signal_gateway/Dockerfile
+    env_file:
+      - .env
+      - process/signal_gateway/.env
+    volumes:
+      - signal_gateway_state:/app/state
+    depends_on:
+      trade-engine-prod:
+        condition: service_started
+      opencode:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - app-network
+      - ai-network
+    profiles:
+      - prod
+
   # ── opencode sandbox (AI agent server) ─────
   # Isolated network namespace: host-localhost unreachable from inside,
   # outbound webfetch allowed. External clients hit 127.0.0.1:4096 here.
   # Secrets are runtime-only; never bake them into the image.
+  # Only its own env file is loaded so DB/exchange secrets stay out of the sandbox.
 
   opencode:
     image: ghcr.io/n-choo/coinbot-opencode:latest
@@ -329,14 +303,13 @@ services:
     env_file:
       - path: process/opencode/.env
         required: false
-    environment:
-      - "OPENCODE_SERVER_PASSWORD=${OPENCODE_SERVER_PASSWORD:?set OPENCODE_SERVER_PASSWORD in .env}"
     volumes:
       - opencode_data:/root/.local/share/opencode
       - ./.opencode:/app/.opencode:ro
     networks:
       - ai-network
     profiles:
+      - prod
       - tools
       - dev
 
@@ -352,3 +325,4 @@ volumes:
   postgres_data:
   redis_data:
   opencode_data:
+  signal_gateway_state:

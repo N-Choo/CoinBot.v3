@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+: "${OPENCODE_SERVER_PASSWORD:?OPENCODE_SERVER_PASSWORD must be set}"
+
 mkdir -p /root/.local/share/opencode
 
 if [ -n "${OPENCODE_GO_API_KEY:-}" ]; then

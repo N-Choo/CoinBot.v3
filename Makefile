@@ -79,7 +79,7 @@ dev:
 		$(COMPOSE_DEV) up api_gateway deposit-worker withdraw-worker trade-engine opencode signal-gateway frontend
 
 prod-build:
-	docker compose --env-file $(COMPOSE_ENV_FILE) build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod withdraw-worker-prod
+	docker compose --env-file $(COMPOSE_ENV_FILE) --profile prod --profile tools build deposit-worker-prod api_gateway-prod frontend-prod trade-engine-prod withdraw-worker-prod signal-gateway-prod
 
 # Pull pre-built images from ghcr (built by CI on main) and (re)start; never builds.
 prod:

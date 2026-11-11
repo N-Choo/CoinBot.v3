@@ -1,2 +1,4 @@
 /target
 .env
+# compose override (non-secret) is tracked
+!.env

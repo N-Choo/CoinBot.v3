@@ -2,4 +2,6 @@
 /dist
 .env
 .env.local
+# compose override (non-secret) is tracked
+!.env
 
