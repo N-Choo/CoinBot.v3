@@ -2,7 +2,7 @@ name: Full-Stack CI
 
 on:
   push:
-    branches: [main, "feature/**", "FEAT/**", "feat/**", "fix/**", "chore/**"]
+    branches: [main, "feature/**", "FEAT/**", "feat/**", "fix/**", "chore/**", "ci/**"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -17,21 +17,24 @@ permissions:
   pull-requests: read
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ github.head_ref || github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # --- Detect which service images need rebuilding ---
   changes:
     name: Detect changed services
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     outputs:
       images: ${{ steps.matrix.outputs.images }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Detect changed paths
         id: filter
-        uses: dorny/paths-filter@v3
+        uses: dorny/paths-filter@0e4a8c6effa4802afeda77dc8d303f8176d7dfad # v3
         with:
           filters: |
             api_gateway:
@@ -42,6 +45,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.dockerignore'
             deposit_worker:
               - 'process/deposit-worker/**'
               - 'lib/share/**'
@@ -50,6 +54,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.dockerignore'
             withdraw_worker:
               - 'process/withdraw-worker/**'
               - 'lib/share/**'
@@ -58,6 +63,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.dockerignore'
             trade_engine:
               - 'process/trade-engine/**'
               - 'lib/share/**'
@@ -66,6 +72,7 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.dockerignore'
             signal_gateway:
               - 'process/signal_gateway/**'
               - 'lib/share/**'
@@ -74,8 +81,10 @@ jobs:
               - 'Cargo.toml'
               - 'Cargo.lock'
               - 'rust-toolchain.toml'
+              - '.dockerignore'
             opencode:
               - 'process/opencode/**'
+              - '.dockerignore'
             frontend:
               - 'react/**'
       - name: Build image matrix
@@ -120,6 +129,28 @@ jobs:
           echo "images=$images" >> "$GITHUB_OUTPUT"
           echo "Image matrix: $images"
 
+  # --- Compose validation (runs on every push/PR) ---
+  validate:
+    name: Validate compose config
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Prepare CI environment
+        run: cp .env.ci .env
+      - name: Base config
+        run: docker compose config --quiet
+      - name: Dev config
+        run: docker compose -f docker-compose.yml -f docker-compose.dev.yml config --quiet
+      - name: Prod config
+        run: docker compose --profile prod --profile tools config --quiet
+      - name: Prod config (pinned)
+        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.prod.yml --profile prod --profile tools config --quiet
+      - name: Test config
+        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.test.yml config --quiet
+
   # --- Tests ---
   backend-test:
     uses: ./.github/workflows/_backend-test.yml
@@ -127,16 +158,16 @@ jobs:
   frontend-test:
     uses: ./.github/workflows/_frontend-test.yml
 
-  # --- Full-stack smoke test (main only) ---
+  # --- API smoke test (main only) ---
   smoke-test:
     uses: ./.github/workflows/_smoke-test.yml
-    needs: [backend-test, frontend-test]
+    needs: [validate, backend-test, frontend-test]
     if: github.ref == 'refs/heads/main'
 
   # --- Build & push changed images (main only) ---
   push-arm:
     uses: ./.github/workflows/_images.yml
-    needs: [changes, backend-test, frontend-test, smoke-test]
+    needs: [changes, validate, backend-test, frontend-test, smoke-test]
     if: github.ref == 'refs/heads/main' && needs.changes.outputs.images != '[]'
     permissions:
       contents: read

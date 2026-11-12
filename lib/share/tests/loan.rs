@@ -1,6 +1,6 @@
 //! Integration test: repaying a loan charges its interest to the contract.
 //!
-//! Requires `DATABASE_URL`; skipped when it is unset or unreachable.
+//! Requires `DATABASE_URL`; skipped when it is unset, fails if set but unreachable.
 
 use chrono::Utc;
 use rust_decimal::Decimal;
@@ -14,11 +14,13 @@ use uuid::Uuid;
 
 async fn pool() -> Option<PgPool> {
     let url = std::env::var("DATABASE_URL").ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
+    let pool = PgPool::connect(&url)
+        .await
+        .expect("DATABASE_URL is set but Postgres is unreachable");
     sqlx::migrate!("../../process/migrations")
         .run(&pool)
         .await
-        .ok()?;
+        .expect("database migrations failed");
     Some(pool)
 }
 

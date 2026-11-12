@@ -10,10 +10,22 @@
 # so DB/exchange secrets never reach it.
 # ──────────────────────────────────────────────
 
+x-service-defaults: &service-defaults
+  security_opt:
+    - no-new-privileges:true
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+
 services:
   # ── Shared Infrastructure ──────────────────
 
   postgres:
+    <<: *service-defaults
+    mem_limit: 1g
     image: postgres:16-alpine
     env_file:
       - .env
@@ -31,6 +43,8 @@ services:
       - app-network
 
   redis:
+    <<: *service-defaults
+    mem_limit: 512m
     image: redis:7-alpine
     env_file:
       - .env
@@ -51,6 +65,7 @@ services:
   # ── Deposit Worker ─────────────────────────
 
   deposit-worker:
+    <<: *service-defaults
     profiles:
       - dev
     build:
@@ -69,6 +84,10 @@ services:
       - app-network
 
   deposit-worker-prod:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 512m
     image: ghcr.io/n-choo/coinbot-worker:latest
     build:
       context: .
@@ -89,6 +108,7 @@ services:
   # ── Withdraw Worker ────────────────────────
 
   withdraw-worker:
+    <<: *service-defaults
     profiles:
       - dev
     build:
@@ -107,6 +127,10 @@ services:
       - app-network
 
   withdraw-worker-prod:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 512m
     image: ghcr.io/n-choo/coinbot-withdraw-worker:latest
     build:
       context: .
@@ -125,6 +149,7 @@ services:
   # ── API Gateway ────────────────────────────
 
   api_gateway:
+    <<: *service-defaults
     profiles:
       - dev
     build:
@@ -147,6 +172,10 @@ services:
       - app-network
 
   api_gateway-prod:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 512m
     image: ghcr.io/n-choo/coinbot-api_gateway:latest
     build:
       context: .
@@ -171,6 +200,7 @@ services:
   # ── Frontend ───────────────────────────────
 
   frontend:
+    <<: *service-defaults
     profiles:
       - dev
     image: node:22-alpine
@@ -189,6 +219,8 @@ services:
       - app-network
 
   frontend-prod:
+    <<: *service-defaults
+    mem_limit: 128m
     image: ghcr.io/n-choo/coinbot-frontend:latest
     build:
       context: ./react
@@ -205,6 +237,7 @@ services:
   # ── Trade Engine ───────────────────────────
 
   trade-engine:
+    <<: *service-defaults
     profiles:
       - dev
     build:
@@ -227,6 +260,10 @@ services:
       - app-network
 
   trade-engine-prod:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 1g
     image: ghcr.io/n-choo/coinbot-trade_engine:latest
     build:
       context: .
@@ -249,6 +286,7 @@ services:
   # ── signal-gateway (agent → trade-engine) ──
 
   signal-gateway:
+    <<: *service-defaults
     profiles:
       - dev
     build:
@@ -269,6 +307,10 @@ services:
       - ai-network
 
   signal-gateway-prod:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 1g
     image: ghcr.io/n-choo/coinbot-signal-gateway:latest
     build:
       context: .
@@ -296,6 +338,10 @@ services:
   # Only its own env file is loaded so DB/exchange secrets stay out of the sandbox.
 
   opencode:
+    <<: *service-defaults
+    cap_drop:
+      - ALL
+    mem_limit: 2g
     image: ghcr.io/n-choo/coinbot-opencode:latest
     build:
       context: ./process/opencode

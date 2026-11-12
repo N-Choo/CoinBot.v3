@@ -6,7 +6,7 @@
 //! exactly once via `transferred_at`. This test mirrors the sweeper's
 //! finalize/sweep sequence against a real Postgres.
 //!
-//! Requires `DATABASE_URL`; skipped when it is unset or unreachable.
+//! Requires `DATABASE_URL`; skipped when it is unset, fails if set but unreachable.
 
 use rust_decimal::Decimal;
 use share::db::deposit::Deposit;
@@ -15,14 +15,16 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 /// Connect to the test database and apply migrations, or `None` when
-/// `DATABASE_URL` is unset/unreachable.
+/// `DATABASE_URL` is unset (fails if set but unreachable).
 async fn pool() -> Option<PgPool> {
     let url = std::env::var("DATABASE_URL").ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
+    let pool = PgPool::connect(&url)
+        .await
+        .expect("DATABASE_URL is set but Postgres is unreachable");
     sqlx::migrate!("../../process/migrations")
         .run(&pool)
         .await
-        .ok()?;
+        .expect("database migrations failed");
     Some(pool)
 }
 

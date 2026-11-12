@@ -1,6 +1,6 @@
 //! Integration tests for the withdrawal ledger transitions.
 //!
-//! Require `DATABASE_URL`; skipped when it is unset or unreachable.
+//! Require `DATABASE_URL`; skipped when it is unset, fail if set but unreachable.
 
 use chrono::{Duration, Utc};
 use rust_decimal::Decimal;
@@ -15,11 +15,13 @@ static DB_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
 
 async fn pool() -> Option<PgPool> {
     let url = std::env::var("DATABASE_URL").ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
+    let pool = PgPool::connect(&url)
+        .await
+        .expect("DATABASE_URL is set but Postgres is unreachable");
     sqlx::migrate!("../../process/migrations")
         .run(&pool)
         .await
-        .ok()?;
+        .expect("database migrations failed");
     Some(pool)
 }
 

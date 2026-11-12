@@ -185,8 +185,13 @@ mod tests {
 
     async fn pool() -> Option<PgPool> {
         let url = std::env::var("DATABASE_URL").ok()?;
-        let pool = PgPool::connect(&url).await.ok()?;
-        sqlx::migrate!("../migrations").run(&pool).await.ok()?;
+        let pool = PgPool::connect(&url)
+            .await
+            .expect("DATABASE_URL is set but Postgres is unreachable");
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("database migrations failed");
         Some(pool)
     }
 

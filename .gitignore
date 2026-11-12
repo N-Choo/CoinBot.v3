@@ -2,7 +2,11 @@ docs/*
 kucoin/
 .env
 *.log
-.opencode/
+.opencode/*
+!.opencode/opencode.json
+!.opencode/agent/
+.opencode/agent/*
+!.opencode/agent/trade-agent.md
 target/
 .superpowers/
 graphify-out/

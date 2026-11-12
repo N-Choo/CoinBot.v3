@@ -2,20 +2,22 @@
 //!
 //! This is the mechanism the deposit sweeper relies on to create an account for
 //! a wallet when finalizing its deposit. Requires `DATABASE_URL`; skipped when
-//! it is unset or unreachable.
+//! it is unset, and fails if set but unreachable.
 
 use share::db::user::User;
 use sqlx::PgPool;
 
 /// Connect to the test database and apply migrations, or `None` when
-/// `DATABASE_URL` is unset/unreachable.
+/// `DATABASE_URL` is unset (fails if set but unreachable).
 async fn pool() -> Option<PgPool> {
     let url = std::env::var("DATABASE_URL").ok()?;
-    let pool = PgPool::connect(&url).await.ok()?;
+    let pool = PgPool::connect(&url)
+        .await
+        .expect("DATABASE_URL is set but Postgres is unreachable");
     sqlx::migrate!("../../process/migrations")
         .run(&pool)
         .await
-        .ok()?;
+        .expect("database migrations failed");
     Some(pool)
 }
 
