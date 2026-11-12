@@ -16,3 +16,6 @@ __pycache__/
 process/analyzer/out/
 **/.env
 state/
+
+# local release notes
+/dev.md
