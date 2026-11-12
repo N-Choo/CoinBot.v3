@@ -1,24 +1,29 @@
-name: Smoke Test
+name: API Smoke Test
 
 on:
   workflow_call:
 
 jobs:
   smoke-test:
-    name: Smoke Test
-    runs-on: ubuntu-latest
+    name: API Smoke Test
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
       - name: Prepare CI environment
-        run: cp .env.ci.example .env
+        run: cp .env.ci .env
       - name: Build production images
-        run: docker compose --env-file .env.ci.example build api_gateway-prod deposit-worker-prod
+        run: docker compose --profile prod build api_gateway-prod deposit-worker-prod
       - name: Start services
-        run: docker compose --env-file .env.ci.example -f docker-compose.yml -f docker-compose.ci.yml --profile prod up -d postgres redis deposit-worker-prod api_gateway-prod
+        run: docker compose --profile prod up -d postgres redis deposit-worker-prod api_gateway-prod
       - name: Wait for api_gateway
         run: |
           for i in $(seq 1 30); do
-            if curl -s -o /dev/null http://localhost:8080/api/config; then
+            code=$(curl -sS --max-time 2 --connect-timeout 2 -o /dev/null -w '%{http_code}' \
+              http://localhost:8080/api/config || true)
+            if [ "$code" = "200" ]; then
               echo "Backend is ready"
               exit 0
             fi
@@ -29,21 +34,21 @@ jobs:
       - name: Verify all services are running
         run: |
           expected="postgres redis api_gateway-prod deposit-worker-prod"
-          running=$(docker compose --env-file .env.ci.example -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps --status running --services | sort)
+          running=$(docker compose --profile prod ps --status running --services | sort)
           echo "$running"
           missing=0
           for svc in $expected; do
             echo "$running" | grep -qx "$svc" || { echo "ERROR: $svc is not running"; missing=1; }
           done
           if [ "$missing" -ne 0 ]; then
-            docker compose --env-file .env.ci.example -f docker-compose.yml -f docker-compose.ci.yml --profile prod ps
+            docker compose --profile prod ps
             exit 1
           fi
       - name: Run smoke tests
         run: BASE_URL=http://localhost:8080 make test-api
       - name: Collect logs on failure
         if: failure()
-        run: docker compose --env-file .env.ci.example -f docker-compose.yml -f docker-compose.ci.yml --profile prod logs --tail=200
+        run: docker compose --profile prod logs --tail=200
       - name: Cleanup
         if: always()
-        run: docker compose --env-file .env.ci.example -f docker-compose.yml -f docker-compose.ci.yml down --remove-orphans
+        run: docker compose --profile prod down --remove-orphans

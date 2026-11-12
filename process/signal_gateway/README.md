@@ -16,14 +16,16 @@ Standalone Rust service that turns `trade-agent` predictions into
 
 ## Run
 
+Compose loads the root `.env`. For a local run, export host-reachable endpoints:
+
 ```bash
 cd process/signal_gateway
-cp .env.example .env
+OPENCODE_BASE_URL=http://127.0.0.1:4096 \
+GRPC_TRADE_ENGINE_ENDPOINT=http://127.0.0.1:50051 \
 cargo run -p signal-gateway
 ```
 
-`cargo run -p signal-gateway` from the repo root does not load the crate-local
-`.env`; export the variables or use the `cd` form above.
+See the root `.env` for the full set of settings.
 
 Requires `opencode serve` (with the `trade-agent` role) and `trade-engine`
 reachable at the configured endpoints.
@@ -41,7 +43,7 @@ mount a volume for state and audit:
 
 ```bash
 docker run --rm \
-  --env-file process/signal_gateway/.env \
+  --env-file .env \
   -e OPENCODE_BASE_URL=http://host.docker.internal:4096 \
   -e GRPC_TRADE_ENGINE_ENDPOINT=http://host.docker.internal:50051 \
   -v signal-gateway-state:/app/state \
@@ -55,7 +57,7 @@ distroless `nonroot` user.
 
 ## Environment
 
-See `.env.example`. The important settings are `OPENCODE_BASE_URL`,
+See the root `.env`. The important settings are `OPENCODE_BASE_URL`,
 `OPENCODE_AGENT`, `OPENCODE_MODEL` (`provider/model`), `GRPC_TRADE_ENGINE_ENDPOINT`,
 `SIGNAL_GATEWAY_MIN_CONFIDENCE`, `SIGNAL_GATEWAY_PRICE_CHECK`,
 `SIGNAL_GATEWAY_MAX_ENTRY_DRIFT_PCT`, `SIGNAL_GATEWAY_SIGNAL_TTL_SECS`, and

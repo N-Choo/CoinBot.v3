@@ -114,22 +114,35 @@ impl Fixture {
         use ethers::core::rand::rngs::StdRng;
 
         let url = std::env::var("DATABASE_URL").ok()?;
-        let pool = sqlx::PgPool::connect(&url).await.ok()?;
-        sqlx::migrate!("../migrations").run(&pool).await.ok()?;
+        let pool = sqlx::PgPool::connect(&url)
+            .await
+            .expect("DATABASE_URL is set but Postgres is unreachable");
+        sqlx::migrate!("../migrations")
+            .run(&pool)
+            .await
+            .expect("database migrations failed");
 
         let base =
             std::env::var("REDIS_URL").unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string());
-        let nonce = NonceCache::new(&format!("{base}/1")).await.ok()?;
-        let session = SessionCache::new(&format!("{base}/0")).await.ok()?;
+        let nonce = NonceCache::new(&format!("{base}/1"))
+            .await
+            .expect("Redis required for tests");
+        let session = SessionCache::new(&format!("{base}/0"))
+            .await
+            .expect("Redis required for tests");
 
         let mut rng = StdRng::from_entropy();
         let signer = ethers::signers::LocalWallet::new(&mut rng);
         let wallet = format!("0x{:x}", signer.address());
 
-        let mut tx = pool.begin().await.ok()?;
-        let user = User::upsert(&mut tx, &wallet).await.ok()?;
-        user.add_balance(&mut tx, balance).await.ok()?;
-        tx.commit().await.ok()?;
+        let mut tx = pool.begin().await.expect("database transaction failed");
+        let user = User::upsert(&mut tx, &wallet)
+            .await
+            .expect("user upsert failed");
+        user.add_balance(&mut tx, balance)
+            .await
+            .expect("balance update failed");
+        tx.commit().await.expect("transaction commit failed");
 
         let token = uuid::Uuid::new_v4().to_string();
         session.insert(token.clone(), wallet.clone()).await;

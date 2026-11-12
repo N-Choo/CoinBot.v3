@@ -21,7 +21,5 @@ FROM gcr.io/distroless/cc-debian12:nonroot
 WORKDIR /app
 COPY --from=builder --chown=nonroot:nonroot /app/target/release/signal-gateway /signal-gateway
 COPY --from=builder --chown=nonroot:nonroot /app/state /app/state
-ENV SIGNAL_GATEWAY_STATE_PATH=/app/state/signal_gateway.json
-ENV SIGNAL_GATEWAY_AUDIT_PATH=/app/state/audit.jsonl
 USER nonroot:nonroot
 CMD ["/signal-gateway"]

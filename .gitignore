@@ -1,9 +1,12 @@
 docs/*
 kucoin/
 .env
-.env.ci
 *.log
-.opencode/
+.opencode/*
+!.opencode/opencode.json
+!.opencode/agent/
+.opencode/agent/*
+!.opencode/agent/trade-agent.md
 target/
 .superpowers/
 graphify-out/
@@ -12,5 +15,7 @@ __pycache__/
 .worktrees/
 process/analyzer/out/
 **/.env
-.env.ci
 state/
+
+# local release notes
+/dev.md

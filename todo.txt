@@ -1,0 +1,46 @@
+# CoinBot todos
+
+## Reliable signal delivery (outbox)
+
+Today `signal-gateway` publishes directly to `trade-engine`. If the engine is
+offline past the in-cycle retries, the signal is only written to the audit JSONL
+and the symbol is re-analysed on the next 4h cycle. There is no durable queue.
+
+- [ ] Add a `pending_signals` outbox table (id, signal_id UNIQUE, ticker, payload,
+      status, attempts, next_attempt_at, created_at, sent_at, last_error).
+- [ ] Insert the validated `TradeSignal` into the outbox before publishing.
+- [ ] Publish from the outbox; mark `sent` only after `Ack { accepted: true }`
+      (or `duplicate`, which is an idempotent success).
+- [ ] Retry transient gRPC failures with exponential backoff instead of waiting
+      for the next candle cycle.
+- [ ] Keep the outbox capped / expire stale signals using the signal TTL.
+- [ ] Keep `state.json` for candle bookkeeping; treat the DB as the source of truth
+      for pending deliveries.
+- [ ] Add tests: engine offline -> row pending; restart -> replayed once; duplicate
+      ack -> marked sent; expired -> dropped.
+- [ ] Surface pending/outbox status in logs and, optionally, an admin endpoint.
+
+## Health checks for every component
+
+Every service should expose both a **liveness** and a **readiness** check, and the
+deployment should actually use them.
+
+- [ ] Standardize HTTP services on `GET /healthz` (process alive) and
+      `GET /readyz` (dependencies OK).
+- [ ] `api_gateway`: `/healthz` + `/readyz` (DB, Redis, deposit-worker gRPC).
+- [ ] `deposit-worker`: tonic health service (already present) plus a process
+      heartbeat; readiness should include Postgres and KuCoin credentials.
+- [ ] `trade-engine`: tonic health service for `EngineService`; readiness should
+      include Postgres and KuCoin.
+- [ ] `withdraw-worker`: HTTP `/healthz` + `/readyz` (Postgres, Redis if used,
+      KuCoin account/credentials, solvency check reachable).
+- [ ] `signal-gateway`: HTTP `/healthz` + `/readyz` (opencode server, trade-engine
+      gRPC, state/audit writable).
+- [ ] `frontend`: nginx `/healthz`; don't route it to the SPA fallback.
+- [ ] `opencode`: container healthcheck against `http://127.0.0.1:4096/` with basic
+      auth.
+- [ ] Postgres/Redis: keep existing healthchecks and use `condition: service_healthy`
+      in compose dependencies.
+- [ ] Add Docker `healthcheck:` blocks and restart policies for every service.
+- [ ] Make the readiness checks distinguish "dependency down" from "process dead".
+- [ ] Add CI smoke assertions for each `/healthz` and `/readyz`.

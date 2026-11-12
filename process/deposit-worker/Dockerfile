@@ -17,10 +17,16 @@ RUN cargo chef cook --recipe-path recipe.json --release
 COPY . .
 RUN cargo build -p deposit --release
 
-FROM alpine:latest AS health
+FROM alpine:3.20 AS health
 ARG TARGETARCH
-RUN wget -q -O /probe https://github.com/grpc-ecosystem/grpc-health-probe/releases/latest/download/grpc_health_probe-linux-${TARGETARCH} && \
-    chmod +x /probe
+ARG HEALTH_PROBE_VERSION=v0.4.62
+RUN wget -q -O "/grpc_health_probe-linux-${TARGETARCH}" \
+      "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${HEALTH_PROBE_VERSION}/grpc_health_probe-linux-${TARGETARCH}" && \
+    wget -q -O /checksums.txt \
+      "https://github.com/grpc-ecosystem/grpc-health-probe/releases/download/${HEALTH_PROBE_VERSION}/checksums.txt" && \
+    cd / && grep " grpc_health_probe-linux-${TARGETARCH}$" checksums.txt | sha256sum -c - && \
+    chmod +x "/grpc_health_probe-linux-${TARGETARCH}" && \
+    mv "/grpc_health_probe-linux-${TARGETARCH}" /probe
 
 FROM gcr.io/distroless/cc-debian12
 COPY --from=builder /app/target/release/deposit /

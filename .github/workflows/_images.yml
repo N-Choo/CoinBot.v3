@@ -12,6 +12,7 @@ jobs:
   push-arm:
     name: Build & Push ARM64 (${{ matrix.name }})
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 90
     permissions:
       contents: read
       packages: write
@@ -20,15 +21,21 @@ jobs:
       matrix:
         include: ${{ fromJSON(inputs.images) }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: docker/setup-buildx-action@v3
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
       - name: Lowercase registry owner
         id: registry
         run: echo "owner=${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
       - name: Log in to GHCR
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
       - name: Build & push ${{ matrix.name }}
-        uses: docker/build-push-action@v5
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: ${{ matrix.context }}
           file: ${{ matrix.file }}
@@ -39,5 +46,5 @@ jobs:
             ghcr.io/${{ steps.registry.outputs.owner }}/${{ matrix.image }}:${{ github.sha }}
           cache-from: type=gha,scope=${{ matrix.name }}
           cache-to: type=gha,mode=max,scope=${{ matrix.name }}
-          # Force a clean trade-engine build; its cached layer produced a broken binary.
+          # Force a clean build; a cached trade-engine layer produced a broken binary.
           no-cache: ${{ matrix.name == 'trade-engine' }}
