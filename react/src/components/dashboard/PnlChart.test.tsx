@@ -6,10 +6,14 @@ import { getMyContracts, getContractOrders, type ContractItem, type ContractOrde
 import { fetchTickerPrice } from '../../services/kucoin'
 import { ContractsProvider } from '../../hooks/useContractsData'
 
-vi.mock('../../services/contract', () => ({
-  getMyContracts: vi.fn(),
-  getContractOrders: vi.fn(),
-}))
+vi.mock('../../services/contract', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/contract')>()
+  return {
+    ...actual,
+    getMyContracts: vi.fn(),
+    getContractOrders: vi.fn(),
+  }
+})
 vi.mock('../../services/kucoin', () => ({
   fetchTickerPrice: vi.fn().mockResolvedValue(120),
 }))

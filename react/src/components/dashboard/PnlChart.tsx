@@ -1,6 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback, useId, type PointerEvent as ReactPointerEvent } from 'react'
 import Skeleton from '../ui/Skeleton'
 import { useContractsData } from '../../hooks/useContractsData'
+import { isClosedOrder } from '../../services/contract'
 
 const RANGES = [
   { label: '7D', days: 7 },
@@ -91,7 +92,7 @@ export default function PnlChart() {
     const list: TradePoint[] = []
     for (const c of contracts) {
       for (const o of ordersByContract[c.id] ?? []) {
-        if (o.action !== 'close' || o.status.toLowerCase() !== 'filled') continue
+        if (!isClosedOrder(o)) continue
         const pnl = parseFloat(o.pnl ?? '')
         const t = new Date(o.updated_at || o.created_at).getTime()
         if (!Number.isFinite(pnl) || !Number.isFinite(t)) continue
@@ -108,7 +109,7 @@ export default function PnlChart() {
       const orders = ordersByContract[c.id] ?? []
       const closedEntries = new Set(
         orders
-          .filter(o => o.action === 'close' && o.status.toLowerCase() === 'filled' && o.parent_order_id)
+          .filter(o => isClosedOrder(o) && o.parent_order_id)
           .map(o => o.parent_order_id as string),
       )
       for (const o of orders) {

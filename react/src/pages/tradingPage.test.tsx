@@ -7,11 +7,15 @@ vi.mock('../hooks/useAuth', () => ({
   useAuth: () => ({ isAuthenticated: false, login: vi.fn(), logout: vi.fn() }),
 }))
 
-vi.mock('../services/contract', () => ({
-  getMyContracts: vi.fn().mockResolvedValue([]),
-  getContractOrders: vi.fn().mockResolvedValue([]),
-  signContract: vi.fn(),
-}))
+vi.mock('../services/contract', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../services/contract')>()
+  return {
+    ...actual,
+    getMyContracts: vi.fn().mockResolvedValue([]),
+    getContractOrders: vi.fn().mockResolvedValue([]),
+    signContract: vi.fn(),
+  }
+})
 
 describe('TradingPage', () => {
   it('renders the TradingView chart container', async () => {
