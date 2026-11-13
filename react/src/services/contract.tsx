@@ -99,3 +99,13 @@ export async function getContractOrders(id: string): Promise<ContractOrder[]> {
   const res = await axios.get(`/api/contracts/${id}/orders`)
   return res.data
 }
+
+/**
+ * True for the filled exit leg of a closed round trip.
+ *
+ * A round trip is two raw order rows (filled open + filled close); only the
+ * close leg represents a closed trade.
+ */
+export function isClosedOrder(order: ContractOrder): boolean {
+  return order.action === 'close' && order.status.toLowerCase() === 'filled'
+}

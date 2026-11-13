@@ -39,6 +39,9 @@ const POLL_SECS: u64 = 30;
 /// A repay intent younger than this is not re-sent while its history is pending.
 const REPAY_RECONCILE_WINDOW_SECS: i64 = 60;
 
+/// Tolerate exchange/local clock skew when scanning repay history.
+const REPAY_RECONCILE_SKEW_MS: i64 = 5 * 60 * 1000;
+
 /// Amounts at or below this are treated as dust (`1e-8`).
 const DUST: Decimal = Decimal::from_parts(1, 0, 0, false, 8);
 
@@ -161,6 +164,12 @@ pub async fn repay_pending(
 
     for loan in loans {
         if loan.position_closed_at.is_none() {
+            log::warn!(
+                "[REPAY] loan {} ({}) has no position_closed_at; skipping (contract {})",
+                loan.id,
+                loan.currency,
+                loan.contract_id
+            );
             continue;
         }
         if let Err(e) = repay_loan(pool, kcc, &loan).await {
@@ -205,33 +214,65 @@ async fn repay_claimed(pool: &PgPool, kcc: &KuCoinClient, loan: &MarginLoan) -> 
     // DB write did not. Reconcile against the repay history before re-sending.
     if loan.repay_attempted_at.is_some() {
         if let Some(order_no) = reconcile_prior_repay(kcc, loan).await? {
-            let cost_usdt = match loan.repay_attempted_cost_usdt {
-                Some(cost) => cost,
-                None => {
-                    let price = kucoin_margin::last_price(kcc, &loan.currency).await?;
-                    residual(loan.outstanding, loan.principal) * price
-                }
+            // Only the final loan for a currency can assert the whole account
+            // liability; otherwise other loans still own part of it.
+            let remaining = if only {
+                remaining_liability(kcc, &loan.currency).await?
+            } else {
+                Decimal::ZERO
             };
-            cleanup_after_reconcile(kcc, loan, bought).await;
-            MarginLoan::mark_repaid(
-                pool,
-                loan.id,
-                cost_usdt,
-                loan.repay_buy_order_id.as_deref(),
-                Some(&order_no),
-            )
-            .await
-            .map_err(|e| e.to_string())?;
-            return Ok(());
+            let mut absorb = remaining <= DUST;
+            if only && remaining > DUST {
+                let min_size = base_min_size(kcc, &loan.currency)
+                    .await
+                    .unwrap_or(Decimal::ZERO);
+                if min_size > Decimal::ZERO && remaining < min_size {
+                    log::warn!(
+                        "[REPAY] residual {remaining} {} is below the exchange minimum; absorbing",
+                        loan.currency
+                    );
+                    absorb = true;
+                }
+            }
+            if absorb {
+                let cost_usdt = match loan.repay_attempted_cost_usdt {
+                    Some(cost) => cost,
+                    None => {
+                        let price = kucoin_margin::last_price(kcc, &loan.currency).await?;
+                        residual(loan.outstanding, loan.principal) * price
+                    }
+                };
+                cleanup_after_reconcile(kcc, loan, bought).await;
+                MarginLoan::mark_repaid(
+                    pool,
+                    loan.id,
+                    cost_usdt,
+                    loan.repay_buy_order_id.as_deref(),
+                    Some(&order_no),
+                )
+                .await
+                .map_err(|e| e.to_string())?;
+                return Ok(());
+            }
+            log::warn!(
+                "[REPAY] reconciled {} but {} {} liability remains; retrying",
+                order_no,
+                remaining,
+                loan.currency
+            );
+            MarginLoan::clear_repay_attempt(pool, loan.id)
+                .await
+                .map_err(|e| e.to_string())?;
+        } else {
+            let age = chrono::Utc::now()
+                .signed_duration_since(loan.repay_attempted_at.unwrap_or_else(chrono::Utc::now));
+            if age.num_seconds() < REPAY_RECONCILE_WINDOW_SECS {
+                return Err("waiting for repay history to catch up".to_string());
+            }
+            MarginLoan::clear_repay_attempt(pool, loan.id)
+                .await
+                .map_err(|e| e.to_string())?;
         }
-        let age = chrono::Utc::now()
-            .signed_duration_since(loan.repay_attempted_at.unwrap_or_else(chrono::Utc::now));
-        if age.num_seconds() < REPAY_RECONCILE_WINDOW_SECS {
-            return Err("waiting for repay history to catch up".to_string());
-        }
-        MarginLoan::clear_repay_attempt(pool, loan.id)
-            .await
-            .map_err(|e| e.to_string())?;
     }
 
     let account = kucoin_margin::account(kcc).await?;
@@ -269,6 +310,28 @@ async fn repay_claimed(pool: &PgPool, kcc: &KuCoinClient, loan: &MarginLoan) -> 
             .map_err(|e| e.to_string())?;
         match submit_repay(kcc, loan, pending.repay_amount).await {
             Ok(receipt) => {
+                // A 200/actualSize ack is not proof the exchange cleared the
+                // debt. For the last loan in a currency, require zero liability
+                // before marking it repaid; otherwise keep it open and retry.
+                if only {
+                    let remaining = remaining_liability(kcc, &loan.currency).await?;
+                    if remaining > DUST {
+                        let min_size = base_min_size(kcc, &loan.currency)
+                            .await
+                            .unwrap_or(Decimal::ZERO);
+                        if min_size > Decimal::ZERO && remaining < min_size {
+                            log::warn!(
+                                "[REPAY] residual {remaining} {} is below the exchange minimum; absorbing",
+                                loan.currency
+                            );
+                        } else {
+                            return Err(format!(
+                                "repay ack {} but {remaining} {} liability remains; retrying",
+                                receipt.actual, loan.currency
+                            ));
+                        }
+                    }
+                }
                 let buy = BuyState {
                     bought,
                     available_before: available_before_buy,
@@ -344,35 +407,75 @@ async fn reconcile_prior_repay(
     if amount <= DUST {
         return Ok(None);
     }
-    let start = attempted.timestamp_millis();
+    let start = attempted.timestamp_millis() - REPAY_RECONCILE_SKEW_MS;
     let end = chrono::Utc::now().timestamp_millis();
-    let page = kucoin_margin::repay_history(kcc, &loan.currency, start, end, 1).await?;
-    Ok(matching_repay(&page.items, amount, start))
+    let mut page = 1;
+    let mut pending = false;
+    loop {
+        let data = kucoin_margin::repay_history(kcc, &loan.currency, start, end, page).await?;
+        if let Some(order_no) = matching_repay(&data.items, amount, start) {
+            return Ok(Some(order_no));
+        }
+        pending |= matching_pending_repay(&data.items, amount, start);
+        if page >= data.total_page || page >= 10 {
+            break;
+        }
+        page += 1;
+    }
+    if pending {
+        return Err("repay is still pending at the exchange".to_string());
+    }
+    Ok(None)
+}
+
+/// Amount reported by a repay-history row. KuCoin omits `actualSize`; for a
+/// successful repay `size` is the amount actually repaid.
+fn repay_amount(item: &RepayHistoryItem) -> Option<Decimal> {
+    item.actual_size
+        .as_deref()
+        .filter(|s| !s.trim().is_empty())
+        .or(item.size.as_deref())
+        .and_then(|s| s.parse().ok())
+}
+
+fn status_is(item: &RepayHistoryItem, expected: &str) -> bool {
+    item.status
+        .as_deref()
+        .is_some_and(|s| s.eq_ignore_ascii_case(expected))
 }
 
 /// Find a successful repay that matches `amount` at or after `since_ms`.
+///
+/// Only `SUCCESS` rows count. The amount must match closely: a larger,
+/// unrelated repay in the same currency must not satisfy this loan.
 pub(crate) fn matching_repay(
     items: &[RepayHistoryItem],
     amount: Decimal,
     since_ms: i64,
 ) -> Option<String> {
     items.iter().find_map(|item| {
-        if item.created_time < since_ms {
+        if item.created_time < since_ms || !status_is(item, "SUCCESS") {
             return None;
         }
-        if item
-            .status
-            .as_deref()
-            .is_some_and(|s| s.eq_ignore_ascii_case("FAILURE"))
-        {
-            return None;
-        }
-        let actual: Decimal = item.actual_size.as_deref()?.parse().ok()?;
-        if actual + DUST >= amount {
+        let actual = repay_amount(item)?;
+        if actual + DUST >= amount && actual <= amount + DUST {
             Some(item.order_no.clone())
         } else {
             None
         }
+    })
+}
+
+/// True when a matching repay is still processing at the exchange.
+pub(crate) fn matching_pending_repay(
+    items: &[RepayHistoryItem],
+    amount: Decimal,
+    since_ms: i64,
+) -> bool {
+    items.iter().any(|item| {
+        item.created_time >= since_ms
+            && status_is(item, "PENDING")
+            && repay_amount(item).is_some_and(|a| a + DUST >= amount)
     })
 }
 
@@ -479,23 +582,30 @@ async fn resolve_prior_buy(
     let symbol = margin_symbol(&format!("{}/USDT", loan.currency));
 
     if let Some(id) = &loan.repay_buy_order_id {
-        let order = kcc
-            .margin()
-            .get_order(id, &symbol)
-            .await
-            .map_err(|e| e.to_string())?;
-        match order.data {
-            Some(d) if d.active => {
-                return Err("waiting for shortfall buy to fill".to_string());
-            }
-            Some(d) => {
-                let filled: Decimal = d.deal_size.parse().unwrap_or(Decimal::ZERO);
+        match kcc.margin().get_order(id, &symbol).await {
+            Ok(order) => match order.data {
+                Some(d) if d.active => {
+                    return Err("waiting for shortfall buy to fill".to_string());
+                }
+                Some(d) => {
+                    let filled: Decimal = d.deal_size.parse().unwrap_or(Decimal::ZERO);
+                    MarginLoan::clear_repay_buy(pool, loan.id)
+                        .await
+                        .map_err(|e| e.to_string())?;
+                    return Ok(filled);
+                }
+                None => {}
+            },
+            Err(e) if e.is_not_found() || e.status().map(|s| s.as_u16()) == Some(400) => {
+                log::warn!(
+                    "[REPAY] shortfall buy order {id} not found ({}); clearing intent",
+                    e
+                );
                 MarginLoan::clear_repay_buy(pool, loan.id)
                     .await
                     .map_err(|e| e.to_string())?;
-                return Ok(filled);
             }
-            None => {}
+            Err(e) => return Err(e.to_string()),
         }
     }
 
@@ -517,7 +627,14 @@ async fn resolve_prior_buy(
                     .await
                     .map_err(|e| e.to_string())?;
             }
-            Err(e) if e.is_not_found() => {
+            Err(e) if e.is_not_found() || e.status().map(|s| s.as_u16()) == Some(400) => {
+                // KuCoin answers 400 (not 404) for an unknown clientOid. Clear
+                // the stale intent so the next pass can place a fresh buy.
+                log::warn!(
+                    "[REPAY] shortfall buy {} not found ({}); clearing intent",
+                    client_oid,
+                    e
+                );
                 MarginLoan::clear_repay_buy(pool, loan.id)
                     .await
                     .map_err(|e| e.to_string())?;
@@ -806,7 +923,7 @@ mod tests {
     fn matching_repay_ignores_old_and_failed_rows() {
         let items = vec![
             repay_item("old", "1", 10, Some("SUCCESS")),
-            repay_item("failed", "1", 20, Some("FAILURE")),
+            repay_item("failed", "1", 20, Some("FAILED")),
             repay_item("good", "1", 20, Some("SUCCESS")),
         ];
         assert_eq!(
@@ -819,6 +936,35 @@ mod tests {
     fn matching_repay_requires_the_full_amount() {
         let items = vec![repay_item("partial", "0.5", 20, Some("SUCCESS"))];
         assert_eq!(matching_repay(&items, dec("1"), 20), None);
+    }
+
+    #[test]
+    fn matching_repay_ignores_pending_rows() {
+        let items = vec![repay_item("pending", "1", 20, Some("PENDING"))];
+        assert_eq!(matching_repay(&items, dec("1"), 20), None);
+        assert!(matching_pending_repay(&items, dec("1"), 20));
+    }
+
+    #[test]
+    fn matching_repay_rejects_a_larger_unrelated_amount() {
+        let items = vec![repay_item("other", "2", 20, Some("SUCCESS"))];
+        assert_eq!(matching_repay(&items, dec("1"), 20), None);
+    }
+
+    #[test]
+    fn matching_repay_falls_back_to_size() {
+        let items = vec![RepayHistoryItem {
+            order_no: "good".to_string(),
+            currency: "SOL".to_string(),
+            size: Some("1".to_string()),
+            actual_size: None,
+            status: Some("SUCCESS".to_string()),
+            created_time: 20,
+        }];
+        assert_eq!(
+            matching_repay(&items, dec("1"), 20).as_deref(),
+            Some("good")
+        );
     }
 
     #[test]

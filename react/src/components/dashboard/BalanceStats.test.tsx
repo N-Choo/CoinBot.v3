@@ -5,10 +5,14 @@ import { getUserStats } from '../../services/stats'
 import { ContractsProvider } from '../../hooks/useContractsData'
 
 vi.mock('../../services/stats', () => ({ getUserStats: vi.fn() }))
-vi.mock('../../services/contract', () => ({
-  getMyContracts: vi.fn().mockResolvedValue([]),
-  getContractOrders: vi.fn().mockResolvedValue([]),
-}))
+vi.mock('../../services/contract', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/contract')>()
+  return {
+    ...actual,
+    getMyContracts: vi.fn().mockResolvedValue([]),
+    getContractOrders: vi.fn().mockResolvedValue([]),
+  }
+})
 
 const mockGet = vi.mocked(getUserStats)
 

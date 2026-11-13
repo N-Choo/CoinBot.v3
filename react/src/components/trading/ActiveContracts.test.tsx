@@ -3,17 +3,22 @@ import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import ActiveContracts from './ActiveContracts'
-import { getMyContracts } from '../../services/contract'
+import { getContractOrders, getMyContracts } from '../../services/contract'
 import { ContractsProvider } from '../../hooks/useContractsData'
 
 const renderAC = () => render(<ContractsProvider><ActiveContracts /></ContractsProvider>)
 
-vi.mock('../../services/contract', () => ({
-  getMyContracts: vi.fn(),
-  getContractOrders: vi.fn().mockResolvedValue([]),
-}))
+vi.mock('../../services/contract', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../services/contract')>()
+  return {
+    ...actual,
+    getMyContracts: vi.fn(),
+    getContractOrders: vi.fn().mockResolvedValue([]),
+  }
+})
 
 const mockGet = vi.mocked(getMyContracts)
+const mockOrders = vi.mocked(getContractOrders)
 
 const ROWS = [
   {
@@ -44,6 +49,8 @@ const ROWS = [
 
 beforeEach(() => {
   mockGet.mockReset()
+  mockOrders.mockReset()
+  mockOrders.mockResolvedValue([])
 })
 
 describe('ActiveContracts', () => {
@@ -77,5 +84,51 @@ describe('ActiveContracts', () => {
     expect(screen.getByText('2% / 5%')).toBeInTheDocument()
     expect(screen.queryByText('ADD')).not.toBeInTheDocument()
     expect(screen.queryByText('WITHDRAW')).not.toBeInTheDocument()
+  })
+
+  test('counts one closed round trip, not its two filled legs', async () => {
+    mockGet.mockResolvedValue(ROWS)
+    mockOrders.mockImplementation(async (id: string) =>
+      id === '1'
+        ? [
+            {
+              id: 'entry',
+              side: 'buy',
+              action: 'open',
+              status: 'filled',
+              requested_qty: '0.1',
+              filled_qty: '0.1',
+              fill_price: '100',
+              funds: '10',
+              fee: '0.01',
+              pnl: null,
+              parent_order_id: null,
+              created_at: '2026-10-01T00:00:00Z',
+              updated_at: '2026-10-01T00:00:00Z',
+            },
+            {
+              id: 'exit',
+              side: 'sell',
+              action: 'close',
+              status: 'filled',
+              requested_qty: '0.1',
+              filled_qty: '0.1',
+              fill_price: '110',
+              funds: '11',
+              fee: '0.01',
+              pnl: '1',
+              parent_order_id: 'entry',
+              created_at: '2026-10-01T01:00:00Z',
+              updated_at: '2026-10-01T01:00:00Z',
+            },
+          ]
+        : [],
+    )
+
+    renderAC()
+    await userEvent.click(await screen.findByText('BTC'))
+
+    expect(await screen.findByTestId('closed-count')).toHaveTextContent('1')
+    expect(screen.getByTestId('orders-count')).toHaveTextContent('2')
   })
 })

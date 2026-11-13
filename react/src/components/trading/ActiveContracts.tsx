@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Skeleton from '../ui/Skeleton'
-import { type ContractItem, cancelContract } from '../../services/contract'
+import { type ContractItem, cancelContract, isClosedOrder } from '../../services/contract'
 import { useContractsData } from '../../hooks/useContractsData'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -85,9 +85,11 @@ export default function ActiveContracts() {
 
   if (selected) {
     const orders = ordersByContract[selected.id] ?? []
+    const filledOrders = orders.filter(o => o.status.toLowerCase() === 'filled')
+    const closedCount = orders.filter(isClosedOrder).length
     const filteredOrders = orders.filter(o => ordersFilter === 'All' || o.side.toLowerCase() === ordersFilter.toLowerCase())
-    const boughtQty = orders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
-    const soldQty = orders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    const boughtQty = filledOrders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    const soldQty = filledOrders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
     let totalPnl = 0
     let hasPnl = false
     for (const o of orders) {
@@ -185,7 +187,8 @@ export default function ActiveContracts() {
             ) : (
               <>
                 <div className="flex flex-wrap gap-x-4 gap-y-1 px-3 py-2 text-[10px] text-text-muted border-b border-border-light">
-                  <span>Orders <span className="text-text-main font-mono">{orders.length}</span></span>
+                  <span>Orders <span data-testid="orders-count" className="text-text-main font-mono">{orders.length}</span></span>
+                  <span>Closed <span data-testid="closed-count" className="text-text-main font-mono">{closedCount}</span></span>
                   <span>Bought <span className="text-text-main font-mono">{boughtQty.toLocaleString()}</span></span>
                   <span>Sold <span className="text-text-main font-mono">{soldQty.toLocaleString()}</span></span>
                   <span>PnL <span className={`font-mono ${!hasPnl ? 'text-text-muted' : totalPnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(hasPnl ? totalPnl : null)}</span></span>
@@ -196,6 +199,7 @@ export default function ActiveContracts() {
                       <tr className="text-text-muted border-b border-border-light">
                         <th className="text-left font-medium px-3 py-1.5 whitespace-nowrap">Time</th>
                         <th className="text-left font-medium px-3 py-1.5">Side</th>
+                        <th className="text-left font-medium px-3 py-1.5">Action</th>
                         <th className="text-right font-medium px-3 py-1.5">Qty</th>
                         <th className="text-right font-medium px-3 py-1.5 whitespace-nowrap">Filled Price</th>
                         <th className="text-right font-medium px-3 py-1.5">PnL</th>
@@ -211,6 +215,7 @@ export default function ActiveContracts() {
                           <tr key={o.id} className="border-b border-border-light last:border-b-0">
                             <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap">{timeAgo(o.created_at)}</td>
                             <td className={`px-3 py-1.5 font-bold ${buy ? 'text-up' : 'text-down'}`}>{o.side.toUpperCase()}</td>
+                            <td className="px-3 py-1.5 capitalize text-text-muted">{o.action}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-main">{o.requested_qty || o.filled_qty || '—'}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fill_price ? `$${Number(o.fill_price).toLocaleString()}` : '—'}</td>
                             <td className={`px-3 py-1.5 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
