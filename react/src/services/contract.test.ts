@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'vitest'
 
-import { isClosedOrder, type ContractOrder } from './contract'
+import { isClosedOrder, realizedPnlOf, type ContractOrder } from './contract'
 
 const order = (over: Partial<ContractOrder>): ContractOrder => ({
   id: 'o',
@@ -26,5 +26,15 @@ describe('isClosedOrder', () => {
     expect(isClosedOrder(order({ action: 'open', parent_order_id: null }))).toBe(false)
     expect(isClosedOrder(order({ status: 'open' }))).toBe(false)
     expect(isClosedOrder(order({ status: 'cancelled' }))).toBe(false)
+  })
+})
+
+describe('realizedPnlOf', () => {
+  test('returns PnL only for filled close legs', () => {
+    expect(realizedPnlOf(order({ pnl: '1.5' }))).toBe(1.5)
+    expect(realizedPnlOf(order({ action: 'open', parent_order_id: null }))).toBeNull()
+    expect(realizedPnlOf(order({ status: 'open' }))).toBeNull()
+    expect(realizedPnlOf(order({ pnl: null }))).toBeNull()
+    expect(realizedPnlOf(order({ pnl: 'not-a-number' }))).toBeNull()
   })
 })
