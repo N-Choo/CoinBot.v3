@@ -45,6 +45,12 @@ const REPAY_RECONCILE_SKEW_MS: i64 = 5 * 60 * 1000;
 /// Amounts at or below this are treated as dust (`1e-8`).
 const DUST: Decimal = Decimal::from_parts(1, 0, 0, false, 8);
 
+/// Common USDT pair minimum notional, used when the lookup fails.
+const DEFAULT_MIN_NOTIONAL: Decimal = Decimal::from_parts(1, 0, 0, false, 1);
+
+/// Headroom above the pair minimum so a price tick cannot push the order below it.
+const MIN_NOTIONAL_HEADROOM: Decimal = Decimal::from_parts(105, 0, 0, false, 2);
+
 /// Residual interest in the base currency.
 pub(crate) fn residual(outstanding: Decimal, principal: Decimal) -> Decimal {
     (outstanding - principal).max(Decimal::ZERO)
@@ -662,10 +668,27 @@ async fn place_shortfall_buy(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("symbol {symbol} not found"))?;
-    // Round up to at least the exchange minimum. The over-buy is sold back by
+    // Round up to at least both the base minimum and the pair's minimum
+    // notional (e.g. SOL-USDT requires 0.1 USDT). The over-buy is sold back by
     // `cleanup_surplus` after the repay, so sub-minimum debt is still cleared.
-    let qty = round_up(shortfall, &info.base_increment, &info.base_min_size)
-        .ok_or_else(|| format!("shortfall {shortfall} below minimum for {symbol}"))?;
+    let price = kucoin_margin::last_price(kcc, &loan.currency).await?;
+    let min_notional = kucoin_margin::min_notional(kcc, &loan.currency)
+        .await
+        .unwrap_or_else(|e| {
+            log::warn!(
+                "[REPAY] min notional lookup for {} failed: {e}; assuming 0.1",
+                loan.currency
+            );
+            DEFAULT_MIN_NOTIONAL
+        });
+    let qty = shortfall_buy_qty(
+        shortfall,
+        price,
+        min_notional,
+        &info.base_increment,
+        &info.base_min_size,
+    )
+    .ok_or_else(|| format!("shortfall {shortfall} below minimum for {symbol}"))?;
 
     let client_oid = Uuid::new_v4().to_string();
     MarginLoan::set_repay_buy_client(pool, loan.id, &client_oid)
@@ -679,7 +702,7 @@ async fn place_shortfall_buy(
         .map_err(|e| format!("shortfall buy ambiguous: {e}"))?;
     let data = res
         .data
-        .ok_or_else(|| format!("buy rejected: {}", res.code))?;
+        .ok_or_else(|| format!("buy rejected: {} {}", res.code, res.msg.unwrap_or_default()))?;
     MarginLoan::set_repay_buy(pool, loan.id, &data.order_id, &client_oid)
         .await
         .map_err(|e| e.to_string())?;
@@ -747,6 +770,26 @@ async fn cleanup_surplus(
         .await
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("symbol {symbol} not found"))?;
+    let price = kucoin_margin::last_price(kcc, &loan.currency)
+        .await
+        .unwrap_or(Decimal::ZERO);
+    let min_notional = kucoin_margin::min_notional(kcc, &loan.currency)
+        .await
+        .unwrap_or(DEFAULT_MIN_NOTIONAL);
+    let min_qty = min_order_qty(
+        price,
+        min_notional,
+        &info.base_increment,
+        &info.base_min_size,
+    );
+    if amount < min_qty {
+        log::warn!(
+            "[REPAY] surplus {amount} {} for loan {} is below the sell minimum; retained",
+            loan.currency,
+            loan.id
+        );
+        return Ok(());
+    }
     let Some(qty) = floor_qty(amount, &info.base_increment, &info.base_min_size) else {
         log::warn!(
             "[REPAY] surplus {amount} {} for loan {} is below the sell minimum; retained by the platform",
@@ -797,6 +840,44 @@ pub(crate) fn floor_qty(amount: Decimal, increment: &str, min_size: &str) -> Opt
         return None;
     }
     Some(qty.normalize().to_string())
+}
+
+/// Minimum order quantity for a pair: the larger of the base minimum and the
+/// quantity needed to meet the pair's minimum notional, with headroom.
+pub(crate) fn min_order_qty(
+    price: Decimal,
+    min_notional: Decimal,
+    increment: &str,
+    min_size: &str,
+) -> Decimal {
+    let base: Decimal = round_up(Decimal::ZERO, increment, min_size)
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(Decimal::ZERO);
+    let by_notional = if min_notional > Decimal::ZERO && price > Decimal::ZERO {
+        min_notional
+            .checked_mul(MIN_NOTIONAL_HEADROOM)
+            .and_then(|v| v.checked_div(price))
+            .and_then(|v| round_up(v, increment, min_size))
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(Decimal::ZERO)
+    } else {
+        Decimal::ZERO
+    };
+    base.max(by_notional)
+}
+
+/// Quantity for a shortfall buy, large enough to satisfy both the base minimum
+/// and the pair's minimum notional.
+pub(crate) fn shortfall_buy_qty(
+    shortfall: Decimal,
+    price: Decimal,
+    min_notional: Decimal,
+    increment: &str,
+    min_size: &str,
+) -> Option<String> {
+    let min_qty = min_order_qty(price, min_notional, increment, min_size);
+    let qty: Decimal = round_up(shortfall, increment, min_size)?.parse().ok()?;
+    Some(qty.max(min_qty).normalize().to_string())
 }
 
 /// Round `amount` up to `increment`, respecting `min_size`.
@@ -975,5 +1056,45 @@ mod tests {
         );
         assert_eq!(floor_qty(dec("0.001"), "0.01", "0.01"), None);
         assert_eq!(floor_qty(dec("0.5"), "0.1", "1"), None);
+    }
+
+    #[test]
+    fn shortfall_buy_respects_min_notional() {
+        // 0.1 USDT at $80 needs 0.00125 SOL -> 0.002 at a 0.001 increment.
+        assert_eq!(
+            shortfall_buy_qty(dec("0.0001"), dec("80"), dec("0.1"), "0.001", "0.001").as_deref(),
+            Some("0.002")
+        );
+        assert_eq!(
+            shortfall_buy_qty(dec("0.5"), dec("80"), dec("0.1"), "0.001", "0.001").as_deref(),
+            Some("0.5")
+        );
+    }
+
+    #[test]
+    fn shortfall_buy_has_notional_headroom() {
+        let qty: Decimal = shortfall_buy_qty(
+            dec("0.0000001"),
+            dec("100000"),
+            dec("0.1"),
+            "0.00000001",
+            "0.000001",
+        )
+        .unwrap()
+        .parse()
+        .unwrap();
+        assert!(qty * dec("100000") > dec("0.1"));
+    }
+
+    #[test]
+    fn shortfall_buy_handles_zero_price_and_zero_minimum() {
+        assert_eq!(
+            shortfall_buy_qty(dec("0.5"), dec("0"), dec("0.1"), "0.001", "0.001").as_deref(),
+            Some("0.5")
+        );
+        assert_eq!(
+            shortfall_buy_qty(dec("0.5"), dec("80"), dec("0"), "0.001", "0.001").as_deref(),
+            Some("0.5")
+        );
     }
 }

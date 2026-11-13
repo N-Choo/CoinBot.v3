@@ -1,7 +1,9 @@
 # Test-only overrides for `make test`.
 #
 # Forces dedicated test credentials (read from .env.ci via --env-file) so the
-# test database never depends on, or matches, the developer's root .env.
+# test database never depends on the developer's root .env, and publishes the
+# test DB/Redis on dedicated host ports so `make test` can run while `make dev`
+# (or prod) is already using 5432/6379.
 # `environment` takes precedence over the base `env_file: .env`.
 
 services:
@@ -10,7 +12,11 @@ services:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "127.0.0.1:55432:5432"
 
   redis:
     environment:
       REDIS_PASSWORD: ${REDIS_PASSWORD}
+    ports:
+      - "127.0.0.1:56379:6379"

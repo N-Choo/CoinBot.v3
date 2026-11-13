@@ -6,6 +6,7 @@
 
 use kucoin::client::rest::KuCoinClient;
 use kucoin::types::KuCoinResponse;
+use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
 /// Cross-margin account snapshot.
@@ -191,6 +192,35 @@ pub async fn repay(kcc: &KuCoinClient, currency: &str, size: String) -> Result<R
     }
 }
 
+/// Minimum order notional (quote currency) for `currency`'s `-USDT` pair.
+pub async fn min_notional(kcc: &KuCoinClient, currency: &str) -> Result<Decimal, String> {
+    let symbol = format!("{currency}-USDT");
+    let endpoint = format!("/api/v2/symbols/{symbol}");
+    let res = kcc
+        .send::<KuCoinResponse<SymbolMinimums>>("GET", "", &endpoint)
+        .await
+        .map_err(|e| e.to_string())?;
+    let row = res
+        .data
+        .ok_or_else(|| format!("symbols lookup failed: {}", res.code))?;
+    let min = [row.min_funds.as_deref(), row.quote_min_size.as_deref()]
+        .into_iter()
+        .flatten()
+        .filter(|s| !s.trim().is_empty())
+        .filter_map(|s| s.parse::<Decimal>().ok())
+        .max();
+    min.ok_or_else(|| format!("no minFunds for {symbol}"))
+}
+
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SymbolMinimums {
+    #[serde(default)]
+    quote_min_size: Option<String>,
+    #[serde(default)]
+    min_funds: Option<String>,
+}
+
 /// Last price for `BASE-USDT`.
 pub async fn last_price(
     kcc: &KuCoinClient,
@@ -245,6 +275,24 @@ mod tests {
         let page = res.data.unwrap();
         assert_eq!(page.items[0].order_no, "r-1");
         assert_eq!(page.items[0].actual_size.as_deref(), Some("0.5"));
+    }
+
+    #[test]
+    fn parses_symbol_minimums() {
+        let json = r#"{"code":"200000","data":{"symbol":"SOL-USDT","minFunds":"0.1","quoteMinSize":"0.1"}}"#;
+        let res: KuCoinResponse<SymbolMinimums> = serde_json::from_str(json).unwrap();
+        let row = res.data.unwrap();
+        assert_eq!(row.min_funds.as_deref(), Some("0.1"));
+        assert_eq!(row.quote_min_size.as_deref(), Some("0.1"));
+    }
+
+    #[test]
+    fn symbol_minimums_allow_missing_fields() {
+        let json = r#"{"code":"200000","data":{"symbol":"SOL-USDT"}}"#;
+        let res: KuCoinResponse<SymbolMinimums> = serde_json::from_str(json).unwrap();
+        let row = res.data.unwrap();
+        assert!(row.min_funds.is_none());
+        assert!(row.quote_min_size.is_none());
     }
 
     #[tokio::test]
