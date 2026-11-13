@@ -5,7 +5,7 @@ COMPOSE_TEST = docker compose -p coinbot-test --env-file .env.ci -f docker-compo
 COMPOSE_PROD = docker compose --env-file $(COMPOSE_ENV_FILE) -f docker-compose.yml -f docker-compose.prod.yml
 LOG_TAIL ?= 200
 
-.PHONY: help ci ci-test dev prod prod-build pin-images log seed seed-clean test test-api \
+.PHONY: help ci ci-test dev prod prod-build pin-images log status seed seed-clean test test-api \
 	fmt fmt-fix clippy frontend-install frontend-lint frontend-lint-fix \
 	frontend-test frontend-build frontend-ci
 
@@ -16,6 +16,7 @@ help:
 	@echo "  make prod      Pull pre-built images and (re)start the prod stack"
 	@echo "  make pin-images  Resolve image digests and rewrite docker-compose.prod.yml"
 	@echo "  make log       Follow prod container logs (SERVICE=<name> for one service)"
+	@echo "  make status    Read-only dashboard: health, contracts, debt, signals"
 	@echo "  make seed      Insert demo data into the local DB"
 	@echo "  make seed-clean  Wipe demo data from the local DB"
 	@echo "  make ci-test   CI-equivalent checks (fmt + clippy + tests + frontend)"
@@ -100,6 +101,9 @@ prod:
 
 log:
 	$(COMPOSE_PROD) --profile prod --profile tools logs -f --tail=$(LOG_TAIL) $(SERVICE)
+
+status:
+	./scripts/status.sh
 
 test-api:
 	./scripts/test-api.sh
