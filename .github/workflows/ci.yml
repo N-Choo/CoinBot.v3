@@ -149,7 +149,7 @@ jobs:
       - name: Prod config (pinned)
         run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.prod.yml --profile prod --profile tools config --quiet
       - name: Test config
-        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.test.yml config --quiet
+        run: docker compose --env-file .env.ci -f docker-compose.yml -f docker-compose.test.yml config --quiet
 
   # --- Tests ---
   backend-test:

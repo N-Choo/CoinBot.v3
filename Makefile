@@ -1,7 +1,7 @@
 PACKAGES = api-gateway share deposit trade-engine signal-gateway withdraw-worker
 COMPOSE_ENV_FILE ?= .env
 COMPOSE_DEV = docker compose -f docker-compose.yml -f docker-compose.dev.yml
-COMPOSE_TEST = docker compose -p coinbot-test --env-file .env.ci -f docker-compose.yml -f docker-compose.dev.yml -f docker-compose.test.yml
+COMPOSE_TEST = docker compose -p coinbot-test --env-file .env.ci -f docker-compose.yml -f docker-compose.test.yml
 COMPOSE_PROD = docker compose --env-file $(COMPOSE_ENV_FILE) -f docker-compose.yml -f docker-compose.prod.yml
 LOG_TAIL ?= 200
 
@@ -53,8 +53,8 @@ test:
 	 [ "$$pulled" = 1 ] || exit 1; \
 	 $(COMPOSE_TEST) down -v --remove-orphans >/dev/null 2>&1 || true; \
 	 $(COMPOSE_TEST) up -d --wait postgres redis && \
-		REDIS_URL="redis://:$$redis_password@127.0.0.1:6379" \
-		DATABASE_URL="postgres://$${pg_user:-postgres}:$$pg_password@127.0.0.1:5432/$${pg_db:-coinbot}" \
+		REDIS_URL="redis://:$$redis_password@127.0.0.1:56379" \
+		DATABASE_URL="postgres://$${pg_user:-postgres}:$$pg_password@127.0.0.1:55432/$${pg_db:-coinbot}" \
 		cargo test $(addprefix -p ,$(PACKAGES)); \
 	 rst=$$?; \
 	 $(COMPOSE_TEST) down -v --remove-orphans; \
