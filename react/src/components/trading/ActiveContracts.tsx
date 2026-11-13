@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import Skeleton from '../ui/Skeleton'
-import { type ContractItem, cancelContract, isClosedOrder } from '../../services/contract'
+import { type ContractItem, type ContractOrder, cancelContract, isClosedOrder, realizedPnlOf } from '../../services/contract'
 import { useContractsData } from '../../hooks/useContractsData'
 
 const STATUS_COLOR: Record<string, string> = {
@@ -90,10 +90,25 @@ export default function ActiveContracts() {
     const filteredOrders = orders.filter(o => ordersFilter === 'All' || o.side.toLowerCase() === ordersFilter.toLowerCase())
     const boughtQty = filledOrders.filter(o => o.side.toLowerCase() === 'buy').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
     const soldQty = filledOrders.filter(o => o.side.toLowerCase() === 'sell').reduce((s, o) => s + (parseFloat(o.filled_qty) || parseFloat(o.requested_qty) || 0), 0)
+    const closedEntries = new Set(
+      orders
+        .filter(isClosedOrder)
+        .map(o => o.parent_order_id)
+        .filter((id): id is string => id != null),
+    )
+    const rowPnl = (o: ContractOrder): number | null => {
+      const realized = realizedPnlOf(o)
+      if (realized != null) return realized
+      // An entry whose round trip is closed has no PnL of its own; the close
+      // leg carries the realized result.
+      if (o.action !== 'open' || closedEntries.has(o.id)) return null
+      if (o.status === 'cancelled' || o.status === 'failed') return null
+      return pnlOf(o, selected.ticker)
+    }
     let totalPnl = 0
     let hasPnl = false
     for (const o of orders) {
-      const p = pnlOf(o, selected.ticker)
+      const p = rowPnl(o)
       if (p != null) { hasPnl = true; totalPnl += p }
     }
 
@@ -191,7 +206,7 @@ export default function ActiveContracts() {
                   <span>Closed <span data-testid="closed-count" className="text-text-main font-mono">{closedCount}</span></span>
                   <span>Bought <span className="text-text-main font-mono">{boughtQty.toLocaleString()}</span></span>
                   <span>Sold <span className="text-text-main font-mono">{soldQty.toLocaleString()}</span></span>
-                  <span>PnL <span className={`font-mono ${!hasPnl ? 'text-text-muted' : totalPnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(hasPnl ? totalPnl : null)}</span></span>
+                  <span>PnL <span data-testid="detail-pnl" className={`font-mono ${!hasPnl ? 'text-text-muted' : totalPnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(hasPnl ? totalPnl : null)}</span></span>
                 </div>
                 <div className="overflow-x-auto">
                   <table className="w-full text-[11px] border-collapse">
@@ -210,7 +225,7 @@ export default function ActiveContracts() {
                     <tbody>
                       {filteredOrders.map(o => {
                         const buy = o.side.toLowerCase() === 'buy'
-                        const pnl = pnlOf(o, selected.ticker)
+                        const pnl = rowPnl(o)
                         return (
                           <tr key={o.id} className="border-b border-border-light last:border-b-0">
                             <td className="px-3 py-1.5 text-text-muted font-mono whitespace-nowrap">{timeAgo(o.created_at)}</td>
@@ -218,7 +233,7 @@ export default function ActiveContracts() {
                             <td className="px-3 py-1.5 capitalize text-text-muted">{o.action}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-main">{o.requested_qty || o.filled_qty || '—'}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fill_price ? `$${Number(o.fill_price).toLocaleString()}` : '—'}</td>
-                            <td className={`px-3 py-1.5 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
+                            <td data-testid={`order-pnl-${o.id}`} className={`px-3 py-1.5 text-right font-mono ${pnl == null ? 'text-text-muted' : pnl >= 0 ? 'text-up-text' : 'text-down-text'}`}>{fmtPnl(pnl)}</td>
                             <td className="px-3 py-1.5 text-right font-mono text-text-muted">{o.fee}</td>
                             <td className="px-3 py-1.5"><span className="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-[rgba(29,205,159,0.12)] text-up capitalize">{o.status}</span></td>
                           </tr>

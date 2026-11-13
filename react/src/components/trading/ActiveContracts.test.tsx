@@ -4,9 +4,14 @@ import { beforeEach, describe, expect, test, vi } from 'vitest'
 
 import ActiveContracts from './ActiveContracts'
 import { getContractOrders, getMyContracts } from '../../services/contract'
+import { fetchTickerPrice } from '../../services/kucoin'
 import { ContractsProvider } from '../../hooks/useContractsData'
 
 const renderAC = () => render(<ContractsProvider><ActiveContracts /></ContractsProvider>)
+
+vi.mock('../../services/kucoin', () => ({
+  fetchTickerPrice: vi.fn().mockResolvedValue(120),
+}))
 
 vi.mock('../../services/contract', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../services/contract')>()
@@ -19,6 +24,7 @@ vi.mock('../../services/contract', async (importOriginal) => {
 
 const mockGet = vi.mocked(getMyContracts)
 const mockOrders = vi.mocked(getContractOrders)
+const mockPrice = vi.mocked(fetchTickerPrice)
 
 const ROWS = [
   {
@@ -51,6 +57,8 @@ beforeEach(() => {
   mockGet.mockReset()
   mockOrders.mockReset()
   mockOrders.mockResolvedValue([])
+  mockPrice.mockReset()
+  mockPrice.mockResolvedValue(120)
 })
 
 describe('ActiveContracts', () => {
@@ -130,5 +138,10 @@ describe('ActiveContracts', () => {
 
     expect(await screen.findByTestId('closed-count')).toHaveTextContent('1')
     expect(screen.getByTestId('orders-count')).toHaveTextContent('2')
+    // The entry leg of a closed round trip has no PnL of its own; only the
+    // filled close leg carries the realized result.
+    expect(screen.getByTestId('order-pnl-entry')).toHaveTextContent('—')
+    expect(screen.getByTestId('order-pnl-exit')).toHaveTextContent('+$1')
+    expect(screen.getByTestId('detail-pnl')).toHaveTextContent('+$1')
   })
 })

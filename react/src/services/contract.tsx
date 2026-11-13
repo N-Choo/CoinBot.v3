@@ -109,3 +109,10 @@ export async function getContractOrders(id: string): Promise<ContractOrder[]> {
 export function isClosedOrder(order: ContractOrder): boolean {
   return order.action === 'close' && order.status.toLowerCase() === 'filled'
 }
+
+/** Realized PnL for a filled close leg, or null when the order has none. */
+export function realizedPnlOf(order: ContractOrder): number | null {
+  if (!isClosedOrder(order)) return null
+  const pnl = parseFloat(order.pnl ?? '')
+  return Number.isFinite(pnl) ? pnl : null
+}

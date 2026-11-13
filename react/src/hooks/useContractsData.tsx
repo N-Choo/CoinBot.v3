@@ -1,7 +1,7 @@
 /* eslint-disable react-refresh/only-export-components */
 
 import { createContext, useContext, useState, useEffect, type ReactNode, type Dispatch, type SetStateAction } from 'react'
-import { getMyContracts, getContractOrders, type ContractItem, type ContractOrder } from '../services/contract'
+import { getMyContracts, getContractOrders, isClosedOrder, realizedPnlOf, type ContractItem, type ContractOrder } from '../services/contract'
 import { fetchTickerPrice } from '../services/kucoin'
 
 interface ContractsData {
@@ -14,9 +14,9 @@ interface ContractsData {
   prices: Record<string, number>
   /** Live PnL for an order: filled → vs fill_price; open → vs funds/requested_qty. */
   pnlOf: (o: ContractOrder, ticker: string) => number | null
-  /** Sum of a contract's order PnL. */
+  /** Realized close PnL plus live unrealized PnL for open entries. */
   contractPnl: (c: ContractItem) => number | null
-  /** Sum of the PnL across all of the user's contracts. */
+  /** Live unrealized PnL across open entries. */
   totalPnl: number
 }
 
@@ -123,19 +123,46 @@ export function ContractsProvider({ children }: { children: ReactNode }) {
     return diff * qty - fee
   }
 
+  const closedEntryIds = (orders: ContractOrder[]): Set<string> =>
+    new Set(
+      orders
+        .filter(isClosedOrder)
+        .map(o => o.parent_order_id)
+        .filter((id): id is string => id != null),
+    )
+
+  /** Live PnL for an entry that has not been closed yet. */
+  const entryUnrealized = (o: ContractOrder, ticker: string, closed: Set<string>): number | null => {
+    if (o.action !== 'open' || closed.has(o.id)) return null
+    if (o.status === 'cancelled' || o.status === 'failed') return null
+    return pnlOf(o, ticker)
+  }
+
   const contractPnl = (c: ContractItem): number | null => {
     const os = ordersByContract[c.id]
     if (!os || os.length === 0) return null
+    const closed = closedEntryIds(os)
     let any = false
     let sum = 0
     for (const o of os) {
-      const p = pnlOf(o, c.ticker)
+      const p = isClosedOrder(o) ? realizedPnlOf(o) : entryUnrealized(o, c.ticker, closed)
       if (p != null) { any = true; sum += p }
     }
     return any ? sum : null
   }
 
-  const totalPnl = contracts.reduce((s, c) => s + (contractPnl(c) ?? 0), 0)
+  // BalanceStats labels this "Unrealized PnL": closed legs carry realized PnL
+  // and must not be counted here.
+  const totalPnl = contracts.reduce((s, c) => {
+    const os = ordersByContract[c.id]
+    if (!os || os.length === 0) return s
+    const closed = closedEntryIds(os)
+    for (const o of os) {
+      const p = entryUnrealized(o, c.ticker, closed)
+      if (p != null) s += p
+    }
+    return s
+  }, 0)
 
   const value: ContractsData = {
     contracts, setContracts, loading, error,
