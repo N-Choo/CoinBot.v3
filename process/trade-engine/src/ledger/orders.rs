@@ -115,30 +115,45 @@ pub async fn record_filled(
     )
     .await?;
 
-    // A filled short entry creates one base-asset loan for interest accounting.
+    // A filled entry that borrowed creates one loan for interest accounting:
+    // shorts borrow the base asset, leveraged longs borrow the quote (USDT).
     // `borrow_size` is the exchange's actual borrowed quantity (pooled margin
     // auto-borrows only the deficit); `Some(0)` means no loan was created.
-    if order.action == "open" && order.side == "sell" {
+    if order.action == "open" {
         // Only an actual borrow creates a loan. `borrow_size` is present when
         // auto-borrow triggered; a known loan id is a fallback for older rows.
-        let principal = match (order.borrow_size, order.loan_apply_id.as_deref()) {
+        let borrowed = match (order.borrow_size, order.loan_apply_id.as_deref()) {
             (Some(size), _) => size,
-            (None, Some(_)) => fill.deal_size,
-            (None, None) => Decimal::ZERO,
+            (None, Some(_)) if order.side == "sell" => fill.deal_size,
+            // A quote principal cannot be inferred from the notional; skip
+            // rather than record an inflated loan.
+            (None, Some(_)) => {
+                log::warn!(
+                    "[LEDGER] open {} has a loan id but no borrow size; skipping loan",
+                    order.id
+                );
+                Decimal::ZERO
+            }
+            (None, None) => {
+                if order.side == "buy" && fill.deal_size * fill.fill_price > order.funds {
+                    log::warn!(
+                        "[LEDGER] buy entry {} borrowed without a reported size; interest may be untracked",
+                        order.id
+                    );
+                }
+                Decimal::ZERO
+            }
         };
-        if principal > Decimal::ZERO {
-            let currency = order
-                .ticker
-                .split_once('/')
-                .map(|(base, _)| base)
-                .unwrap_or(order.ticker.as_str())
-                .to_string();
+        if borrowed > Decimal::ZERO
+            && let Some((base, quote)) = order.ticker.split_once('/')
+        {
+            let currency = if order.side == "sell" { base } else { quote };
             share::db::loan::MarginLoan::create(
                 &mut tx,
                 order.contract_id,
                 order.id,
-                &currency,
-                principal,
+                currency,
+                borrowed,
                 order.loan_apply_id.as_deref(),
                 order.created_at,
             )
@@ -589,6 +604,64 @@ mod tests {
         assert_eq!(loan.currency, "BTC");
         assert_eq!(loan.loan_apply_id.as_deref(), Some("loan-1"));
         assert!(loan.position_closed_at.is_none());
+
+        sqlx::query("DELETE FROM margin_loans WHERE contract_id = $1")
+            .bind(fx.contract.id)
+            .execute(&fx.pool)
+            .await
+            .unwrap();
+        fx.cleanup().await;
+    }
+
+    /// A filled leveraged long creates one USDT loan with the reported borrow.
+    #[tokio::test]
+    async fn filled_long_entry_creates_usdt_loan() {
+        let Some(fx) = setup(Decimal::from(1000)).await else {
+            return;
+        };
+        let entry = create_pending_open(
+            &fx.pool,
+            &fx.contract,
+            "buy",
+            &comment("long"),
+            Decimal::from(1),
+            Decimal::from(50),
+            Some(Decimal::from(110)),
+            Some(Decimal::from(90)),
+        )
+        .await
+        .unwrap();
+        let mut tx = fx.pool.begin().await.unwrap();
+        TradeOrders::mark_placed(
+            &mut tx,
+            entry.id,
+            "exch-long",
+            Some("loan-usdt"),
+            Some(Decimal::from(75)),
+        )
+        .await
+        .unwrap();
+        tx.commit().await.unwrap();
+
+        let entry = TradeOrders::find(&fx.pool, entry.id).await.unwrap();
+        let fill = Fill {
+            deal_size: Decimal::from(1),
+            fill_price: Decimal::from(100),
+            fee: Decimal::ZERO,
+            fee_currency: Some("USDT"),
+            pnl: None,
+        };
+        record_filled(&fx.pool, &entry, &fill, None).await.unwrap();
+
+        let loan = share::db::loan::MarginLoan::unrepaid_for_contract(&fx.pool, fx.contract.id)
+            .await
+            .unwrap()
+            .into_iter()
+            .next()
+            .expect("loan");
+        assert_eq!(loan.principal, Decimal::from(75));
+        assert_eq!(loan.currency, "USDT");
+        assert_eq!(loan.loan_apply_id.as_deref(), Some("loan-usdt"));
 
         sqlx::query("DELETE FROM margin_loans WHERE contract_id = $1")
             .bind(fx.contract.id)

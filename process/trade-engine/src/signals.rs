@@ -18,6 +18,7 @@ pub async fn signal_handler(
     signal: &TradeSignal,
     db: Pool<Postgres>,
     kcc: KuCoinClient,
+    leverage: u32,
 ) -> Result<(), ProcessError> {
     let contracts = ContractFilter::new()
         .with_ticker(&signal.ticker)
@@ -65,12 +66,12 @@ pub async fn signal_handler(
             continue;
         }
 
-        // Only trade when the available fund covers the per-order budget
+        // Only trade when the available fund covers the per-order margin
         // (half of the initial fund).
-        if c.available_fund >= trader::order_budget(c.init_fund) {
+        if c.available_fund >= trader::order_margin(c.init_fund) {
             // Target-side execution is idempotent, so a failure is surfaced to
             // the caller for retry without stopping the remaining contracts.
-            if let Err(e) = trader::execute(&kcc, &db, signal, &c).await {
+            if let Err(e) = trader::execute(&kcc, &db, signal, &c, leverage).await {
                 log::error!("trade execution failed on contract {}: {e}", c.id);
                 first_error.get_or_insert(e);
             }

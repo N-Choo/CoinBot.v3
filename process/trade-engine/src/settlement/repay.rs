@@ -1,4 +1,5 @@
-//! Repay residual base-currency debt for closed short loans.
+//! Repay residual debt for closed loans: base-currency shorts and
+//! quote-currency (USDT) leveraged longs.
 //!
 //! Closing a short repays the borrowed principal through the close order's
 //! `auto_repay`. This module settles what is left: mostly hourly, capitalised
@@ -203,7 +204,94 @@ async fn repay_loan(pool: &PgPool, kcc: &KuCoinClient, loan: &MarginLoan) -> Res
     result
 }
 
+/// Repay a closed loan denominated in the quote asset (leveraged longs).
+///
+/// The close order's `autoRepay` returns the borrowed principal; this settles
+/// what remains, normally interest. When it is the only loan for the currency,
+/// the exchange's reported liability is authoritative.
+async fn repay_quote(pool: &PgPool, kcc: &KuCoinClient, loan: &MarginLoan) -> Result<(), String> {
+    let account = kucoin_margin::account(kcc).await?;
+    if account.status.as_deref() != Some("EFFECTIVE") {
+        return Err(format!("account status {:?}", account.status));
+    }
+    let asset = account
+        .accounts
+        .iter()
+        .find(|a| a.currency == loan.currency);
+    let liability = parse_asset(asset.and_then(|a| a.liability.as_deref()), "liability")?;
+    let interest = parse_asset(
+        asset.and_then(|a| a.liability_interest.as_deref()),
+        "liabilityInterest",
+    )?;
+    let available = parse_asset(asset.and_then(|a| a.available.as_deref()), "available")?;
+
+    let only = MarginLoan::unrepaid_count_for_currency(pool, &loan.currency)
+        .await
+        .map_err(|e| e.to_string())?
+        == 1;
+    let tracked = residual(loan.outstanding, loan.principal);
+    let cost = if only { tracked.max(interest) } else { tracked };
+
+    // A crash between the exchange call and `mark_repaid` can leave an intent
+    // that already succeeded. Reconcile it before sending another repay.
+    if loan.repay_attempted_at.is_some() {
+        if let Some(order_no) = reconcile_prior_repay(kcc, loan).await?
+            && remaining_liability(kcc, &loan.currency).await? <= DUST
+        {
+            MarginLoan::mark_repaid(pool, loan.id, cost, None, Some(&order_no))
+                .await
+                .map_err(|e| e.to_string())?;
+            return Ok(());
+        }
+        MarginLoan::clear_repay_attempt(pool, loan.id)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    // Repay this loan's remaining USDT debt (principal and interest). Unlike a
+    // base short, the quote debt is repaid directly.
+    let amount = loan.outstanding.min(liability);
+    if amount <= DUST {
+        MarginLoan::mark_repaid(pool, loan.id, cost, None, None)
+            .await
+            .map_err(|e| e.to_string())?;
+        return Ok(());
+    }
+    if available < amount {
+        return Err(format!(
+            "insufficient {} available ({available}) to repay {amount}",
+            loan.currency
+        ));
+    }
+
+    MarginLoan::set_repay_attempt(pool, loan.id, amount, cost)
+        .await
+        .map_err(|e| e.to_string())?;
+    let receipt = submit_repay(kcc, loan, amount).await?;
+    if only && remaining_liability(kcc, &loan.currency).await? > DUST {
+        return Err(format!("partial {} repay; retrying", loan.currency));
+    }
+    MarginLoan::mark_repaid(pool, loan.id, cost, None, Some(&receipt.order_no))
+        .await
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Parse an optional account amount; a missing field is zero.
+fn parse_asset(value: Option<&str>, field: &str) -> Result<Decimal, String> {
+    match value {
+        Some(v) if !v.trim().is_empty() => v.parse().map_err(|_| format!("bad {field}: {v}")),
+        _ => Ok(Decimal::ZERO),
+    }
+}
+
 async fn repay_claimed(pool: &PgPool, kcc: &KuCoinClient, loan: &MarginLoan) -> Result<(), String> {
+    // A leveraged long borrows the quote asset; its debt is repaid directly,
+    // with no base-asset shortfall to buy first.
+    if loan.currency == kucoin_margin::QUOTE {
+        return repay_quote(pool, kcc, loan).await;
+    }
+
     // Concurrency caveat: when several loans for a currency are repaid at once,
     // each uses its tracked interest; the final partial-hour reconciliation is
     // approximate. Accepted by the design.
@@ -694,7 +782,14 @@ async fn place_shortfall_buy(
     MarginLoan::set_repay_buy_client(pool, loan.id, &client_oid)
         .await
         .map_err(|e| e.to_string())?;
-    let request = margin_market_order(&symbol, Side::Buy, qty, &client_oid, OrderIntent::Repay);
+    let request = margin_market_order(
+        &symbol,
+        Side::Buy,
+        Some(qty),
+        None,
+        &client_oid,
+        OrderIntent::Repay,
+    );
     let res = kcc
         .margin()
         .place_order(request)
@@ -802,7 +897,8 @@ async fn cleanup_surplus(
     let request = margin_market_order(
         &symbol,
         Side::Sell,
-        qty.clone(),
+        Some(qty.clone()),
+        None,
         &client_oid,
         OrderIntent::Repay,
     );

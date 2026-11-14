@@ -33,13 +33,15 @@ Modules (`src/`):
 - `ledger/`: only writer of order rows and contract funds (`orders`, `funds`)
 - `reconciler/`: settlement (`pending`, `settle`, `pnl`, `exchange`)
 - `position_exit/`: TP/SL polling and exits (`mod`, `decision`, `price`, `exit`)
+- `settlement/`: interest, residual repayment, and cash-out (`interest`, `repay`, `contract`, `fee`)
+- `kucoin_margin.rs`: cross-margin account/interest/repay/leverage calls
 - `app_state.rs`: DB pool and KuCoin client
 - `app_config.rs`: env config (secrets redacted in Debug)
 - `symbol.rs`: `margin_symbol()`
 
 ## Connections
 
-Each arrow is a call in the source. Only `ledger` writes to PostgreSQL; other components only read it.
+Each arrow is a call in the source. `ledger` writes order rows and contract funds; `settlement` also writes loan and interest rows (`margin_loans`, `margin_interest_charges`). Other components only read.
 
 Signal path:
 
@@ -146,7 +148,7 @@ sequenceDiagram
         TE->>TE: recover_wallet(signature, message)
         alt wallet missing, invalid signature, or signer ≠ wallet
             Note over TE: skip contract (fail-closed)
-        else available_fund < order_budget(init_fund)
+        else available_fund < order_margin(init_fund)
             Note over TE: skip contract (insufficient fund)
         else verified and funded
             Note over TE: trader::execute (see next diagram)
@@ -154,7 +156,7 @@ sequenceDiagram
     end
 ```
 
-`order_budget(init_fund)` is half of `init_fund`. Passing contracts go to `trader::execute`:
+`order_margin(init_fund)` is half of `init_fund`; the position notional is `order_margin × LEVERAGE_LEVEL` (env, 1–5). `LEVERAGE_LEVEL` is applied to the cross-margin account at startup; leveraged longs send `funds` (quote) and shorts send `size` (base) so KuCoin can auto-borrow. A filled leveraged long creates a USDT loan settled by `settlement::repay`. Passing contracts go to `trader::execute`:
 
 ```mermaid
 sequenceDiagram
@@ -165,7 +167,7 @@ sequenceDiagram
     Note over TE: BUY/SELL only, other actions warn and return
     TE->>K: get symbol info (increment, min size)
     K-->>TE: SymbolInfo
-    TE->>TE: qty = floor(budget / price, increment)
+    TE->>TE: notional = margin × leverage; qty = floor(notional / price, increment)
     alt qty invalid (below increment or min size)
         Note over TE: warn, skip (no order)
     else qty valid
@@ -283,7 +285,7 @@ Per contract:
 - `available_fund`: usable for new entries.
 - `total_traded_fund`: entry funds reserved, minus releases. Closing does not reduce it.
 
-`trade_fund` = entry price × quantity. An entry's `funds` column holds the same value, called `E`.
+`trade_fund` = reserved margin (`init_fund / 2`), not the position notional. An entry's `funds` column holds the same value, called `E`. With leverage, the exchange borrows `notional - E` and the close credit stays `E + pnl`.
 
 | Event                                 | Effect                                                                 |
 | ------------------------------------- | ---------------------------------------------------------------------- |

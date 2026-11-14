@@ -15,24 +15,33 @@ pub enum OrderIntent {
 
 /// Build a cross-margin market order.
 ///
-/// `size` is the base-asset quantity. Only short positions borrow/repay: a
-/// short entry (`sell`) borrows the base asset (and is set to repay); a short
-/// close (`buy`) repays it. Long orders never borrow or repay.
+/// `size` is the base-asset quantity and `funds` the quote amount. KuCoin
+/// requires `funds` (not `size`) for an auto-borrowing buy, so leveraged longs
+/// pass `funds` and leave `size` empty; all other orders pass `size`.
 pub fn margin_market_order(
     ticker: &str,
     side: Side,
-    size: String,
+    size: Option<String>,
+    funds: Option<String>,
     client_oid: &str,
     intent: OrderIntent,
 ) -> MarginOrderRequest {
-    let short_open = intent == OrderIntent::Open && side == Side::Sell;
-    let short_close = intent == OrderIntent::Close && side == Side::Buy;
+    let open = intent == OrderIntent::Open;
+    let close = intent == OrderIntent::Close;
+    // A short opens by borrowing the base asset. (`Side` is not `Copy`, so this
+    // must run before `side` moves into the request.)
+    let short_open = open && side == Side::Sell;
 
     let mut request = MarginOrderRequest::new(TradeType::Market, ticker, side);
-    request.size = Some(size);
+    request.size = size;
+    request.funds = funds;
     request.client_oid = client_oid.to_string();
-    request.auto_borrow = Some(short_open);
-    request.auto_repay = Some(short_open || short_close);
+    // Borrow the missing asset on an open (base for a short, quote for a
+    // funded long). Repay when a position closes; a short open also sets the
+    // flag, matching the exchange's short flow. `repay_quote` settles any USDT
+    // debt left by a long close.
+    request.auto_borrow = Some(short_open || (open && request.funds.is_some()));
+    request.auto_repay = Some(close || short_open);
     request
 }
 
@@ -67,13 +76,15 @@ mod tests {
         let req = margin_market_order(
             "XRP-USDT",
             Side::Sell,
-            "15.9".to_string(),
+            Some("15.9".to_string()),
+            None,
             "cid-1",
             OrderIntent::Open,
         );
         assert_eq!(req.symbol, "XRP-USDT");
         assert_eq!(req.client_oid, "cid-1");
         assert_eq!(req.size.as_deref(), Some("15.9"));
+        assert!(req.funds.is_none());
         assert_eq!(req.side, Side::Sell);
         assert!(matches!(req.order_type, TradeType::Market));
         assert_eq!(req.auto_borrow, Some(true));
@@ -81,11 +92,12 @@ mod tests {
     }
 
     #[test]
-    fn long_open_does_not_borrow_or_repay() {
+    fn unleveraged_long_uses_size_and_does_not_borrow() {
         let req = margin_market_order(
             "XRP-USDT",
             Side::Buy,
-            "10".to_string(),
+            Some("10".to_string()),
+            None,
             "cid-2",
             OrderIntent::Open,
         );
@@ -95,11 +107,28 @@ mod tests {
     }
 
     #[test]
+    fn leveraged_long_uses_funds_and_borrows() {
+        let req = margin_market_order(
+            "XRP-USDT",
+            Side::Buy,
+            None,
+            Some("125".to_string()),
+            "cid-l",
+            OrderIntent::Open,
+        );
+        assert!(req.size.is_none());
+        assert_eq!(req.funds.as_deref(), Some("125"));
+        assert_eq!(req.auto_borrow, Some(true));
+        assert_eq!(req.auto_repay, Some(false));
+    }
+
+    #[test]
     fn short_close_repays_but_does_not_borrow() {
         let req = margin_market_order(
             "XRP-USDT",
             Side::Buy,
-            "10".to_string(),
+            Some("10".to_string()),
+            None,
             "cid-3",
             OrderIntent::Close,
         );
@@ -112,7 +141,8 @@ mod tests {
         let req = margin_market_order(
             "SOL-USDT",
             Side::Buy,
-            "1".to_string(),
+            Some("1".to_string()),
+            None,
             "cid-r",
             OrderIntent::Repay,
         );
@@ -121,15 +151,16 @@ mod tests {
     }
 
     #[test]
-    fn long_close_does_not_borrow_or_repay() {
+    fn long_close_repays_but_does_not_borrow() {
         let req = margin_market_order(
             "XRP-USDT",
             Side::Sell,
-            "10".to_string(),
+            Some("10".to_string()),
+            None,
             "cid-4",
             OrderIntent::Close,
         );
         assert_eq!(req.auto_borrow, Some(false));
-        assert_eq!(req.auto_repay, Some(false));
+        assert_eq!(req.auto_repay, Some(true));
     }
 }
