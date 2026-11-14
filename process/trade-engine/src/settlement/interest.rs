@@ -82,7 +82,13 @@ pub async fn sweep_currency(
     kcc: &KuCoinClient,
     currency: &str,
 ) -> Result<(), String> {
-    let price = kucoin_margin::last_price(kcc, currency).await?;
+    // The quote asset has no market pair; its interest is already denominated
+    // in USDT, so its price is exactly one.
+    let price = if currency == kucoin_margin::QUOTE {
+        Decimal::ONE
+    } else {
+        kucoin_margin::last_price(kcc, currency).await?
+    };
     let end = utc_now_ms();
     let start = match InterestCharge::cursor(pool, currency)
         .await

@@ -22,15 +22,17 @@ pub struct EngineServer {
     kcc: KuCoinClient,
     seen: Arc<Mutex<HashSet<String>>>,
     token: String,
+    leverage: u32,
 }
 
 impl EngineServer {
-    pub fn new(db: Pool<Postgres>, kcc: KuCoinClient, token: String) -> Self {
+    pub fn new(db: Pool<Postgres>, kcc: KuCoinClient, token: String, leverage: u32) -> Self {
         Self {
             db,
             kcc,
             seen: Arc::new(Mutex::new(HashSet::new())),
             token,
+            leverage,
         }
     }
 }
@@ -81,7 +83,8 @@ impl EngineService for EngineServer {
 
         let trade = to_trade_signal(&signal);
         if let Err(e) =
-            crate::signals::signal_handler(&trade, self.db.clone(), self.kcc.clone()).await
+            crate::signals::signal_handler(&trade, self.db.clone(), self.kcc.clone(), self.leverage)
+                .await
         {
             // Unmark so a retry can re-attempt after a transient failure.
             self.seen.lock().unwrap().remove(&signal.signal_id);

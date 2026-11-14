@@ -9,6 +9,12 @@ use kucoin::types::KuCoinResponse;
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
 
+/// Quote currency for every pair the engine trades.
+pub const QUOTE: &str = "USDT";
+
+/// KuCoin classic cross-margin maximum leverage.
+pub const MAX_LEVERAGE: u32 = 5;
+
 /// Cross-margin account snapshot.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,7 +94,7 @@ pub fn is_rate_limited(message: &str) -> bool {
     message.contains("rate limited") || message.contains("429")
 }
 
-/// Fetch the cross-margin (MARGIN_V2) account.
+/// Fetch the cross-margin (`MARGIN`) account.
 pub async fn account(kcc: &KuCoinClient) -> Result<MarginAccount, String> {
     let res = kcc
         .send::<KuCoinResponse<MarginAccount>>(
@@ -237,9 +243,136 @@ pub async fn last_price(
         .ok_or_else(|| format!("no price for {symbol}"))
 }
 
+/// Public cross-margin limits (`GET /api/v1/margin/config`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct MarginConfig {
+    #[serde(default)]
+    max_leverage: Option<serde_json::Value>,
+}
+
+/// Exchange-side leverage ceiling for this account. KuCoin returns
+/// `maxLeverage` as a JSON number today; accept a string too.
+pub async fn max_leverage(kcc: &KuCoinClient) -> Result<u32, String> {
+    let res = kcc
+        .send::<KuCoinResponse<MarginConfig>>("GET", "", "/api/v1/margin/config")
+        .await
+        .map_err(|e| e.to_string())?;
+    let data = res
+        .data
+        .ok_or_else(|| format!("margin config unavailable (code={})", res.code))?;
+    let value = data
+        .max_leverage
+        .ok_or_else(|| "margin config has no maxLeverage".to_string())?;
+    value
+        .as_u64()
+        .and_then(|v| u32::try_from(v).ok())
+        .or_else(|| value.as_str().and_then(|v| v.parse().ok()))
+        .ok_or_else(|| format!("bad maxLeverage: {value}"))
+}
+
+/// Set the account-wide cross-margin leverage (`POST /api/v3/position/update-user-leverage`).
+pub async fn set_leverage(kcc: &KuCoinClient, leverage: u32) -> Result<(), String> {
+    #[derive(Serialize)]
+    struct Body {
+        leverage: String,
+    }
+
+    let body = serde_json::to_string(&Body {
+        leverage: leverage.to_string(),
+    })
+    .map_err(|e| e.to_string())?;
+    let res = kcc
+        .send::<KuCoinResponse<serde_json::Value>>(
+            "POST",
+            &body,
+            "/api/v3/position/update-user-leverage",
+        )
+        .await
+        .map_err(|e| e.to_string())?;
+    if res.code == "200000" {
+        Ok(())
+    } else {
+        err(&res.code, &res.msg)
+    }
+}
+
+/// Validate the configured leverage against the exchange ceiling and apply it.
+///
+/// `1` is a no-op: the engine already trades within its collateral.
+pub async fn ensure_leverage(kcc: &KuCoinClient, leverage: u32) -> Result<(), String> {
+    if leverage <= 1 {
+        log::info!("[LEVERAGE] disabled (LEVERAGE_LEVEL={leverage})");
+        return Ok(());
+    }
+    let max = max_leverage(kcc).await?;
+    if leverage > max {
+        return Err(format!(
+            "LEVERAGE_LEVEL={leverage} exceeds the exchange maximum {max}"
+        ));
+    }
+    log::info!("[LEVERAGE] setting account leverage to {leverage}x (exchange max {max})");
+    set_leverage(kcc, leverage).await?;
+    log::info!("[LEVERAGE] account leverage set to {leverage}x");
+    Ok(())
+}
+
+/// Sizing metadata for a margin pair (`GET /api/v2/symbols/{symbol}`).
+#[derive(Debug, Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SymbolRules {
+    #[serde(default)]
+    pub base_increment: String,
+    #[serde(default)]
+    pub base_min_size: String,
+    #[serde(default)]
+    pub quote_increment: String,
+    #[serde(default)]
+    pub quote_min_size: String,
+    #[serde(default)]
+    pub min_funds: Option<String>,
+}
+
+/// Fetch base/quote increments and minimum sizes for `symbol`.
+pub async fn symbol_rules(kcc: &KuCoinClient, symbol: &str) -> Result<SymbolRules, String> {
+    let endpoint = format!("/api/v2/symbols/{symbol}");
+    let res = kcc
+        .send::<KuCoinResponse<SymbolRules>>("GET", "", &endpoint)
+        .await
+        .map_err(|e| e.to_string())?;
+    res.data
+        .ok_or_else(|| format!("symbol {symbol} not found (code={})", res.code))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parses_margin_config_max_leverage_as_number_or_string() {
+        for raw in [r#"5"#, r#""5""#] {
+            let json = format!(
+                r#"{{"code":"200000","data":{{"maxLeverage":{raw},"warningDebtRatio":"0.92"}}}}"#
+            );
+            let res: KuCoinResponse<MarginConfig> = serde_json::from_str(&json).unwrap();
+            let value = res.data.unwrap().max_leverage.unwrap();
+            let parsed = value
+                .as_u64()
+                .and_then(|v| u32::try_from(v).ok())
+                .or_else(|| value.as_str().and_then(|v| v.parse().ok()));
+            assert_eq!(parsed, Some(5));
+        }
+    }
+
+    #[test]
+    fn parses_symbol_rules() {
+        let json = r#"{"code":"200000","data":{"symbol":"SOL-USDT","baseIncrement":"0.001","baseMinSize":"0.001","quoteIncrement":"0.000001","quoteMinSize":"0.1"}}"#;
+        let res: KuCoinResponse<SymbolRules> = serde_json::from_str(json).unwrap();
+        let rules = res.data.unwrap();
+        assert_eq!(rules.base_increment, "0.001");
+        assert_eq!(rules.quote_increment, "0.000001");
+        assert_eq!(rules.quote_min_size, "0.1");
+    }
 
     #[test]
     fn parses_margin_account_with_liability_interest() {
@@ -317,7 +450,8 @@ mod tests {
         let req = crate::trader::margin_market_order(
             "SOL-USDT",
             kucoin::types::spot::Side::Buy,
-            "0.001".to_string(),
+            Some("0.001".to_string()),
+            None,
             &uuid::Uuid::new_v4().to_string(),
             crate::trader::OrderIntent::Repay,
         );

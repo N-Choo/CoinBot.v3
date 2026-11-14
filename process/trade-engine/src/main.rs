@@ -27,9 +27,18 @@ async fn main() -> Result<(), ProcessError> {
     let db = app_state.db_pool;
     let kcc = app_state.kucoin.clone();
 
+    // Apply the configured account-wide leverage before serving signals.
+    kucoin_margin::ensure_leverage(&kcc, config.leverage)
+        .await
+        .map_err(ProcessError::Internal)?;
+
     // gPRC server: `EngineService`.
-    let engine_server =
-        grpc_handler::EngineServer::new(db.clone(), kcc.clone(), config.grpc_auth_token.clone());
+    let engine_server = grpc_handler::EngineServer::new(
+        db.clone(),
+        kcc.clone(),
+        config.grpc_auth_token.clone(),
+        config.leverage,
+    );
     let grpc_addr = config.grpc_addr.clone();
     tokio::spawn(grpc_handler::serve(engine_server, grpc_addr));
 

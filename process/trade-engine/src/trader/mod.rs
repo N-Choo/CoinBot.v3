@@ -4,17 +4,18 @@ mod order;
 mod sizing;
 
 pub use order::{OrderIntent, margin_market_order};
-pub use sizing::order_budget;
+pub use sizing::{order_margin, order_notional};
 
+use crate::kucoin_margin;
 use crate::ledger;
-use kucoin::{client::rest::KuCoinClient, types::market::SymbolInfo};
+use kucoin::client::rest::KuCoinClient;
 use log::{info, warn};
 use order::order_side;
 use rust_decimal::Decimal;
 use rust_decimal::prelude::ToPrimitive;
 use share::db::trade::{TradeOrder, TradeOrders};
 use share::{ProcessError, db::contracts::Contract, models::signals::TradeSignal};
-use sizing::{compute_quantity, parse_quantity, to_decimal};
+use sizing::{compute_funds, compute_quantity, parse_quantity, to_decimal};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -63,6 +64,7 @@ pub async fn execute(
     pool: &PgPool,
     signal: &TradeSignal,
     c: &Contract,
+    leverage: u32,
 ) -> Result<(), ProcessError> {
     let action = signal.action.to_uppercase();
     let Some((side, side_str)) = order_side(&action) else {
@@ -71,10 +73,9 @@ pub async fn execute(
     };
 
     let price = signal.entry_price;
-    // Budget each order at half of the contract's initial fund; the caller
-    // already verified the available fund covers it.
-    let budget = order_budget(c.init_fund);
-    let budget_f = budget.to_f64().unwrap_or(0.0);
+    // Reserve half of the contract's fund as margin and borrow up to `leverage`.
+    let margin = order_margin(c.init_fund);
+    let notional = order_notional(margin, leverage);
 
     // KuCoin symbol ("BTC/USDT" -> "BTC-USDT").
     let ticker = c.ticker.replace('/', "-");
@@ -90,13 +91,18 @@ pub async fn execute(
     };
 
     // Size must respect the pair's increment/min-size rules, or KuCoin rejects it.
-    let info = fetch_symbol_info(kcc, &ticker).await?;
-    let Some(quantity) =
-        compute_quantity(budget_f, price, &info.base_increment, &info.base_min_size)
-    else {
+    let rules = kucoin_margin::symbol_rules(kcc, &ticker)
+        .await
+        .map_err(|e| ProcessError::Network(format!("symbol rules fetch failed: {e}")))?;
+    let Some(quantity) = compute_quantity(
+        notional.to_f64().unwrap_or(0.0),
+        price,
+        &rules.base_increment,
+        &rules.base_min_size,
+    ) else {
         warn!(
-            "[TRADE] {} skipped | price={price} budget={budget} inc={} min={}",
-            c.ticker, info.base_increment, info.base_min_size
+            "[TRADE] {} skipped | price={price} notional={notional} inc={} min={}",
+            c.ticker, rules.base_increment, rules.base_min_size
         );
         return Ok(());
     };
@@ -106,6 +112,29 @@ pub async fn execute(
             c.ticker
         );
         return Ok(());
+    };
+
+    // A leveraged long must send `funds` (quote) so KuCoin can auto-borrow; all
+    // other entries send `size` (base), including leveraged shorts.
+    let (order_size, order_funds) = if side_str == "buy" && leverage > 1 {
+        let min_funds = [
+            rules.quote_min_size.as_str(),
+            rules.min_funds.as_deref().unwrap_or(""),
+        ]
+        .into_iter()
+        .filter_map(|s| s.parse::<Decimal>().ok())
+        .max()
+        .unwrap_or(Decimal::ZERO);
+        let Some(funds) = compute_funds(notional, &rules.quote_increment, min_funds) else {
+            warn!(
+                "[TRADE] {} skipped | price={price} notional={notional} quote inc={} min={min_funds}",
+                c.ticker, rules.quote_increment
+            );
+            return Ok(());
+        };
+        (None, Some(funds))
+    } else {
+        (Some(quantity.clone()), None)
     };
     let Some(tp_dec) = optional_level(signal.tp_price) else {
         warn!(
@@ -121,7 +150,8 @@ pub async fn execute(
         );
         return Ok(());
     };
-    let trade_fund = price_dec * quantity_dec;
+    // Reserve only the margin; the exchange borrows the rest of the notional.
+    let trade_fund = margin;
 
     if TradeOrders::in_flight_for_contract(pool, c.id)
         .await
@@ -201,7 +231,14 @@ pub async fn execute(
     .await?;
 
     // Signal entries always open a position.
-    let request = margin_market_order(&ticker, side, quantity.clone(), &comment, OrderIntent::Open);
+    let request = margin_market_order(
+        &ticker,
+        side,
+        order_size,
+        order_funds,
+        &comment,
+        OrderIntent::Open,
+    );
 
     let res = match kcc.margin().place_order(request).await {
         Ok(r) => r,
@@ -243,19 +280,10 @@ pub async fn execute(
     .await?;
 
     info!(
-        "[TRADE] {} {} qty={quantity} price={price} fund={trade_fund} oid={}",
+        "[TRADE] {} {} qty={quantity} price={price} margin={trade_fund} notional={notional} leverage={leverage} oid={}",
         c.ticker, side_str, data.order_id
     );
     Ok(())
-}
-
-/// Fetch `symbol`'s increment metadata from KuCoin's `/api/v1/symbols`.
-async fn fetch_symbol_info(kcc: &KuCoinClient, symbol: &str) -> Result<SymbolInfo, ProcessError> {
-    kcc.market()
-        .get_symbol(symbol)
-        .await
-        .map_err(|e| ProcessError::Network(format!("symbols fetch failed: {e}")))?
-        .ok_or_else(|| ProcessError::Internal(format!("symbol {symbol} not found")))
 }
 
 #[cfg(test)]

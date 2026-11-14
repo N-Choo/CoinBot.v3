@@ -50,7 +50,8 @@ pub(crate) async fn exit_position(
     let request = crate::trader::margin_market_order(
         &symbol,
         exit_side,
-        remaining.to_string(),
+        Some(remaining.to_string()),
+        None,
         &comment,
         crate::trader::OrderIntent::Close,
     );

@@ -1,4 +1,5 @@
-//! Order sizing: per-order budget and exchange-compliant quantity. Pure functions, no I/O.
+//! Order sizing: reserved margin, leveraged notional, and exchange-compliant
+//! quantity/funds. Pure functions, no I/O.
 
 use rust_decimal::Decimal;
 use rust_decimal::prelude::FromPrimitive;
@@ -19,9 +20,32 @@ pub(super) fn parse_quantity(value: &str) -> Option<Decimal> {
     value.parse().ok()
 }
 
-/// Budget for a single order: `init_fund / ORDER_FUND_DIVISOR` (half).
-pub fn order_budget(init_fund: Decimal) -> Decimal {
+/// Margin reserved for a single order: `init_fund / ORDER_FUND_DIVISOR` (half).
+pub fn order_margin(init_fund: Decimal) -> Decimal {
     init_fund / Decimal::from(ORDER_FUND_DIVISOR)
+}
+
+/// Position notional for an order: `margin * leverage`.
+pub fn order_notional(margin: Decimal, leverage: u32) -> Decimal {
+    margin * Decimal::from(leverage)
+}
+
+/// Quote amount for a market buy, floored to `quote_increment` and at least
+/// `min_funds`. Returns `None` for unusable inputs.
+pub(super) fn compute_funds(
+    notional: Decimal,
+    quote_increment: &str,
+    min_funds: Decimal,
+) -> Option<String> {
+    let increment: Decimal = quote_increment.parse().ok()?;
+    if increment <= Decimal::ZERO || notional <= Decimal::ZERO {
+        return None;
+    }
+    let funds = (notional / increment).floor() * increment;
+    if funds < min_funds || funds <= Decimal::ZERO {
+        return None;
+    }
+    Some(funds.normalize().to_string())
 }
 
 /// Order size: `available / price`, floored to a multiple of `base_increment`.
@@ -98,6 +122,35 @@ mod tests {
         assert_eq!(compute_quantity(10.0, -1.0, "0.1", "0.1"), None);
         assert_eq!(compute_quantity(10.0, 100.0, "not-a-number", "0.1"), None);
         assert_eq!(compute_quantity(10.0, 100.0, "0", "0.1"), None);
+    }
+
+    #[test]
+    fn order_margin_is_half_and_notional_scales_with_leverage() {
+        assert_eq!(order_margin(Decimal::from(50)), Decimal::from(25));
+        assert_eq!(order_notional(Decimal::from(25), 5), Decimal::from(125));
+        assert_eq!(order_notional(Decimal::from(25), 1), Decimal::from(25));
+    }
+
+    #[test]
+    fn funds_are_floored_to_the_quote_increment() {
+        assert_eq!(
+            compute_funds(Decimal::from(125), "0.01", Decimal::new(1, 1)).as_deref(),
+            Some("125")
+        );
+        assert_eq!(
+            compute_funds(Decimal::new(12345, 2), "1", Decimal::new(1, 1)).as_deref(),
+            Some("123")
+        );
+    }
+
+    #[test]
+    fn funds_reject_below_minimum_or_bad_increment() {
+        assert_eq!(compute_funds(Decimal::from(1), "1", Decimal::from(5)), None);
+        assert_eq!(
+            compute_funds(Decimal::from(10), "0", Decimal::new(1, 1)),
+            None
+        );
+        assert_eq!(compute_funds(Decimal::ZERO, "1", Decimal::new(1, 1)), None);
     }
 
     #[test]
